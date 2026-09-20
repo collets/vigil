@@ -79,6 +79,15 @@ func projectCommand(stateDir *string) *cobra.Command {
 			return printJSON(cmd, r)
 		})
 	}})
+	root.AddCommand(&cobra.Command{Use: "reservation PROJECT_ID OPERATION_ID", Short: "Inspect a persisted core resource reservation without acquiring or releasing anything", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			r, err := e.Reservation(cmd.Context(), args[1])
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, r)
+		})
+	}})
 	var file string
 	apply := &cobra.Command{Use: "apply PROJECT_ID --file COMMAND.json", Short: "Apply one versioned human command atomically (never launches a model)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		if file == "" {

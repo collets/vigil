@@ -111,3 +111,10 @@ Linux and native Mac check/race/build suites passed, as did four platform cross-
 After death, reaping retained both workspace and endpoint quarantine. A replacement controller could not claim the workspace. The active container exited from lease loss in about ten seconds; the engine reported a stopped namespace/PID 0 and the writer heartbeat stopped. The pre-start container never wrote. Explicit fixture reconciliation allowed a new fenced owner. No model request was made, so the experiment's inference-idle evidence is known, not inferred from transport closure.
 
 These tests join real process death, container lifetime and coordinator recovery. They do not yet establish the full production launch/result journal, uncertain Docker create reconciliation, actual native submission crash windows, or remote inference cancellation. Offline regression and race suites passed after the addition.
+
+
+## Project/coordinator reservation journal
+
+The trusted core now persists a resource intent before touching the host coordinator, uses stable project-scoped operation IDs, acquires the registered primary workspace before entering the endpoint FIFO, and records each observed claim/ticket/fencing generation. It performs no model, container or Git effect and is not exposed as a production dispatch command.
+
+Offline failure injection after intent, claim, queue insertion, slot acquisition and final observation proved that reopening the project with the same live owner recovers exactly one claim/ticket/slot. Separate project-local IDs do not collide in shared coordination. Capacity waits retain the same FIFO ticket and consume no slot until available. Changed policy, changed intent, replaced root/Git identity and new-owner attempts are rejected. Retiring an intent marks its project record uncertain without releasing coordinator resources; workspace/endpoint quarantine remains until separately evidenced reconciliation. The initial scope is one registered primary root and one host capacity authority; multiple repository roots and cross-host authority still need integration.

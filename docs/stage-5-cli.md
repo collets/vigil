@@ -142,3 +142,8 @@ Operation restrictions are checked when requesting permission, granting it and i
 ```
 
 The dashboard reads one consistent database snapshot for readiness, tasks, the first 100 pending/expired decisions and the latest 100 history events. It refreshes asynchronously every two seconds; Tab or 1–4 changes views, arrows/Page Up/Page Down scroll, `r` refreshes and `q` quits. Failed refreshes retain the previous snapshot with a visible warning. Project text is stripped of terminal control sequences. Decisions remain read-only here; use `project inbox` for full context and `project apply` for versioned human actions. No dashboard key starts a model, approves a request, accepts a task or performs delivery.
+
+
+## Resource intent inspection
+
+`vigil project reservation PROJECT_ID OPERATION_ID` reads a trusted core reservation journal: owning instance, intended run, registered primary-root identity, observed claim/ticket generations and phase. It neither acquires nor releases resources. Acquisition is currently an internal API for the future dispatcher, not a production execution command. A retired intent is explicitly `uncertain`; its coordinator quarantine remains separate. The journal supports same-live-owner recovery across project/coordinator persistence gaps, not adoption by a new owner after a crash.

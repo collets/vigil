@@ -19,7 +19,7 @@ type Report struct {
 }
 
 func Inspect(ctx context.Context) Report {
-	r := Report{Platform: runtime.GOOS + "/" + runtime.GOARCH, Reasons: []string{"worker filesystem/credential/network boundary not implemented and qualified", "descendant cleanup and provider relay not qualified"}}
+	r := Report{Platform: runtime.GOOS + "/" + runtime.GOARCH, Reasons: []string{"complete production harness/profile qualification has not been recorded", "persisted production dispatch is not implemented"}}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	b, err := exec.CommandContext(ctx, "docker", "version", "--format", "{{.Server.Os}} {{.Server.Version}}").Output()
