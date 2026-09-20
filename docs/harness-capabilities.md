@@ -8,6 +8,8 @@ Stage 1 follow-up (2026-09-20): [contract and reproducible isolated profiles](ad
 
 Stage 2 follow-up (2026-09-20): [bounded execution and validation](research/stage-2-results.md), with [sanitized run evidence](research/stage-2-results.json). Both harnesses passed profile/workspace checks, observable streaming/tool use, native completion, strict JSON, and independent fixture verification. Hermes used the working inherited OpenAI-compatible localhost credentials. One initial Hermes prose-prefixed result was rejected. Native input/approvals, interruption under load, resume, policy enforcement, and macOS runtime remain unverified live.
 
+Stage 3 follow-up (2026-09-20): [Linux lifecycle/policy evidence](research/stage-3-results.md). Exact completed-session resume, normal output/child interruption, Codex one-time approval/denial and Hermes clarification were exercised. Abrupt Hermes transport loss left a bounded child writing. Native policy probes did not establish full commit/push enforcement. Strict production eligibility therefore remains gated; macOS is scheduled as [Stage 3.5](stage-3.5-macos.md).
+
 ## Evidence and versions
 
 - Codex CLI **0.155.1**: version/help inspected; generated 312 JSON Schema files; initialize handshake passed. Its CLI labels app-server experimental, so pin and validate its protocol version rather than assuming compatibility with every update.
@@ -43,11 +45,11 @@ ACP (`hermes acp`) is a viable standard-protocol alternative for simpler jobs. I
 | Launch / workspace / profile | `thread/start` effective cwd/model/provider/policy verified live | `session.create` and non-lazy info snapshot verified live | Pin the resolved profile and explicit cwd per attempt |
 | Streaming / terminal outcome | Output/item activity and completion verified live; errors tested synthetically | Output/tool activity and completion verified live; missing/error status tested synthetically | Normalize events; submission acknowledgement is not completion |
 | Pause scheduling | Application-owned | Application-owned | Stop dispatch after the active attempt |
-| Stop active work | `turn/interrupt` | `session.interrupt` | Await quiescence; bound shutdown and preserve uncertain state |
-| Resume | `thread/resume` by thread ID | `session.resume`; durable and runtime IDs differ | Store both handles; verify identity and workspace before continuing |
+| Stop active work | Native interruption passed for output/heartbeat; abrupt-loss heartbeat stopped in fixture | Native interruption passed; heartbeat survived abrupt transport death | Await quiescence; bound shutdown and preserve uncertain state |
+| Resume | Exact completed-thread resume + recall passed | Exact completed-session resume + recall passed; new runtime ID | Store both handles; verify identity and workspace before continuing |
 | Steering | `turn/steer` identifies expected active turn | `session.steer`; busy submits have separate redirect/queue behavior | Do not accidentally submit another scheduled task as steering |
-| Human questions | `item/tool/requestUserInput`, experimental fields present | `clarify` server request, advertised in probe | Track request lifetime and cancellation in the inbox |
-| Native approvals | Command/file/permission request families | `approval` request for harness-flagged operations | Bridge prompts; retain product policy independently |
+| Human questions | Schema/synthetic mapping; live path unqualified | Model-triggered batched `clarify` passed | Track request lifetime and cancellation in the inbox |
+| Native approvals | One-time command allow and deny observed live; unoffered decline requires cancellation | Native module once/deny/timeout/cancel/late-answer probes passed; ordinary Git paths bypassed callback | Bridge prompts; retain product policy independently |
 | App-owned planning tools | MCP; dynamic tools are an experimental alternative | MCP/native extension interfaces | Prefer a small typed MCP tool surface; validate every mutation |
 | Structured result | `turn/start.outputSchema` passed strict live validation | Explicit JSON-only prompt passed strict live validation; initial prose-prefixed output rejected | Require validated app result records; reject malformed results |
 | Fresh review session | New thread with review context/profile | New session with review context/profile | Do not equate a forked history with an independent fresh reviewer |

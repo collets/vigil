@@ -20,7 +20,16 @@ func fakeProtocol(mode string, m Message, send func(any)) {
 		result = map[string]any{"account": map[string]string{"type": "chatgpt"}}
 	case "model/list":
 		result = map[string]any{"data": []any{map[string]string{"model": "fixture-model"}}}
-	case "thread/start":
+	case "thread/read":
+		thread := map[string]any{"id": "thread-1", "cwd": "/fixture", "modelProvider": "openai", "turns": []any{map[string]string{"id": "old-turn"}}}
+		if mode == "codex-resume-corrupt" {
+			thread["turns"] = []any{}
+		}
+		if mode == "codex-resume-workspace" {
+			thread["cwd"] = "/other"
+		}
+		result = map[string]any{"thread": thread}
+	case "thread/start", "thread/resume":
 		result = map[string]any{"model": "fixture-model", "modelProvider": "openai", "cwd": "/fixture", "approvalPolicy": "on-request", "approvalsReviewer": "user", "sandbox": map[string]any{"type": "workspaceWrite", "networkAccess": false}, "thread": map[string]string{"id": "thread-1", "sessionId": "native-1"}}
 	case "turn/start":
 		turn := map[string]any{"id": "turn-1", "status": "completed", "items": []any{map[string]string{"type": "agentMessage", "text": `{"summary":"ok","files":["message.txt"]}`}}}
@@ -44,6 +53,21 @@ func fakeProtocol(mode string, m Message, send func(any)) {
 		result = map[string]any{"session_id": "runtime-1", "stored_session_id": "stored-1", "info": info}
 	case "session.activate":
 		result = map[string]any{"info": info}
+	case "session.resume":
+		r := map[string]any{"session_id": "new-runtime", "resumed": "stored-1", "message_count": 2, "info": info, "running": false}
+		if mode == "hermes-resume-corrupt" {
+			r["message_count"] = 0
+		}
+		if mode == "hermes-resume-alias" {
+			r["resumed"] = "other-stored"
+		}
+		if mode == "hermes-resume-auto" {
+			r["auto_continue"] = map[string]int{"attempt": 1}
+		}
+		if mode == "hermes-resume-workspace" {
+			info["cwd"] = "/other"
+		}
+		result = r
 	case "prompt.submit":
 		result = map[string]string{"status": "streaming"}
 		if mode == "hermes-queued" {

@@ -1,0 +1,1448 @@
+{
+  "date": "2026-09-20",
+  "platform": "linux/amd64",
+  "codex_version": "0.155.1",
+  "hermes_version": "0.21.3",
+  "hermes_commit": "6a627e6eb38e28ac421d5ad8df3f676e49d0c287",
+  "model_turns_dispatched": 16,
+  "controlled_provider_rejection_submissions": 1,
+  "automatic_prompt_replays": 0,
+  "hosting_actions": 0,
+  "lifecycle_experiments": [
+    {
+      "fixture": "stage1-ccuxn1x7",
+      "manifest_sha256": "14829924246a5ee9148615406c3bf161783ce21b2d681eef25584b2e8ce17bae",
+      "report": {
+        "experiment": {
+          "scenario": "resume",
+          "passed": true,
+          "observations": {
+            "exact_durable_identity": true,
+            "history_recalled": true,
+            "native_request_observed": false,
+            "resume_no_unsolicited_turn": true,
+            "trigger_observed": false,
+            "unknown_identity_rejected": true
+          },
+          "sessions": [
+            {
+              "run_id": "38c9bf3d6d50e6bfcb301755",
+              "transport_generation": "38c9bf3d6d50e6bfcb301755-1",
+              "harness": "hermes",
+              "runtime_session_id": "b753b8ab",
+              "durable_session_id": "20260920_114300_8cc922",
+              "application_turn_id": "VIGIL-38c9bf3d6d50e6bfcb301755-first",
+              "model": "qwen3.8-27b-local",
+              "provider": "custom",
+              "workspace": ".cache/spike/stage1-ccuxn1x7/fixture",
+              "outcome": "completed",
+              "native_status": "complete",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 5806,
+                "output_tokens": 65,
+                "cached_input_tokens": null,
+                "total_tokens": 5871,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0
+            },
+            {
+              "run_id": "38c9bf3d6d50e6bfcb301755",
+              "transport_generation": "38c9bf3d6d50e6bfcb301755-2",
+              "harness": "hermes",
+              "runtime_session_id": "1300c9b0",
+              "durable_session_id": "20260920_114300_8cc922",
+              "application_turn_id": "VIGIL-38c9bf3d6d50e6bfcb301755-second",
+              "model": "qwen3.8-27b-local",
+              "provider": "custom",
+              "workspace": ".cache/spike/stage1-ccuxn1x7/fixture",
+              "outcome": "completed",
+              "native_status": "complete",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 5871,
+                "output_tokens": 96,
+                "cached_input_tokens": null,
+                "total_tokens": 5967,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0,
+              "resumed_history_items": 2
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T09:42:59.728352809Z",
+        "duration_seconds": 17.580587912,
+        "session": {
+          "run_id": "38c9bf3d6d50e6bfcb301755",
+          "transport_generation": "38c9bf3d6d50e6bfcb301755-1",
+          "harness": "hermes",
+          "runtime_session_id": "b753b8ab",
+          "durable_session_id": "20260920_114300_8cc922",
+          "application_turn_id": "VIGIL-38c9bf3d6d50e6bfcb301755-first",
+          "model": "qwen3.8-27b-local",
+          "provider": "custom",
+          "workspace": ".cache/spike/stage1-ccuxn1x7/fixture",
+          "outcome": "completed",
+          "native_status": "complete",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 5806,
+            "output_tokens": 65,
+            "cached_input_tokens": null,
+            "total_tokens": 5871,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "local_metadata": {
+          "model": "qwen3.8-27b-local",
+          "context_tokens": 131072,
+          "slots": 1,
+          "template_supports_tools": true
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "stderr_bytes": 39,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "outcome": 2,
+          "output": 161
+        }
+      }
+    },
+    {
+      "fixture": "stage1-f45ic6ea",
+      "manifest_sha256": "ac2e2489b5152386e71d300907a37856ee2497fbf5db20cea426bddc49ea231a",
+      "report": {
+        "experiment": {
+          "scenario": "resume",
+          "passed": true,
+          "observations": {
+            "exact_durable_identity": true,
+            "history_recalled": true,
+            "native_request_observed": false,
+            "resume_no_unsolicited_turn": true,
+            "trigger_observed": false,
+            "unknown_identity_rejected": true
+          },
+          "sessions": [
+            {
+              "run_id": "45b4f4b9bc3dcd2b7a12313e",
+              "transport_generation": "45b4f4b9bc3dcd2b7a12313e-1",
+              "harness": "codex",
+              "runtime_session_id": "01a0be33-aaae-75b2-a6de-260b8367e5d6",
+              "durable_session_id": "01a0be33-aaae-75b2-a6de-260b8367e5d6",
+              "thread_id": "01a0be33-aaae-75b2-a6de-260b8367e5d6",
+              "application_turn_id": "VIGIL-45b4f4b9bc3dcd2b7a12313e-first",
+              "native_turn_id": "01a0be33-aabe-7ae2-94d9-877c10e2e65a",
+              "model": "gpt-6-astra",
+              "provider": "openai",
+              "workspace": ".cache/spike/stage1-f45ic6ea/fixture",
+              "outcome": "completed",
+              "native_status": "completed",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 12765,
+                "output_tokens": 26,
+                "cached_input_tokens": 0,
+                "total_tokens": 12791,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0
+            },
+            {
+              "run_id": "45b4f4b9bc3dcd2b7a12313e",
+              "transport_generation": "45b4f4b9bc3dcd2b7a12313e-2",
+              "harness": "codex",
+              "runtime_session_id": "01a0be33-aaae-75b2-a6de-260b8367e5d6",
+              "durable_session_id": "01a0be33-aaae-75b2-a6de-260b8367e5d6",
+              "thread_id": "01a0be33-aaae-75b2-a6de-260b8367e5d6",
+              "application_turn_id": "VIGIL-45b4f4b9bc3dcd2b7a12313e-second",
+              "native_turn_id": "01a0be33-c004-7f32-9f91-079c72d901ef",
+              "model": "gpt-6-astra",
+              "provider": "openai",
+              "workspace": ".cache/spike/stage1-f45ic6ea/fixture",
+              "outcome": "completed",
+              "native_status": "completed",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 25588,
+                "output_tokens": 52,
+                "cached_input_tokens": 12544,
+                "total_tokens": 25640,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0,
+              "resumed_history_items": 1
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T09:44:11.388340258Z",
+        "duration_seconds": 11.718691706,
+        "session": {
+          "run_id": "45b4f4b9bc3dcd2b7a12313e",
+          "transport_generation": "45b4f4b9bc3dcd2b7a12313e-1",
+          "harness": "codex",
+          "runtime_session_id": "01a0be33-aaae-75b2-a6de-260b8367e5d6",
+          "durable_session_id": "01a0be33-aaae-75b2-a6de-260b8367e5d6",
+          "thread_id": "01a0be33-aaae-75b2-a6de-260b8367e5d6",
+          "application_turn_id": "VIGIL-45b4f4b9bc3dcd2b7a12313e-first",
+          "native_turn_id": "01a0be33-aabe-7ae2-94d9-877c10e2e65a",
+          "model": "gpt-6-astra",
+          "provider": "openai",
+          "workspace": ".cache/spike/stage1-f45ic6ea/fixture",
+          "outcome": "completed",
+          "native_status": "completed",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 12765,
+            "output_tokens": 26,
+            "cached_input_tokens": 0,
+            "total_tokens": 12791,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "stderr_bytes": 0,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "outcome": 2,
+          "output": 44,
+          "usage": 3
+        }
+      }
+    },
+    {
+      "fixture": "stage1-5nfg13np",
+      "manifest_sha256": "a2aa62d0d18fcc581bf61428a8abdc3e2c045bca4a49aae849460270675b8609",
+      "report": {
+        "experiment": {
+          "scenario": "interrupt",
+          "passed": true,
+          "observations": {
+            "interrupt_ack_seconds": 0.003862887,
+            "interrupt_acknowledged": true,
+            "native_request_observed": false,
+            "trigger_observed": true
+          },
+          "sessions": [
+            {
+              "run_id": "a65405a11c739272daa627a8",
+              "transport_generation": "a65405a11c739272daa627a8-1",
+              "harness": "hermes",
+              "runtime_session_id": "7410c872",
+              "durable_session_id": "20260920_114424_41e434",
+              "application_turn_id": "VIGIL-a65405a11c739272daa627a8-first",
+              "model": "qwen3.8-27b-local",
+              "provider": "custom",
+              "workspace": ".cache/spike/stage1-5nfg13np/fixture",
+              "outcome": "interrupted",
+              "native_status": "interrupted",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cached_input_tokens": null,
+                "total_tokens": 0,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T09:44:23.792372736Z",
+        "duration_seconds": 3.282784081,
+        "session": {
+          "run_id": "a65405a11c739272daa627a8",
+          "transport_generation": "a65405a11c739272daa627a8-1",
+          "harness": "hermes",
+          "runtime_session_id": "7410c872",
+          "durable_session_id": "20260920_114424_41e434",
+          "application_turn_id": "VIGIL-a65405a11c739272daa627a8-first",
+          "model": "qwen3.8-27b-local",
+          "provider": "custom",
+          "workspace": ".cache/spike/stage1-5nfg13np/fixture",
+          "outcome": "interrupted",
+          "native_status": "interrupted",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cached_input_tokens": null,
+            "total_tokens": 0,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "local_metadata": {
+          "model": "qwen3.8-27b-local",
+          "context_tokens": 131072,
+          "slots": 1,
+          "template_supports_tools": true
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "stderr_bytes": 72,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "outcome": 1,
+          "output": 2
+        }
+      }
+    },
+    {
+      "fixture": "stage1-we8cii5q",
+      "manifest_sha256": "307765e7c1bb0408f9abb1f83927e03849586e2797aef7ffaa629add4fb0c833",
+      "report": {
+        "experiment": {
+          "scenario": "child",
+          "passed": true,
+          "observations": {
+            "heartbeat_preserved": true,
+            "heartbeat_stable_after_close": true,
+            "interrupt_ack_seconds": 0.001520189,
+            "interrupt_acknowledged": true,
+            "native_request_observed": false,
+            "trigger_observed": true,
+            "writer_observed": true
+          },
+          "sessions": [
+            {
+              "run_id": "79b5294d9f8d4ad86448f7f0",
+              "transport_generation": "79b5294d9f8d4ad86448f7f0-1",
+              "harness": "hermes",
+              "runtime_session_id": "d4d4c068",
+              "durable_session_id": "20260920_114428_05b329",
+              "application_turn_id": "VIGIL-79b5294d9f8d4ad86448f7f0-first",
+              "model": "qwen3.8-27b-local",
+              "provider": "custom",
+              "workspace": ".cache/spike/stage1-we8cii5q/fixture",
+              "outcome": "interrupted",
+              "native_status": "interrupted",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 5837,
+                "output_tokens": 243,
+                "cached_input_tokens": null,
+                "total_tokens": 6080,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T09:44:27.757410727Z",
+        "duration_seconds": 16.487380017,
+        "session": {
+          "run_id": "79b5294d9f8d4ad86448f7f0",
+          "transport_generation": "79b5294d9f8d4ad86448f7f0-1",
+          "harness": "hermes",
+          "runtime_session_id": "d4d4c068",
+          "durable_session_id": "20260920_114428_05b329",
+          "application_turn_id": "VIGIL-79b5294d9f8d4ad86448f7f0-first",
+          "model": "qwen3.8-27b-local",
+          "provider": "custom",
+          "workspace": ".cache/spike/stage1-we8cii5q/fixture",
+          "outcome": "interrupted",
+          "native_status": "interrupted",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 5837,
+            "output_tokens": 243,
+            "cached_input_tokens": null,
+            "total_tokens": 6080,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "local_metadata": {
+          "model": "qwen3.8-27b-local",
+          "context_tokens": 131072,
+          "slots": 1,
+          "template_supports_tools": true
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "stderr_bytes": 39,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "outcome": 1,
+          "output": 172,
+          "tool": 3,
+          "usage": 1
+        }
+      }
+    },
+    {
+      "fixture": "stage1-gzi1sz6s",
+      "manifest_sha256": "868316534f663affe7371839ca636a98ee58d40f627cd94a9447eb0b45f5fe37",
+      "report": {
+        "experiment": {
+          "scenario": "loss",
+          "passed": false,
+          "observations": {
+            "heartbeat_preserved": true,
+            "heartbeat_stable_after_close": false,
+            "native_request_observed": false,
+            "trigger_observed": true,
+            "writer_observed": true
+          },
+          "sessions": [
+            {
+              "run_id": "eccb6268ecfb07fe58f9e525",
+              "transport_generation": "eccb6268ecfb07fe58f9e525-1",
+              "harness": "hermes",
+              "runtime_session_id": "4ffeec56",
+              "durable_session_id": "20260920_114445_230d9e",
+              "application_turn_id": "VIGIL-eccb6268ecfb07fe58f9e525-first",
+              "model": "qwen3.8-27b-local",
+              "provider": "custom",
+              "workspace": ".cache/spike/stage1-gzi1sz6s/fixture",
+              "outcome": "unknown",
+              "native_status": "",
+              "fault": "harness transport lost",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "cached_input_tokens": null,
+                "total_tokens": null,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T09:44:44.990092024Z",
+        "duration_seconds": 15.443204325,
+        "session": {
+          "run_id": "eccb6268ecfb07fe58f9e525",
+          "transport_generation": "eccb6268ecfb07fe58f9e525-1",
+          "harness": "hermes",
+          "runtime_session_id": "4ffeec56",
+          "durable_session_id": "20260920_114445_230d9e",
+          "application_turn_id": "VIGIL-eccb6268ecfb07fe58f9e525-first",
+          "model": "qwen3.8-27b-local",
+          "provider": "custom",
+          "workspace": ".cache/spike/stage1-gzi1sz6s/fixture",
+          "outcome": "unknown",
+          "native_status": "",
+          "fault": "harness transport lost",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": null,
+            "output_tokens": null,
+            "cached_input_tokens": null,
+            "total_tokens": null,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "local_metadata": {
+          "model": "qwen3.8-27b-local",
+          "context_tokens": 131072,
+          "slots": 1,
+          "template_supports_tools": true
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "error": "fixture writer survived owned transport close; retained until bounded script exits",
+        "stderr_bytes": 0,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "output": 106,
+          "tool": 2,
+          "transport_failure": 1,
+          "usage": 1
+        }
+      }
+    },
+    {
+      "fixture": "stage1-i6xcnaki",
+      "manifest_sha256": "db01272784c1d2f225454bef0f6b85448780bd94541531c31ae7bd53d423c5ee",
+      "report": {
+        "experiment": {
+          "scenario": "clarify",
+          "passed": false,
+          "observations": {
+            "stale_answer_rejected": true
+          }
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T09:45:32.182936337Z",
+        "duration_seconds": 12.001201246,
+        "session": {
+          "run_id": "c60db7fb8ad1b9c49daa3b92",
+          "transport_generation": "c60db7fb8ad1b9c49daa3b92-1",
+          "harness": "hermes",
+          "runtime_session_id": "46c41d65",
+          "durable_session_id": "20260920_114532_914311",
+          "application_turn_id": "VIGIL-c60db7fb8ad1b9c49daa3b92-first",
+          "model": "qwen3.8-27b-local",
+          "provider": "custom",
+          "workspace": ".cache/spike/stage1-i6xcnaki/fixture",
+          "outcome": "interrupted",
+          "native_status": "interrupted",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 5793,
+            "output_tokens": 86,
+            "cached_input_tokens": null,
+            "total_tokens": 5879,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "local_metadata": {
+          "model": "qwen3.8-27b-local",
+          "context_tokens": 131072,
+          "slots": 1,
+          "template_supports_tools": true
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "error": "incomplete clarification",
+        "stderr_bytes": 39,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "input_requested": 1,
+          "outcome": 1,
+          "output": 39,
+          "request_resolved": 1,
+          "tool": 3
+        }
+      }
+    },
+    {
+      "fixture": "stage1-nu90sl9a",
+      "manifest_sha256": "fd36456fbbd69a126dd798fb6910f2bf469d192fa0d11c39af152239de4814d6",
+      "report": {
+        "experiment": {
+          "scenario": "interrupt",
+          "passed": true,
+          "observations": {
+            "interrupt_ack_seconds": 0.024710161,
+            "interrupt_acknowledged": true,
+            "native_request_observed": false,
+            "trigger_observed": true
+          },
+          "sessions": [
+            {
+              "run_id": "bcead84212f727779531c0bb",
+              "transport_generation": "bcead84212f727779531c0bb-1",
+              "harness": "codex",
+              "runtime_session_id": "01a0be35-182e-70c3-8381-3d65e6c261d6",
+              "durable_session_id": "01a0be35-182e-70c3-8381-3d65e6c261d6",
+              "thread_id": "01a0be35-182e-70c3-8381-3d65e6c261d6",
+              "application_turn_id": "VIGIL-bcead84212f727779531c0bb-first",
+              "native_turn_id": "01a0be35-183e-7250-bf51-85a5f65ab56e",
+              "model": "gpt-6-astra",
+              "provider": "openai",
+              "workspace": ".cache/spike/stage1-nu90sl9a/fixture",
+              "outcome": "interrupted",
+              "native_status": "interrupted",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "cached_input_tokens": null,
+                "total_tokens": null,
+                "cost": null,
+                "scope": ""
+              },
+              "pending_requests": 0
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T09:45:44.886138029Z",
+        "duration_seconds": 11.834390155,
+        "session": {
+          "run_id": "bcead84212f727779531c0bb",
+          "transport_generation": "bcead84212f727779531c0bb-1",
+          "harness": "codex",
+          "runtime_session_id": "01a0be35-182e-70c3-8381-3d65e6c261d6",
+          "durable_session_id": "01a0be35-182e-70c3-8381-3d65e6c261d6",
+          "thread_id": "01a0be35-182e-70c3-8381-3d65e6c261d6",
+          "application_turn_id": "VIGIL-bcead84212f727779531c0bb-first",
+          "native_turn_id": "01a0be35-183e-7250-bf51-85a5f65ab56e",
+          "model": "gpt-6-astra",
+          "provider": "openai",
+          "workspace": ".cache/spike/stage1-nu90sl9a/fixture",
+          "outcome": "interrupted",
+          "native_status": "interrupted",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": null,
+            "output_tokens": null,
+            "cached_input_tokens": null,
+            "total_tokens": null,
+            "cost": null,
+            "scope": ""
+          },
+          "pending_requests": 0
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "stderr_bytes": 0,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "outcome": 1,
+          "output": 1
+        }
+      }
+    },
+    {
+      "fixture": "stage1-dps8z1cf",
+      "manifest_sha256": "4da67c184fd89172b53740714cddc16be05dafc900c2f279e928efc526ca5ac2",
+      "report": {
+        "experiment": {
+          "scenario": "child",
+          "passed": true,
+          "observations": {
+            "heartbeat_preserved": true,
+            "heartbeat_stable_after_close": true,
+            "interrupt_ack_seconds": 0.012358591,
+            "interrupt_acknowledged": true,
+            "native_request_observed": false,
+            "trigger_observed": true,
+            "writer_observed": true
+          },
+          "sessions": [
+            {
+              "run_id": "7585801c37cd79220d2187cc",
+              "transport_generation": "7585801c37cd79220d2187cc-1",
+              "harness": "codex",
+              "runtime_session_id": "01a0be35-48eb-78b1-8a45-22032039a26b",
+              "durable_session_id": "01a0be35-48eb-78b1-8a45-22032039a26b",
+              "thread_id": "01a0be35-48eb-78b1-8a45-22032039a26b",
+              "application_turn_id": "VIGIL-7585801c37cd79220d2187cc-first",
+              "native_turn_id": "01a0be35-48fd-7e30-ba61-0dd8134440f4",
+              "model": "gpt-6-astra",
+              "provider": "openai",
+              "workspace": ".cache/spike/stage1-dps8z1cf/fixture",
+              "outcome": "interrupted",
+              "native_status": "interrupted",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 12811,
+                "output_tokens": 86,
+                "cached_input_tokens": 0,
+                "total_tokens": 12897,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T09:45:57.439382334Z",
+        "duration_seconds": 8.284350947,
+        "session": {
+          "run_id": "7585801c37cd79220d2187cc",
+          "transport_generation": "7585801c37cd79220d2187cc-1",
+          "harness": "codex",
+          "runtime_session_id": "01a0be35-48eb-78b1-8a45-22032039a26b",
+          "durable_session_id": "01a0be35-48eb-78b1-8a45-22032039a26b",
+          "thread_id": "01a0be35-48eb-78b1-8a45-22032039a26b",
+          "application_turn_id": "VIGIL-7585801c37cd79220d2187cc-first",
+          "native_turn_id": "01a0be35-48fd-7e30-ba61-0dd8134440f4",
+          "model": "gpt-6-astra",
+          "provider": "openai",
+          "workspace": ".cache/spike/stage1-dps8z1cf/fixture",
+          "outcome": "interrupted",
+          "native_status": "interrupted",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 12811,
+            "output_tokens": 86,
+            "cached_input_tokens": 0,
+            "total_tokens": 12897,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "stderr_bytes": 176,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "outcome": 1,
+          "output": 16,
+          "tool": 1,
+          "usage": 1
+        }
+      }
+    },
+    {
+      "fixture": "stage1-l6cugpb2",
+      "manifest_sha256": "073a9d5d8e7ecf0e10c5d36b0922285d5ec68995e16736a087a8f2ba57d19411",
+      "report": {
+        "experiment": {
+          "scenario": "loss",
+          "passed": true,
+          "observations": {
+            "heartbeat_preserved": true,
+            "heartbeat_stable_after_close": true,
+            "native_request_observed": false,
+            "trigger_observed": true,
+            "writer_observed": true
+          },
+          "sessions": [
+            {
+              "run_id": "86a4e42ae0bdd5533b6d62e9",
+              "transport_generation": "86a4e42ae0bdd5533b6d62e9-1",
+              "harness": "codex",
+              "runtime_session_id": "01a0be35-6be3-7e12-b98f-09d04b70dedf",
+              "durable_session_id": "01a0be35-6be3-7e12-b98f-09d04b70dedf",
+              "thread_id": "01a0be35-6be3-7e12-b98f-09d04b70dedf",
+              "application_turn_id": "VIGIL-86a4e42ae0bdd5533b6d62e9-first",
+              "native_turn_id": "01a0be35-6bf3-79d0-9838-74c2778b4d60",
+              "model": "gpt-6-astra",
+              "provider": "openai",
+              "workspace": ".cache/spike/stage1-l6cugpb2/fixture",
+              "outcome": "unknown",
+              "native_status": "",
+              "fault": "harness transport lost",
+              "native_idle_observed": false,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "cached_input_tokens": null,
+                "total_tokens": null,
+                "cost": null,
+                "scope": ""
+              },
+              "pending_requests": 0
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T09:46:06.437912669Z",
+        "duration_seconds": 8.296586326,
+        "session": {
+          "run_id": "86a4e42ae0bdd5533b6d62e9",
+          "transport_generation": "86a4e42ae0bdd5533b6d62e9-1",
+          "harness": "codex",
+          "runtime_session_id": "01a0be35-6be3-7e12-b98f-09d04b70dedf",
+          "durable_session_id": "01a0be35-6be3-7e12-b98f-09d04b70dedf",
+          "thread_id": "01a0be35-6be3-7e12-b98f-09d04b70dedf",
+          "application_turn_id": "VIGIL-86a4e42ae0bdd5533b6d62e9-first",
+          "native_turn_id": "01a0be35-6bf3-79d0-9838-74c2778b4d60",
+          "model": "gpt-6-astra",
+          "provider": "openai",
+          "workspace": ".cache/spike/stage1-l6cugpb2/fixture",
+          "outcome": "unknown",
+          "native_status": "",
+          "fault": "harness transport lost",
+          "native_idle_observed": false,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": null,
+            "output_tokens": null,
+            "cached_input_tokens": null,
+            "total_tokens": null,
+            "cost": null,
+            "scope": ""
+          },
+          "pending_requests": 0
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "stderr_bytes": 0,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "output": 15,
+          "tool": 1,
+          "transport_failure": 1
+        }
+      }
+    },
+    {
+      "fixture": "stage1-l8g2zm_r",
+      "manifest_sha256": "7381766be152111151393207c4ae25a6a0267cd73c5907d4c559a0e9d9919693",
+      "report": {
+        "experiment": {
+          "scenario": "approval-deny",
+          "passed": false,
+          "observations": {
+            "stale_answer_rejected": true
+          }
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T09:46:15.432194118Z",
+        "duration_seconds": 6.662544866,
+        "session": {
+          "run_id": "e6b826d216232c59fa1833c7",
+          "transport_generation": "e6b826d216232c59fa1833c7-1",
+          "harness": "codex",
+          "runtime_session_id": "01a0be35-8f0c-7cc1-b1fe-c77e3372cdf9",
+          "durable_session_id": "01a0be35-8f0c-7cc1-b1fe-c77e3372cdf9",
+          "thread_id": "01a0be35-8f0c-7cc1-b1fe-c77e3372cdf9",
+          "application_turn_id": "VIGIL-e6b826d216232c59fa1833c7-first",
+          "native_turn_id": "01a0be35-8f1d-73d0-8b2b-116980852ea0",
+          "model": "gpt-6-astra",
+          "provider": "openai",
+          "workspace": ".cache/spike/stage1-l8g2zm_r/fixture",
+          "outcome": "interrupted",
+          "native_status": "interrupted",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": null,
+            "output_tokens": null,
+            "cached_input_tokens": null,
+            "total_tokens": null,
+            "cost": null,
+            "scope": ""
+          },
+          "pending_requests": 0
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "error": "native choice unavailable",
+        "stderr_bytes": 178,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "approval_requested": 1,
+          "outcome": 1,
+          "output": 13,
+          "request_resolved": 1,
+          "tool": 1
+        }
+      }
+    },
+    {
+      "fixture": "stage1-5rsz5i6j",
+      "manifest_sha256": "4037023c383283f7336b57c403ac00c77f5466dafb41cb222985c808d18153e2",
+      "report": {
+        "experiment": {
+          "scenario": "approval-allow",
+          "passed": false,
+          "observations": {}
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T09:46:22.776820774Z",
+        "duration_seconds": 10.032745208,
+        "session": {
+          "run_id": "e31d2ac0911414d875960dec",
+          "transport_generation": "e31d2ac0911414d875960dec-1",
+          "harness": "codex",
+          "runtime_session_id": "01a0be35-ac85-7462-a77a-9f5f3961152c",
+          "durable_session_id": "01a0be35-ac85-7462-a77a-9f5f3961152c",
+          "thread_id": "01a0be35-ac85-7462-a77a-9f5f3961152c",
+          "application_turn_id": "VIGIL-e31d2ac0911414d875960dec-first",
+          "native_turn_id": "01a0be35-ac94-76f0-b549-29cf0f33b970",
+          "model": "gpt-6-astra",
+          "provider": "openai",
+          "workspace": ".cache/spike/stage1-5rsz5i6j/fixture",
+          "outcome": "interrupted",
+          "native_status": "interrupted",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": null,
+            "output_tokens": null,
+            "cached_input_tokens": null,
+            "total_tokens": null,
+            "cost": null,
+            "scope": ""
+          },
+          "pending_requests": 0
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "error": "approval stimulus differs from allowed fixture command",
+        "stderr_bytes": 178,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "approval_requested": 1,
+          "outcome": 1,
+          "output": 11,
+          "request_resolved": 1,
+          "tool": 1
+        }
+      }
+    },
+    {
+      "fixture": "stage1-cozt9pgk",
+      "manifest_sha256": "6ca7662cec8fec4226b6ecd6caa5d61d996d06044363cc89bff3eae22eec8fd3",
+      "report": {
+        "experiment": {
+          "scenario": "approval-deny",
+          "passed": true,
+          "observations": {
+            "approval_choices": [
+              "accept",
+              "structured-choice-omitted",
+              "cancel"
+            ],
+            "duplicate_answer_rejected": true,
+            "exact_approval_command": false,
+            "native_request_observed": true,
+            "stale_answer_rejected": true,
+            "trigger_observed": false
+          },
+          "sessions": [
+            {
+              "run_id": "e04ed80d64a2e06013e4f6d5",
+              "transport_generation": "e04ed80d64a2e06013e4f6d5-1",
+              "harness": "codex",
+              "runtime_session_id": "01a0be39-1530-7dd0-8c42-2c72e161c4b1",
+              "durable_session_id": "01a0be39-1530-7dd0-8c42-2c72e161c4b1",
+              "thread_id": "01a0be39-1530-7dd0-8c42-2c72e161c4b1",
+              "application_turn_id": "VIGIL-e04ed80d64a2e06013e4f6d5-first",
+              "native_turn_id": "01a0be39-1540-7811-9d1e-f20c7d2e8941",
+              "model": "gpt-6-astra",
+              "provider": "openai",
+              "workspace": ".cache/spike/stage1-cozt9pgk/fixture",
+              "outcome": "completed",
+              "native_status": "completed",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 25661,
+                "output_tokens": 98,
+                "cached_input_tokens": 0,
+                "total_tokens": 25759,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T09:50:06.321558877Z",
+        "duration_seconds": 9.23040846,
+        "session": {
+          "run_id": "e04ed80d64a2e06013e4f6d5",
+          "transport_generation": "e04ed80d64a2e06013e4f6d5-1",
+          "harness": "codex",
+          "runtime_session_id": "01a0be39-1530-7dd0-8c42-2c72e161c4b1",
+          "durable_session_id": "01a0be39-1530-7dd0-8c42-2c72e161c4b1",
+          "thread_id": "01a0be39-1530-7dd0-8c42-2c72e161c4b1",
+          "application_turn_id": "VIGIL-e04ed80d64a2e06013e4f6d5-first",
+          "native_turn_id": "01a0be39-1540-7811-9d1e-f20c7d2e8941",
+          "model": "gpt-6-astra",
+          "provider": "openai",
+          "workspace": ".cache/spike/stage1-cozt9pgk/fixture",
+          "outcome": "completed",
+          "native_status": "completed",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 25661,
+            "output_tokens": 98,
+            "cached_input_tokens": 0,
+            "total_tokens": 25759,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "stderr_bytes": 435,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "approval_requested": 1,
+          "outcome": 1,
+          "output": 35,
+          "request_resolved": 1,
+          "tool": 2,
+          "usage": 2
+        }
+      }
+    },
+    {
+      "fixture": "stage1-dq5ilh59",
+      "manifest_sha256": "4701ec6ec1474925eea00cc9d159d03bd810d93be47e1a6fb8b17b0aa8238bbe",
+      "report": {
+        "experiment": {
+          "scenario": "approval-allow",
+          "passed": true,
+          "observations": {
+            "approval_choices": [
+              "accept",
+              "structured-or-unknown-choice",
+              "cancel"
+            ],
+            "duplicate_answer_rejected": true,
+            "exact_approval_command": true,
+            "native_request_observed": true,
+            "stale_answer_rejected": true,
+            "trigger_observed": false
+          },
+          "sessions": [
+            {
+              "run_id": "4c2909a9c93db00b9996f694",
+              "transport_generation": "4c2909a9c93db00b9996f694-1",
+              "harness": "codex",
+              "runtime_session_id": "01a0be3a-64c1-70d0-a466-cfb5a3a804b8",
+              "durable_session_id": "01a0be3a-64c1-70d0-a466-cfb5a3a804b8",
+              "thread_id": "01a0be3a-64c1-70d0-a466-cfb5a3a804b8",
+              "application_turn_id": "VIGIL-4c2909a9c93db00b9996f694-first",
+              "native_turn_id": "01a0be3a-64d2-7e01-b3c8-b1af8b9f186a",
+              "model": "gpt-6-astra",
+              "provider": "openai",
+              "workspace": ".cache/spike/stage1-dq5ilh59/fixture",
+              "outcome": "completed",
+              "native_status": "completed",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 25672,
+                "output_tokens": 85,
+                "cached_input_tokens": 22272,
+                "total_tokens": 25757,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T09:51:32.167516205Z",
+        "duration_seconds": 9.083057315,
+        "session": {
+          "run_id": "4c2909a9c93db00b9996f694",
+          "transport_generation": "4c2909a9c93db00b9996f694-1",
+          "harness": "codex",
+          "runtime_session_id": "01a0be3a-64c1-70d0-a466-cfb5a3a804b8",
+          "durable_session_id": "01a0be3a-64c1-70d0-a466-cfb5a3a804b8",
+          "thread_id": "01a0be3a-64c1-70d0-a466-cfb5a3a804b8",
+          "application_turn_id": "VIGIL-4c2909a9c93db00b9996f694-first",
+          "native_turn_id": "01a0be3a-64d2-7e01-b3c8-b1af8b9f186a",
+          "model": "gpt-6-astra",
+          "provider": "openai",
+          "workspace": ".cache/spike/stage1-dq5ilh59/fixture",
+          "outcome": "completed",
+          "native_status": "completed",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 25672,
+            "output_tokens": 85,
+            "cached_input_tokens": 22272,
+            "total_tokens": 25757,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "stderr_bytes": 0,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "approval_requested": 1,
+          "outcome": 1,
+          "output": 29,
+          "request_resolved": 1,
+          "tool": 2,
+          "usage": 2
+        }
+      }
+    },
+    {
+      "fixture": "stage1-wsakefs8",
+      "manifest_sha256": "f235bd64536818296de1266769bd8c1bae739185c685ec31637a1b5e6680f474",
+      "report": {
+        "experiment": {
+          "scenario": "clarify",
+          "passed": true,
+          "observations": {
+            "duplicate_answer_rejected": true,
+            "native_request_observed": true,
+            "stale_answer_rejected": true,
+            "trigger_observed": false
+          },
+          "sessions": [
+            {
+              "run_id": "71313ae4de903f14c98ca178",
+              "transport_generation": "71313ae4de903f14c98ca178-1",
+              "harness": "hermes",
+              "runtime_session_id": "b56d0dac",
+              "durable_session_id": "20260920_115142_2aa56b",
+              "application_turn_id": "VIGIL-71313ae4de903f14c98ca178-first",
+              "model": "qwen3.8-27b-local",
+              "provider": "custom",
+              "workspace": ".cache/spike/stage1-wsakefs8/fixture",
+              "outcome": "completed",
+              "native_status": "complete",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 11692,
+                "output_tokens": 110,
+                "cached_input_tokens": null,
+                "total_tokens": 11802,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T09:51:41.947466902Z",
+        "duration_seconds": 13.465035011,
+        "session": {
+          "run_id": "71313ae4de903f14c98ca178",
+          "transport_generation": "71313ae4de903f14c98ca178-1",
+          "harness": "hermes",
+          "runtime_session_id": "b56d0dac",
+          "durable_session_id": "20260920_115142_2aa56b",
+          "application_turn_id": "VIGIL-71313ae4de903f14c98ca178-first",
+          "model": "qwen3.8-27b-local",
+          "provider": "custom",
+          "workspace": ".cache/spike/stage1-wsakefs8/fixture",
+          "outcome": "completed",
+          "native_status": "complete",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 11692,
+            "output_tokens": 110,
+            "cached_input_tokens": null,
+            "total_tokens": 11802,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "local_metadata": {
+          "model": "qwen3.8-27b-local",
+          "context_tokens": 131072,
+          "slots": 1,
+          "template_supports_tools": true
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "stderr_bytes": 39,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "input_requested": 1,
+          "outcome": 1,
+          "output": 59,
+          "request_resolved": 1,
+          "tool": 3,
+          "usage": 1
+        }
+      }
+    }
+  ],
+  "native_probes": [
+    {
+      "fixture": "stage1-o12hf2ww",
+      "result": {
+        "class": "installed-native integration; controlled stimuli; no inference",
+        "requests": [
+          {
+            "method": "approval",
+            "decision": "once",
+            "returned": {
+              "choice": "once"
+            },
+            "late_response_rejected": true
+          },
+          {
+            "method": "approval",
+            "decision": "deny",
+            "returned": {
+              "choice": "deny"
+            },
+            "late_response_rejected": true
+          },
+          {
+            "method": "clarify",
+            "decision": "answer",
+            "returned": {
+              "answer": "blue"
+            },
+            "late_response_rejected": true
+          },
+          {
+            "method": "clarify",
+            "decision": "cancel",
+            "returned": {},
+            "late_response_rejected": true
+          },
+          {
+            "method": "approval",
+            "decision": "timeout",
+            "returned": null,
+            "late_response_rejected": true
+          },
+          {
+            "method": "clarify",
+            "decision": "interrupt",
+            "returned": null,
+            "late_response_rejected": true
+          }
+        ],
+        "policy": [
+          {
+            "case": "direct_commit",
+            "exit_code": 0,
+            "native_approval_requests": 0,
+            "error_present": false
+          },
+          {
+            "case": "python_commit",
+            "exit_code": -1,
+            "native_approval_requests": 1,
+            "error_present": true
+          },
+          {
+            "case": "local_push",
+            "exit_code": 0,
+            "native_approval_requests": 0,
+            "error_present": false
+          }
+        ],
+        "source_sha256": {
+          "tui_gateway/server_requests.py": "a3a58ed22cba8b9228d2b35eabb46e6bdc90b09630277ccc102cad9ad4c464fa",
+          "tools/approval.py": "1855949961ab5f0ff2fd5036bea1a4782317e33231b74aac937879a5c0a0ee7f",
+          "tools/terminal_tool.py": "83171738268c25f05f114e0fc688dd9977d54cd2d7a5ca82b8685b5058de9172"
+        },
+        "native_cancellations": [
+          [
+            "request.cancel",
+            "timeout"
+          ],
+          [
+            "request.cancel",
+            "interrupted"
+          ]
+        ],
+        "approval_mode": "manual",
+        "actual_commit_count": 1,
+        "local_push_ref": "4cd3b61651a8929ea7feea935e45211bd7d16b4b",
+        "hosting_actions": 0,
+        "hard_application_commit_push_gate": "unsupported in unrestricted Hermes terminal profile"
+      }
+    },
+    {
+      "fixture": "stage1-x7iveyg0",
+      "result": {
+        "class": "installed-native command/exec with explicit workspaceWrite policy; no model",
+        "cases": [
+          {
+            "case": "direct_commit",
+            "exit_code": 128,
+            "rpc_error_code": null
+          },
+          {
+            "case": "python_ref_write",
+            "exit_code": 1,
+            "rpc_error_code": null
+          },
+          {
+            "case": "local_push",
+            "exit_code": 0,
+            "rpc_error_code": null
+          }
+        ],
+        "hosting_actions": 0,
+        "head_unchanged": true,
+        "alternate_ref_created": false,
+        "local_push_ref_created": true
+      }
+    },
+    {
+      "fixture": "stage1-1iahpa30",
+      "result": {
+        "class": "installed gateway with controlled provider failure",
+        "error_injected": true,
+        "runner_exit": 1,
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/health",
+            "model": null
+          },
+          {
+            "method": "GET",
+            "path": "/v1/models",
+            "model": null
+          },
+          {
+            "method": "GET",
+            "path": "/props",
+            "model": null
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/models",
+            "model": null
+          },
+          {
+            "method": "GET",
+            "path": "/api/tags",
+            "model": null
+          },
+          {
+            "method": "GET",
+            "path": "/v1/props",
+            "model": null
+          },
+          {
+            "method": "GET",
+            "path": "/props",
+            "model": null
+          },
+          {
+            "method": "GET",
+            "path": "/v1/models",
+            "model": null
+          },
+          {
+            "method": "GET",
+            "path": "/v1/props",
+            "model": null
+          },
+          {
+            "method": "GET",
+            "path": "/props",
+            "model": null
+          },
+          {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "model": "qwen3.8-27b-local"
+          }
+        ],
+        "inference_requests": 1,
+        "unexpected_model": false,
+        "os_egress_enforced": false
+      }
+    }
+  ],
+  "provider_failure_report": {
+    "schema_version": 1,
+    "mode": "live",
+    "started_at": "2026-09-20T09:55:29.943276934Z",
+    "duration_seconds": 3.17221281,
+    "session": {
+      "run_id": "427c48d83b7c0ca0e94adc0d",
+      "transport_generation": "427c48d83b7c0ca0e94adc0d-1",
+      "harness": "hermes",
+      "runtime_session_id": "4dc75dc8",
+      "durable_session_id": "20260920_115530_afaefe",
+      "application_turn_id": "427c48d83b7c0ca0e94adc0d-turn-1",
+      "model": "qwen3.8-27b-local",
+      "provider": "custom",
+      "workspace": ".cache/spike/stage1-1iahpa30/fixture",
+      "outcome": "failed",
+      "native_status": "error",
+      "native_idle_observed": true,
+      "writer_quiescence": "unconfirmed",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cached_input_tokens": null,
+        "total_tokens": 0,
+        "cost": null,
+        "scope": "session_cumulative"
+      },
+      "pending_requests": 0
+    },
+    "local_metadata": {
+      "model": "qwen3.8-27b-local",
+      "context_tokens": 131072,
+      "slots": 1,
+      "template_supports_tools": true
+    },
+    "submitted": true,
+    "fixture_verified": false,
+    "task_accepted": false,
+    "error": "native turn ended failed",
+    "stderr_bytes": 366,
+    "owned_process_close_completed": true,
+    "event_counts": {
+      "outcome": 1,
+      "output": 2
+    }
+  },
+  "limitations": [
+    "Finite heartbeat observation is not general detached-writer quiescence proof.",
+    "Hermes writer survived abrupt transport loss; native profile is unsuitable for automatic cleanup after such loss.",
+    "Codex requestUserInput live model path and corrupt real native-history recovery remain unqualified; synthetic rejection paths exist.",
+    "Route probe observed one rejected local inference request, not a complete OS egress or concurrent auxiliary audit.",
+    "No cross-instance production capacity enforcement exists yet.",
+    "macOS runtime deferred to Stage 3.5 by user request."
+  ]
+}

@@ -1,8 +1,8 @@
 # Next steps and resumption plan
 
-Updated: 2026-09-20. Stages 1 and 2 complete.
+Updated: 2026-09-20. Stage 3 Linux investigation complete; Stage 4 specification in progress.
 
-Status: Stage 2 complete. Both real harnesses passed the bounded editing fixture on Linux. See the [Stage 2 plan](stage-2-plan.md) and [validation report](research/stage-2-results.md). Next: Stage 3 lifecycle and policy boundaries.
+Status: Stage 3 Linux experiments and adapter improvements are complete, with explicit unresolved qualification gates. See [Stage 3 results](research/stage-3-results.md). Both Stage 3 and Stage 4 plans were prepared before implementation. Stage 4 is in progress. The user scheduled [Stage 3.5 macOS setup/runtime checks](stage-3.5-macos.md) after this work, when they return.
 
 ## Resume here
 
@@ -10,11 +10,11 @@ Status: Stage 2 complete. Both real harnesses passed the bounded editing fixture
 2. Read this document, [session continuity audit](session-audit.md), [requirements](requirements.md), [architecture](architecture.md), and [harness investigation](harness-capabilities.md).
 3. Inspect current Git status and applicable repository instructions. Preserve existing files and uncommitted work; do not reset the checkout.
 4. Run `make check` to establish the starting baseline. Check installed harness versions against the evidence below; refresh affected protocol research if versions differ.
-5. Read the [Stage 1 contract and profiles](adapter-spike.md) and [Stage 2 results](research/stage-2-results.md), then expand Stage 3. Do not start implementing the full scheduler or dashboard before resolving the critical adapter feasibility questions.
+5. Read the [Stage 1 contract and profiles](adapter-spike.md) and [Stage 2 results](research/stage-2-results.md), then follow the [Stage 4 plan](stage-4-plan.md). Do not start implementing the full scheduler or dashboard before resolving the critical adapter feasibility questions.
 
 Suggested handoff prompt:
 
-> Resume Vigil using docs/next-steps.md and docs/research/stage-2-results.md. Stage 2 is complete: both harnesses passed live fixture execution. Expand Stage 3 into concrete lifecycle/policy experiments and proceed within those boundaries. Recheck llama health and inherited OPENAI_BASE_URL/OPENAI_API_KEY without exposing credentials. Preserve existing work and failed-attempt evidence; do not build the scheduler/dashboard yet.
+> Resume Vigil using docs/next-steps.md, docs/research/stage-3-results.md and docs/stage-4-plan.md. Stage 3 Linux investigation is complete with documented enforcement/recovery gaps. Finish the Stage 4 specification and requirement map, without implementing the production scheduler. Stage 3.5 macOS setup/runtime work is reserved for the returning user.
 
 ## Current state
 
@@ -23,9 +23,11 @@ Suggested handoff prompt:
 - Functional baseline consolidated as R01–R71. See [first usable milestone](mvp-acceptance.md) for the eventual demonstration.
 - Recommended transports: Codex app-server over stdio; Hermes TUI gateway over stdio. Hermes ACP is an alternative, not another adapter to build now.
 - Metadata handshakes passed on Linux with Codex 0.155.1 and Hermes 0.21.3, source commit `6a627e6eb38e28ac421d5ad8df3f676e49d0c287`.
-- Model-backed execution, streamed output/tool activity, effective workspace/profile checks, identities, exact file/diff verification, and strict structured results passed through both harnesses on Linux. Synthetic/race tests cover transport failures, requests, and bounded shutdown. Live cancellation, native resume, and end-to-end permission enforcement remain Stage 3. No production scheduler exists.
+- Model-backed execution, streamed output/tool activity, effective workspace/profile checks, identities, exact file/diff verification, and strict structured results passed through both harnesses on Linux. Synthetic/race tests cover transport failures, requests, and bounded shutdown. Stage 3 subsequently exercised normal interruption and exact completed-session resume; complete enforcement and abrupt-loss cleanup remain gated by observed limitations. No production scheduler exists.
 - Stage 1 contract, versioned experiment profiles, fixture and preparation/verification scripts are complete. Both native configuration checks passed. Codex uses existing ChatGPT auth and `gpt-6-astra`; Hermes resolves `custom` / `qwen3.8-27b-local` at `http://127.0.0.1:8080/v1`.
 - llama.cpp was healthy during Stage 2: authenticated metadata and tool use passed with 131072 context tokens and one slot. The inherited `OPENAI_BASE_URL` and `OPENAI_API_KEY` work; do not print or commit the key. Codex advertised and executed `gpt-6-astra` using existing ChatGPT authentication. Recheck service health before future experiments.
+- Stage 3 added exact resume, lifecycle scenarios, native request/policy probes and provider-error injection. Resume, normal interruption, Codex approval and Hermes clarification passed; abrupt Hermes child cleanup failed. Native commit/push coverage is not a complete application gate. [Full evidence and limits](research/stage-3-results.md).
+- The user has a Mac and explicitly deferred access/setup to Stage 3.5 after the current Stage 3/4 work. No credentials or access are needed now.
 - Durable Stage 2 evidence: [validation report](research/stage-2-results.md) and [sanitized results](research/stage-2-results.json). One initial Hermes response included prose before JSON and was correctly rejected; a fresh fixture with explicit JSON-only instructions passed. No automatic replay occurred.
 - Durable Stage 1 evidence: [settings, versions and validation results](research/stage-1-results.json). Repeat preparation with `~/.hermes/hermes-agent/venv/bin/python scripts/spike/prepare.py`; it creates a fresh private experiment and starts no inference.
 - Durable evidence: [probe results](research/harness-probe-results.json). Temporary scripts and generated schemas are in ignored `.cache/research/`; do not rely on that directory being available in another checkout.
@@ -81,18 +83,23 @@ Acceptance: each harness completes one bounded task in the fixture repository, s
 
 ## Stage 3 — Prove lifecycle and policy boundaries
 
-- [ ] Interrupt during inference and during a long-running child command. Establish when filesystem writers have stopped; record unknown outcomes instead of claiming clean termination.
-- [ ] Restart and resume a known session with verified identity/workspace. Missing or corrupt sessions require an explicit fresh-start choice, not silent replacement.
-- [ ] Exercise human input and native approvals: allow, deny, timeout, cancellation, and late response. Do not translate project grants into global native allowlists.
-- [ ] Verify Hermes cannot restart or queue new work outside application scheduling. Confirm nested/auxiliary inference respects local-only and capacity policy.
-- [ ] Investigate enforcement of gated commits, pushes, and publishing through alternative tool/shell paths. Application-owned operations alone do not prevent bypass by unrestricted workers.
-- [ ] Record each guarantee as application-enforced, native-enforced, advisory, or unsupported. If hard enforcement needs an execution/credential/filesystem boundary, propose concrete options before promising autonomous readiness.
-- [ ] Exercise provider errors, partial output, transport loss, and unexpected process exit without automatically replaying uncertain work.
-- [ ] Run essential lifecycle checks on macOS when a host is available. If unavailable, record the gap; continue independent Linux work without claiming cross-platform runtime validation.
+The [expanded plan](stage-3-plan.md) was executed on Linux; [results](research/stage-3-results.md) distinguish passing observations, failed guarantees and unqualified cases. No requirement was relaxed to fit native behavior.
 
-Deliverable: a runtime validation report containing versions, commands, outcomes, limitations, and retained sanitized evidence. Update the capability matrix from actual results.
+- [x] Normal interruption during model output and heartbeat writes tested through both harnesses; finite writer observations recorded.
+- [x] Exact completed-session restart/resume and recall tested; missing identities rejected without fallback. Corrupt real native-history and interrupted-history recovery remain unqualified.
+- [x] Live Codex one-time command approval/denial and Hermes clarification tested. Installed Hermes request expiry/cancel/late answers and synthetic stale-generation cases covered; live Codex clarification remains unqualified.
+- [x] Profile/continuation/route audit performed, including one controlled local provider rejection. Full OS egress, auxiliary concurrency and cross-instance capacity guarantees remain unsupported until a stronger boundary exists.
+- [x] Representative commit/ref-write/local-push paths probed. Bypasses/limitations recorded; no hosting actions performed.
+- [x] Forced loss retained unknown outcomes/partial files without replay. Hermes detached-child cleanup failed and now explicitly requires quarantine in the core design.
+- [x] Guarantee levels and Linux/macOS limits recorded; bounded alternative containment designs carried into Stage 4.
+- [ ] Production execution/recovery qualification: corrupt/interrupted native history, live Codex input, full inference/permission boundary and arbitrary writer cleanup still require implementation evidence. These remain gates, not passed capabilities.
+- [ ] macOS runtime qualification is scheduled with the user as Stage 3.5.
 
-Exit gate: both transports demonstrate usable execution and recovery; unresolved enforcement/platform limitations are explicit. Do not quietly relax accepted requirements to make the spike pass. If a transport fails, evaluate a bounded alternative and record the tradeoff.
+Investigation deliverable complete: native adapters and evidence support the core specification, with strict production dispatch gated on the unresolved boundaries.
+
+## Stage 3.5 — macOS setup and runtime qualification
+
+The user requested this follow-up after Stages 3 and 4, when they return. Follow the [macOS plan](stage-3.5-macos.md). Prefer running locally on the Mac; choose SSH only if useful. Reprepare fixtures there, do not copy Linux credentials/native homes, and qualify platform capabilities independently.
 
 ## Stage 4 — Specify the application core
 
@@ -129,4 +136,4 @@ Acceptance: run the [agreed milestone](mvp-acceptance.md), including actual exec
 - Record the next concrete action and any input needed from the user.
 - Preserve unfinished work and running-session identities; stop experimental processes before ending the session.
 
-Next concrete action: expand Stage 3 into bounded live interruption, request/approval, exact-resume, and policy-boundary experiments using the Stage 2 runner/adapter foundation. No new credential input is needed on this machine. A macOS host will eventually be needed for runtime validation; its absence does not block independent Linux work.
+Next concrete action: finish the Stage 4 architecture/schema/tool contracts and requirements traceability, then hand off to Stage 3.5 macOS setup with the returning user. Preserve all Stage 3 limitations as dispatch/recovery gates.

@@ -147,7 +147,11 @@ def main():
     write_json(work / "launch.json", launch)
     source_files = ["hermes_cli/config_defaults.py", "hermes_cli/env_loader.py", "hermes_cli/fallback_config.py",
                     "agent/auxiliary_client.py", "tui_gateway/server.py", "tui_gateway/session_auto_continue.py",
-                    "tui_gateway/agent_callbacks.py", "toolsets.py"]
+                    "tui_gateway/agent_callbacks.py", "tui_gateway/methods_session.py",
+                    "tui_gateway/session_lifecycle.py", "tui_gateway/prompt_turn.py",
+                    "tui_gateway/server_requests.py", "tui_gateway/contracts/sessions.py",
+                    "tui_gateway/contracts/server_requests.py", "tools/approval.py",
+                    "tools/terminal_tool.py", "toolsets.py"]
     report = {"codex_version": version, "hermes_commit": commit,
               "model_turns_started": 0, "codex_config_parse_passed": True,
               "codex_multi_agent_disabled": True, "effective_checks": effective,

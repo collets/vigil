@@ -47,6 +47,7 @@ type Snapshot struct {
 	Usage        Usage      `json:"usage"`
 	Output       string     `json:"-"`
 	Pending      int        `json:"pending_requests"`
+	HistoryItems int        `json:"resumed_history_items,omitempty"`
 }
 type Request struct {
 	Generation Generation      `json:"generation"`

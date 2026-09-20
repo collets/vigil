@@ -304,6 +304,32 @@ func nativeAnswer(r Request, a Answer) (any, *RPCError, error) {
 		if a.Decision == "answer" {
 			return nil, nil, errors.New("approval requires a decision")
 		}
+		if present(p["availableDecisions"]) {
+			var offered []json.RawMessage
+			if json.Unmarshal(p["availableDecisions"], &offered) != nil {
+				return nil, nil, errors.New("invalid native choices")
+			}
+			found := false
+			canCancel := false
+			for _, raw := range offered {
+				var choice string
+				if json.Unmarshal(raw, &choice) == nil && choice == "cancel" {
+					canCancel = true
+				}
+				if json.Unmarshal(raw, &choice) == nil && choice == decision {
+					found = true
+				}
+			}
+			if !found {
+				if a.Decision == "deny" || a.Decision == "cancel" {
+					if canCancel {
+						return map[string]any{"decision": "cancel"}, nil, nil
+					}
+					return nil, &RPCError{Code: -32800, Message: "request denied by controller"}, nil
+				}
+				return nil, nil, errors.New("native choice unavailable")
+			}
+		}
 		return map[string]any{"decision": decision}, nil, nil
 	case "clarify":
 		if a.Decision == "cancel" || a.Decision == "deny" {

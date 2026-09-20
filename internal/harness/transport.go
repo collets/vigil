@@ -173,6 +173,9 @@ func (t *Transport) Done() <-chan struct{}    { return t.done }
 func (t *Transport) Err() error               { t.mu.Lock(); defer t.mu.Unlock(); return t.err }
 func (t *Transport) StderrBytes() int64       { t.mu.Lock(); defer t.mu.Unlock(); return t.stderrBytes }
 
+// Abort records forced transport loss; it cannot be mistaken for a normal close.
+func (t *Transport) Abort() { t.fail(errors.New("owned harness forcibly terminated")) }
+
 func (t *Transport) fail(err error) {
 	t.once.Do(func() {
 		t.mu.Lock()

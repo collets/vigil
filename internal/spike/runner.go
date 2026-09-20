@@ -19,15 +19,16 @@ import (
 )
 
 type Options struct {
-	Manifest, Harness, KeyFile string
-	Live                       bool
-	Output                     io.Writer
+	Manifest, Harness, KeyFile, Scenario string
+	Live                                 bool
+	Output                               io.Writer
 }
 type Result struct {
 	Summary string   `json:"summary"`
 	Files   []string `json:"files"`
 }
 type Report struct {
+	Experiment      *Experiment      `json:"experiment,omitempty"`
 	Schema          int              `json:"schema_version"`
 	Mode            string           `json:"mode"`
 	Started         time.Time        `json:"started_at"`
@@ -86,6 +87,9 @@ func safeWord(s string) string {
 }
 
 func Run(ctx context.Context, opt Options) (report Report, runErr error) {
+	if opt.Scenario != "" && (!opt.Live || !validScenario(opt.Scenario)) {
+		return report, errors.New("lifecycle scenario requires --live and a supported scenario")
+	}
 	start := time.Now()
 	report = Report{Schema: 1, Mode: "probe", Started: start.UTC(), Events: make(map[string]int)}
 	if opt.Live {
@@ -142,6 +146,9 @@ func Run(ctx context.Context, opt Options) (report Report, runErr error) {
 		report.Duration = time.Since(start).Seconds()
 		if runErr != nil {
 			report.FixtureVerified = false
+			if report.Experiment != nil {
+				report.Experiment.Passed = false
+			}
 			report.Error = j.redact(runErr.Error())
 		}
 		log.Close()
@@ -248,15 +255,22 @@ func Run(ctx context.Context, opt Options) (report Report, runErr error) {
 	env = environment(launch.Env)
 	procCtx, procCancel := context.WithCancel(context.Background())
 	defer procCancel()
-	transport, err := harness.Start(procCtx, harness.ProcessConfig{Argv: launch.Argv, Cwd: m.Workspace, Env: env, JSONRPC: opt.Harness == "hermes", FrameBytes: m.Limits.Frame, TrafficBytes: m.Limits.Evidence, QueueSize: m.Limits.Queue, PendingLimit: m.Limits.Pending, RPCTimeout: time.Duration(m.Limits.RPC) * time.Second, Grace: time.Duration(m.Limits.Terminate) * time.Second, Record: func(direction string, message harness.Message, size int) error {
-		return j.write(map[string]any{"kind": "wire", "direction": direction, "method": safeWord(message.Method), "has_id": len(message.ID) > 0, "bytes": size})
-	}})
-	if err != nil {
-		return report, err
+	spawn := func(generation string) (*harness.Transport, *harness.Session, error) {
+		transport, err := harness.Start(procCtx, harness.ProcessConfig{Argv: launch.Argv, Cwd: m.Workspace, Env: env, JSONRPC: opt.Harness == "hermes", FrameBytes: m.Limits.Frame, TrafficBytes: m.Limits.Evidence, QueueSize: m.Limits.Queue, PendingLimit: m.Limits.Pending, RPCTimeout: time.Duration(m.Limits.RPC) * time.Second, Grace: time.Duration(m.Limits.Terminate) * time.Second, Record: func(direction string, message harness.Message, size int) error {
+			return j.write(map[string]any{"kind": "wire", "direction": direction, "method": safeWord(message.Method), "has_id": len(message.ID) > 0, "bytes": size})
+		}})
+		if err != nil {
+			return nil, nil, err
+		}
+		s, err := harness.NewSession(opt.Harness, transport, profile, harness.RunID(id), harness.Generation(generation), time.Duration(m.Limits.Wait)*time.Second)
+		if err != nil {
+			transport.Close()
+			return nil, nil, err
+		}
+		return transport, s, nil
 	}
-	s, err := harness.NewSession(opt.Harness, transport, profile, harness.RunID(id), harness.Generation(id+"-1"), time.Duration(m.Limits.Wait)*time.Second)
+	transport, s, err := spawn(id + "-1")
 	if err != nil {
-		transport.Close()
 		return report, err
 	}
 	defer func() {
@@ -269,10 +283,10 @@ func Run(ctx context.Context, opt Options) (report Report, runErr error) {
 		report.Session = s.Inspect()
 		report.StderrBytes = transport.StderrBytes()
 		report.ProcessClosed = true
-		if s.Err() != nil && runErr == nil {
+		if s.Err() != nil && runErr == nil && opt.Scenario == "" {
 			runErr = s.Err()
 		}
-		if transport.Err() != nil && runErr == nil {
+		if transport.Err() != nil && runErr == nil && opt.Scenario == "" {
 			runErr = transport.Err()
 		}
 		for {
@@ -292,6 +306,11 @@ func Run(ctx context.Context, opt Options) (report Report, runErr error) {
 	fmt.Fprintf(opt.Output, "%s profile verified: %s / %s; workspace %s\n", opt.Harness, profile.Provider, profile.Model, m.Workspace)
 	if !opt.Live {
 		return report, nil
+	}
+	if opt.Scenario != "" {
+		report.Experiment = &Experiment{Scenario: opt.Scenario, Observations: map[string]any{}}
+		err = lifecycle(ctx, opt, m, s, transport, spawn, j, &report)
+		return report, err
 	}
 	if err = s.Create(initialCtx); err != nil {
 		return report, err

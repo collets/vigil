@@ -22,6 +22,7 @@ func spikeCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opt.Harness, "harness", "", "Harness: codex or hermes")
 	cmd.Flags().BoolVar(&opt.Live, "live", false, "Start one model-backed fixture turn (default: metadata only)")
 	cmd.Flags().StringVar(&opt.KeyFile, "llama-key-file", "", "Private local API key file; otherwise use VIGIL_LLAMA_API_KEY or matching OPENAI exports")
+	cmd.Flags().StringVar(&opt.Scenario, "scenario", "", "Lifecycle experiment: resume, interrupt, child, loss, clarify, approval-allow, approval-deny")
 	_ = cmd.MarkFlagRequired("manifest")
 	_ = cmd.MarkFlagRequired("harness")
 	return cmd
