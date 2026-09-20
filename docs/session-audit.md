@@ -90,6 +90,8 @@ The [requirements open-question list](requirements.md#open-design-and-feasibilit
 
 ## Persistence and verification status
 
+Subsequent implementation update (2026-09-20): the project is now named Vigil, the initial scaffold/Stage 1 and rename are committed, and `origin` is `git@github.com:collets/vigil.git`. Stage 2 implements the bounded Go transports and development runner. Both Codex and local Hermes passed real fixture execution; see [Stage 2 evidence](research/stage-2-results.md) and the [current handoff](next-steps.md). The original audit notes below are historical, not the current Git or validation status.
+
 All continuity documents are saved in the project filesystem. At audit time the scaffold and docs are still untracked in the initialized Git repository; they are not a commit or remote backup. Closing the chat does not require a commit to retain these local files. No commit, push, or publication was performed by this audit.
 
 This was a documentation consistency audit, not a fresh test of the scaffold or harnesses. Local Markdown links, requirement-ID continuity, and evidence JSON structure were checked. Future sessions should follow the baseline checks in next-steps.md before code changes.

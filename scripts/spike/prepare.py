@@ -152,6 +152,11 @@ def main():
               "model_turns_started": 0, "codex_config_parse_passed": True,
               "codex_multi_agent_disabled": True, "effective_checks": effective,
               "source_sha256": {f: hashlib.sha256((installation / f).read_bytes()).hexdigest() for f in source_files}}
+    report["manifest_sha256"] = hashlib.sha256((work / "launch.json").read_bytes()).hexdigest()
+    report["config_sha256"] = {
+        "codex-home/config.toml": hashlib.sha256((codex_home / "config.toml").read_bytes()).hexdigest(),
+        "hermes-home/config.yaml": hashlib.sha256((native_home / "config.yaml").read_bytes()).hexdigest(),
+    }
     write_json(evidence / "preparation.json", report)
     print(f"Prepared: {work}\nHermes effective settings verified; no inference started.\n"
           "Codex credentials are referenced, not copied. See docs/adapter-spike.md before live launch.")

@@ -6,7 +6,7 @@ export GOSUMDB := sum.golang.org
 export GOPATH := $(CURDIR)/.cache/gopath
 export GOCACHE := $(CURDIR)/.cache/go-build
 
-.PHONY: build hello dashboard fmt check tidy cross-build
+.PHONY: build hello dashboard fmt check check-race tidy cross-build
 tidy:
 	$(GO) mod tidy
 build:
@@ -20,6 +20,8 @@ fmt:
 check:
 	$(GO) vet ./...
 	$(GO) test ./...
+check-race:
+	$(GO) test -race ./internal/harness ./internal/spike
 cross-build:
 	@set -e; for os in linux darwin; do for arch in amd64 arm64; do \
 		echo "Building $$os/$$arch"; \

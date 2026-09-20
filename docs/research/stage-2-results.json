@@ -1,0 +1,217 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-20",
+  "platform": "linux/amd64",
+  "codex_version": "0.155.1",
+  "hermes_version": "0.21.3",
+  "hermes_commit": "6a627e6eb38e28ac421d5ad8df3f676e49d0c287",
+  "routine_validation": [
+    "make check",
+    "make check-race",
+    "make build",
+    "make cross-build"
+  ],
+  "product_task_acceptance": false,
+  "experiments": [
+    {
+      "label": "hermes-prose-rejected",
+      "manifest_path": ".cache/spike/stage1-oqqunwo5/launch.json",
+      "fixture_baseline": "04dd5c22525b272db3f7d0a772a90780c5e6fb42",
+      "preparation_manifest_sha256": "cd27efbbbb71616556afa9661756b0c29a17fe59f593ef50c1ac0abe551f49ee",
+      "config_sha256": {
+        "codex-home/config.toml": "46198a58313ffc18ef5f7f9ab5d0e6d2eeec52f2cb6562cc47bfc2639bd3b79f",
+        "hermes-home/config.yaml": "aa6c758abb0f90bbe56ca67e60797ed4e083e02bff8dfbf8ee86305705c7e3b6"
+      },
+      "observed_tool_names": [
+        "read_file",
+        "terminal"
+      ],
+      "report": {
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T09:15:32.004441106Z",
+        "duration_seconds": 24.14488232,
+        "session": {
+          "run_id": "6f1461d0becdaea76d2b4e2a",
+          "transport_generation": "6f1461d0becdaea76d2b4e2a-1",
+          "harness": "hermes",
+          "runtime_session_id": "4343bc75",
+          "durable_session_id": "20260920_111532_1c206f",
+          "application_turn_id": "6f1461d0becdaea76d2b4e2a-turn-1",
+          "model": "qwen3.8-27b-local",
+          "provider": "custom",
+          "workspace": ".cache/spike/stage1-oqqunwo5/fixture",
+          "outcome": "completed",
+          "native_status": "complete",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 24914,
+            "output_tokens": 445,
+            "cached_input_tokens": null,
+            "total_tokens": 25359,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "local_metadata": {
+          "model": "qwen3.8-27b-local",
+          "context_tokens": 131072,
+          "slots": 1,
+          "template_supports_tools": true
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "error": "invalid structured result",
+        "stderr_bytes": 39,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "outcome": 1,
+          "output": 304,
+          "tool": 12,
+          "usage": 3
+        }
+      }
+    },
+    {
+      "label": "codex-passed",
+      "manifest_path": ".cache/spike/stage1-x96b4jdq/launch.json",
+      "fixture_baseline": "09741800b9fbe8bbe0d7502fffb7468862ce6325",
+      "preparation_manifest_sha256": "1be2e5c20535b003e9d996807f49398c65c2e215210d6b20a7fbf27e11f45b96",
+      "config_sha256": {
+        "codex-home/config.toml": "46198a58313ffc18ef5f7f9ab5d0e6d2eeec52f2cb6562cc47bfc2639bd3b79f",
+        "hermes-home/config.yaml": "aa6c758abb0f90bbe56ca67e60797ed4e083e02bff8dfbf8ee86305705c7e3b6"
+      },
+      "observed_tool_names": [
+        "commandExecution"
+      ],
+      "report": {
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T09:17:47.352770768Z",
+        "duration_seconds": 14.365388002,
+        "session": {
+          "run_id": "919ffcfe195a88b9a92224df",
+          "transport_generation": "919ffcfe195a88b9a92224df-1",
+          "harness": "codex",
+          "runtime_session_id": "01a0be1b-7cf2-78c3-81fe-4e6e1a5c2a9b",
+          "durable_session_id": "01a0be1b-7cf2-78c3-81fe-4e6e1a5c2a9b",
+          "thread_id": "01a0be1b-7cf2-78c3-81fe-4e6e1a5c2a9b",
+          "application_turn_id": "919ffcfe195a88b9a92224df-turn-1",
+          "native_turn_id": "01a0be1b-7d09-7592-b8c6-6729be65b2a6",
+          "model": "gpt-6-astra",
+          "provider": "openai",
+          "workspace": ".cache/spike/stage1-x96b4jdq/fixture",
+          "outcome": "completed",
+          "native_status": "completed",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 38973,
+            "output_tokens": 135,
+            "cached_input_tokens": 25472,
+            "total_tokens": 39108,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "submitted": true,
+        "fixture_verified": true,
+        "task_accepted": false,
+        "result": {
+          "summary": "Updated message.txt",
+          "files": [
+            "message.txt"
+          ]
+        },
+        "stderr_bytes": 0,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "outcome": 1,
+          "output": 33,
+          "tool": 6,
+          "usage": 3
+        }
+      }
+    },
+    {
+      "label": "hermes-passed",
+      "manifest_path": ".cache/spike/stage1-v3msu1vw/launch.json",
+      "fixture_baseline": "16ba9bf0e6dde200122fae8b7682b7fea9784637",
+      "preparation_manifest_sha256": "dfd68e2d250fc2d4b718a180ebb56bab1ed51b29606a7827040e78af42da4e2e",
+      "config_sha256": {
+        "codex-home/config.toml": "46198a58313ffc18ef5f7f9ab5d0e6d2eeec52f2cb6562cc47bfc2639bd3b79f",
+        "hermes-home/config.yaml": "aa6c758abb0f90bbe56ca67e60797ed4e083e02bff8dfbf8ee86305705c7e3b6"
+      },
+      "observed_tool_names": [
+        "read_file",
+        "terminal",
+        "write_file"
+      ],
+      "report": {
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T09:19:04.366011137Z",
+        "duration_seconds": 18.643576936,
+        "session": {
+          "run_id": "9132819877def6e1640d9225",
+          "transport_generation": "9132819877def6e1640d9225-1",
+          "harness": "hermes",
+          "runtime_session_id": "14646367",
+          "durable_session_id": "20260920_111904_c3429b",
+          "application_turn_id": "9132819877def6e1640d9225-turn-1",
+          "model": "qwen3.8-27b-local",
+          "provider": "custom",
+          "workspace": ".cache/spike/stage1-v3msu1vw/fixture",
+          "outcome": "completed",
+          "native_status": "complete",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 24519,
+            "output_tokens": 261,
+            "cached_input_tokens": null,
+            "total_tokens": 24780,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "local_metadata": {
+          "model": "qwen3.8-27b-local",
+          "context_tokens": 131072,
+          "slots": 1,
+          "template_supports_tools": true
+        },
+        "submitted": true,
+        "fixture_verified": true,
+        "task_accepted": false,
+        "result": {
+          "summary": "Updated message.txt",
+          "files": [
+            "message.txt"
+          ]
+        },
+        "stderr_bytes": 39,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "outcome": 1,
+          "output": 140,
+          "tool": 12,
+          "usage": 3
+        }
+      }
+    }
+  ],
+  "notes": [
+    "Original private reports retain absolute paths; reviewed copies use repository-relative workspace paths.",
+    "The initial Hermes attempt edited the correct file but prefixed final JSON with prose; strict validation rejected it. Fresh explicit JSON-only fixture passed.",
+    "Codex run recorded two userMessage item events as tools (six tool events total); final adapter excludes these, leaving four command activity events. Original report counts are retained here.",
+    "Transport final-frame draining and failure handling received additional synthetic regression coverage after live verification; no model turn was replayed.",
+    "Native idle and owned-process close do not prove detached writer quiescence. Cost unavailable; no cost fabricated.",
+    "No live approval/input request was triggered by these small fixtures; those remain Stage 3 gates."
+  ]
+}

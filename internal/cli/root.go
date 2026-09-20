@@ -18,6 +18,7 @@ func NewCommand() *cobra.Command {
 		SilenceErrors: true,
 	}
 	root.PersistentFlags().StringVar(&database, "db", ":memory:", "SQLite database path (defaults to a temporary in-memory database)")
+	root.AddCommand(spikeCommand())
 	root.AddCommand(&cobra.Command{
 		Use:   "hello",
 		Short: "Print a greeting and verify SQLite",

@@ -2,9 +2,11 @@
 
 Investigated 2026-09-20. Recommendation: Codex app-server over stdio and Hermes TUI gateway over stdio for the first adapters. Both retain the original harness. The Go application owns task state, scheduling, approval policy, and acceptance.
 
-Verdict: feasible transport/lifecycle foundation, conditional on targeted runtime validation. Do not advertise complete approval enforcement or reliable cancellation of all child processes yet. No production adapter or paid/model-backed run was implemented in this investigation.
+Verdict: the transport/execution foundation now passes a controlled model-backed fixture through both harnesses on Linux. Lifecycle recovery and hard policy boundaries still require Stage 3 runtime validation. Do not advertise complete approval enforcement or reliable cancellation of all child processes yet.
 
-Stage 1 follow-up (2026-09-20): [contract and reproducible isolated profiles](adapter-spike.md), with [effective-setting evidence](research/stage-1-results.json). Versions are unchanged. Native settings checks passed without inference. Hermes background self-review is also disabled; every auxiliary task is explicitly pinned locally. Codex's native config loader rejects `untrusted` despite its presence in the generated schema; the spike uses `on-request` and user approval routing. The local llama.cpp endpoint is stopped. None of this upgrades the live lifecycle capabilities below to runtime-verified.
+Stage 1 follow-up (2026-09-20): [contract and reproducible isolated profiles](adapter-spike.md), with [effective-setting evidence](research/stage-1-results.json). Versions are unchanged. Native settings checks passed without inference. Hermes background self-review is also disabled; every auxiliary task is explicitly pinned locally. Codex's native config loader rejects `untrusted` despite its presence in the generated schema; the spike uses `on-request` and user approval routing. At the Stage 1 checkpoint, the local llama.cpp endpoint was stopped; those settings checks alone did not establish live capabilities.
+
+Stage 2 follow-up (2026-09-20): [bounded execution and validation](research/stage-2-results.md), with [sanitized run evidence](research/stage-2-results.json). Both harnesses passed profile/workspace checks, observable streaming/tool use, native completion, strict JSON, and independent fixture verification. Hermes used the working inherited OpenAI-compatible localhost credentials. One initial Hermes prose-prefixed result was rejected. Native input/approvals, interruption under load, resume, policy enforcement, and macOS runtime remain unverified live.
 
 ## Evidence and versions
 
@@ -12,7 +14,7 @@ Stage 1 follow-up (2026-09-20): [contract and reproducible isolated profiles](ad
 - Hermes **0.21.3**, source commit `6a627e6eb38e28ac421d5ad8df3f676e49d0c287`: ACP dependency check, ACP initialize, gateway-ready event, gateway capabilities, and client request-capability registration passed. Relevant inspected files had no local modifications.
 - Tests ran on Linux amd64. No macOS harness runtime checks were performed.
 - The first Codex handshake failed because this research sandbox could not write Codex's normal SQLite state. An approved retry with normal state access passed. This was an environment restriction, not a protocol failure.
-- No prompts, model turns, agent tools, or live publication actions were started. Streaming execution, interruption under load, native resume, and approvals remain source/documentation-backed until exercised with a controlled task.
+- The initial investigation started no model turns. Stage 2 subsequently verified live streaming execution and tool use; interruption under load, native resume, and approvals remain source-backed/synthetic-tested until exercised live. No publication actions were started by a fixture.
 
 Sanitized results, source hashes, and schema field summaries are in [probe results](research/harness-probe-results.json). Full generated schemas and temporary probe files remain in ignored `.cache/research/`.
 
@@ -38,8 +40,8 @@ ACP (`hermes acp`) is a viable standard-protocol alternative for simpler jobs. I
 
 | Requirement | Codex app-server | Hermes TUI gateway | Application consequence |
 | --- | --- | --- | --- |
-| Launch / workspace / profile | `thread/start` with cwd, model/provider, instructions and policy (schema-backed) | `session.create` with cwd, profile/model/provider (source-backed) | Pin the resolved profile and explicit cwd per attempt |
-| Streaming / terminal outcome | Turn/item notifications; turn errors and terminal state | Event stream; `message.complete` carries optional status/error/usage | Normalize events; submission acknowledgement is not completion |
+| Launch / workspace / profile | `thread/start` effective cwd/model/provider/policy verified live | `session.create` and non-lazy info snapshot verified live | Pin the resolved profile and explicit cwd per attempt |
+| Streaming / terminal outcome | Output/item activity and completion verified live; errors tested synthetically | Output/tool activity and completion verified live; missing/error status tested synthetically | Normalize events; submission acknowledgement is not completion |
 | Pause scheduling | Application-owned | Application-owned | Stop dispatch after the active attempt |
 | Stop active work | `turn/interrupt` | `session.interrupt` | Await quiescence; bound shutdown and preserve uncertain state |
 | Resume | `thread/resume` by thread ID | `session.resume`; durable and runtime IDs differ | Store both handles; verify identity and workspace before continuing |
@@ -47,9 +49,9 @@ ACP (`hermes acp`) is a viable standard-protocol alternative for simpler jobs. I
 | Human questions | `item/tool/requestUserInput`, experimental fields present | `clarify` server request, advertised in probe | Track request lifetime and cancellation in the inbox |
 | Native approvals | Command/file/permission request families | `approval` request for harness-flagged operations | Bridge prompts; retain product policy independently |
 | App-owned planning tools | MCP; dynamic tools are an experimental alternative | MCP/native extension interfaces | Prefer a small typed MCP tool surface; validate every mutation |
-| Structured result | `turn/start.outputSchema` exists | Gateway completion is a transport outcome, not our result schema | Require validated app result records; reject malformed results |
+| Structured result | `turn/start.outputSchema` passed strict live validation | Explicit JSON-only prompt passed strict live validation; initial prose-prefixed output rejected | Require validated app result records; reject malformed results |
 | Fresh review session | New thread with review context/profile | New session with review context/profile | Do not equate a forked history with an independent fresh reviewer |
-| Usage | Native usage events; billing interpretation depends on provider | Final usage plus intermediate usage events | Preserve unavailable values; maintain time limits ourselves |
+| Usage | Cumulative token counters observed live; cost unavailable | Cumulative token counters observed live; cached input/cost unavailable | Preserve unavailable values; maintain time limits ourselves |
 | Native UI handoff | Not demonstrated for a live app-server-owned turn | Gateway supports host interactions; native CLI takeover not demonstrated | Dashboard input first; stop/transfer ownership before native resume |
 
 Codex rows are supported by the generated installed schemas and official protocol reference. Hermes rows are supported by the pinned gateway contracts listed in the evidence record. The current Hermes source is browsable at [the inspected commit](https://github.com/NousResearch/hermes-agent/tree/6a627e6eb38e28ac421d5ad8df3f676e49d0c287/tui_gateway).
@@ -80,7 +82,7 @@ Hermes supports llama.cpp as a custom model endpoint. Tool-calling template comp
 
 The inspected configuration supports auxiliary models and fallback chains. Pin the endpoint/provider for main work, review, compression, titles, and other enabled model calls; disable or constrain cloud fallbacks and unrelated tools. Merely selecting a local main model is insufficient. [Configuration](https://hermes-agent.nousresearch.com/docs/user-guide/configuration).
 
-Use an app-specific Hermes profile/home with deliberate resource references rather than modifying the user's global default. Explicitly select the intended provider: a metadata auth advertisement is not validation of our llama.cpp profile. No real llama.cpp endpoint was contacted in this investigation.
+Use an app-specific Hermes profile/home with deliberate resource references rather than modifying the user's global default. Explicitly select the intended provider: a metadata auth advertisement is not validation of our llama.cpp profile. Stage 2 contacted the authenticated localhost server and verified model metadata plus real tool use; a complete destination/auxiliary audit remains Stage 3.
 
 The shared slot covers application-managed local agent activity, including auxiliary work that outlives the visible reply. Release it only when the adapter establishes quiescence. The mechanism cannot control external programs using the same service.
 
@@ -108,13 +110,13 @@ Our 30-day transcript retention applies to application-owned records. Harnesses 
 
 Keep the minimum shared surface small: probe capabilities/version, create, submit, observe events, answer requests, interrupt, inspect outcome, and close. Resume, steer, and native handoff are separately advertised capabilities.
 
-Normalize identifiers and events while retaining raw records for diagnosis. Use distinct events for message output, tool activity, user input, native approval, usage, turn outcome, and adapter failure. All state-changing app tools must validate task/plan revision and permission. The transport must handle server-originated requests concurrently with reading output and cancellation.
+Normalize identifiers and events while retaining bounded, sanitized diagnostic metadata; do not copy raw credential-bearing protocol records into application evidence. Use distinct events for message output, tool activity, user input, native approval, usage, turn outcome, and adapter failure. All state-changing app tools must validate task/plan revision and permission. The transport must handle server-originated requests concurrently with reading output and cancellation.
 
 Use one managed harness process per active execution context initially. This helps isolate config and lifecycle, but durable resume must be demonstrated before relying on process replacement between attempts.
 
 ## Validation gates before calling the adapters ready
 
-1. Controlled single-turn task on each real provider: streamed output, tool event, valid result, correct cwd/profile, durable IDs.
+1. **Passed in Stage 2 on Linux:** controlled single-turn task on each real provider, streamed output, tool event, valid result, correct cwd/profile, and durable IDs.
 2. Required input and native approval: allow, deny, timeout, cancel, and stale response; verify task/plan grants do not become global native grants.
 3. Stop during inference and a long-running child command; verify file writers terminate before checkpointing and local slot release.
 4. Restart and resume a known session; unknown/corrupt session must produce an explicit fresh-start choice. Hermes auto-continuation stays disabled.
