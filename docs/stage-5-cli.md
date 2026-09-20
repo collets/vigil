@@ -32,6 +32,7 @@ Example initial configuration:
     "model_policy": "local_only",
     "deny": ["push"],
     "required_checks": ["unit-tests"],
+    "check_definitions": [{"id":"unit-tests","argv":["go","test","./..."],"cwd":".","timeout_ms":300000}],
     "task_limit_ms": 2700000,
     "attempt_limit_ms": 600000,
     "repair_limit": 2,
@@ -90,7 +91,7 @@ At revision 3, `kind: "plan.put"` accepts:
 }
 ```
 
-Plan import validates dependency graphs and retains immutable revisions. Existing tasks cannot be silently removed. Criteria changes require an explicit human flag. `plan.reorder` takes `{"plan_id":"first-plan","tasks":["first-task"]}` and preserves the exact task set and task revisions. Readiness reports missing profiles, unapproved specifications, unresolved questions, dependencies and policy constraints. Full repository/check/manual-prerequisite definitions are still pending; production eligibility remains false.
+Plan import validates dependency graphs and retains immutable revisions. Existing tasks cannot be silently removed. Criteria changes require an explicit human flag. `plan.reorder` takes `{"plan_id":"first-plan","tasks":["first-task"]}` and preserves the exact task set and task revisions. Readiness reports missing profiles, unapproved specifications, unresolved questions, dependencies and policy constraints. Repository definitions and actual check/manual-result execution are still pending; production eligibility remains false.
 
 ## Permissions and artifacts
 
@@ -147,3 +148,16 @@ The dashboard reads one consistent database snapshot for readiness, tasks, the f
 ## Resource intent inspection
 
 `vigil project reservation PROJECT_ID OPERATION_ID` reads a trusted core reservation journal: owning instance, intended run, registered primary-root identity, observed claim/ticket generations and phase. It neither acquires nor releases resources. Acquisition is currently an internal API for the future dispatcher, not a production execution command. A retired intent is explicitly `uncertain`; its coordinator quarantine remains separate. The journal supports same-live-owner recovery across project/coordinator persistence gaps, not adoption by a new owner after a crash.
+
+
+## Check definitions and manual setup prerequisites
+
+Project `check_definitions` specify an ID, exact argv array, explicit project-relative `cwd` and positive `timeout_ms` within the project attempt ceiling. Definitions are immutable within their configuration snapshot. This declares a check; it does not execute it. Readiness blocks any required or task check whose definition is absent. Tasks can add checks and cannot remove the project-required set.
+
+Tasks can also carry `manual_prerequisites`, for example:
+
+```json
+[{"id":"device","description":"Required test device connected","satisfied":false}]
+```
+
+An unsatisfied prerequisite blocks readiness. A human plan revision may set `satisfied` to true only with nonempty `evidence` text. This records setup evidence only: it creates no manual functional Pass, quality evidence, acceptance or run. Manual criteria on finished code still need the later fingerprint-bound review flow. Definition changes remain versioned and invalidate prior operation authority.

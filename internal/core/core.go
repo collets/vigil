@@ -509,6 +509,15 @@ func (e *Engine) readiness(ctx context.Context, tx *sql.Tx) (Readiness, error) {
 		return r, err
 	}
 	profiles := map[string]policy.Profile{}
+	checks := map[string]bool{}
+	for _, check := range config.CheckDefinitions {
+		checks[check.ID] = true
+	}
+	for _, id := range config.RequiredChecks {
+		if !checks[id] {
+			r.DefinitionIssues = append(r.DefinitionIssues, "required check definition missing: "+id)
+		}
+	}
 	rows, err := tx.QueryContext(ctx, "SELECT c.resolved_json FROM profiles p JOIN config_snapshots c ON c.id=p.config_id WHERE p.revision=(SELECT max(revision) FROM profiles WHERE id=p.id)")
 	if err != nil {
 		return r, err
@@ -598,6 +607,11 @@ func (e *Engine) readiness(ctx context.Context, tx *sql.Tx) (Readiness, error) {
 		for _, question := range d.Questions {
 			t.Issues = append(t.Issues, "unresolved clarification: "+question)
 		}
+		for _, prerequisite := range d.ManualPrerequisites {
+			if !prerequisite.Satisfied {
+				t.Issues = append(t.Issues, "manual prerequisite unsatisfied: "+prerequisite.ID)
+			}
+		}
 		if config.TaskLimitMS > 0 && d.ActiveLimitMS > config.TaskLimitMS {
 			t.Issues = append(t.Issues, "task allowance exceeds project ceiling")
 		}
@@ -605,6 +619,11 @@ func (e *Engine) readiness(ctx context.Context, tx *sql.Tx) (Readiness, error) {
 			t.Issues = append(t.Issues, "repair allowance exceeds project ceiling")
 		}
 		t.RequiredChecks = resolved.Checks
+		for _, id := range resolved.Checks {
+			if !checks[id] {
+				t.Issues = append(t.Issues, "check definition missing: "+id)
+			}
+		}
 		sort.Strings(t.Issues)
 	}
 	var unapproved int

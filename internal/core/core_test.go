@@ -57,7 +57,7 @@ func apply(t *testing.T, e *Engine, kind string, payload any) json.RawMessage {
 	return result
 }
 func config() policy.Config {
-	return policy.Config{ModelPolicy: "local_only", RequiredChecks: []string{"project-check"}, TaskLimitMS: 2700000, AttemptLimitMS: 600000, RepairLimit: 2, SupervisorProfile: "local", ApprovalMode: "supervised"}
+	return policy.Config{ModelPolicy: "local_only", RequiredChecks: []string{"project-check"}, CheckDefinitions: []policy.CheckDefinition{{ID: "project-check", Argv: []string{"true"}, Cwd: ".", TimeoutMS: 1000}, {ID: "task-check", Argv: []string{"true"}, Cwd: ".", TimeoutMS: 1000}}, TaskLimitMS: 2700000, AttemptLimitMS: 600000, RepairLimit: 2, SupervisorProfile: "local", ApprovalMode: "supervised"}
 }
 func profile() policy.Profile {
 	return policy.Profile{ID: "local", Harness: "hermes", Version: "0.21.3", Model: "fixture-local", Provider: "custom", CredentialRef: "env:VIGIL_LLAMA_API_KEY", Roles: []string{"implementation", "review", "supervisor"}, EndpointID: "windows-llama", LocalInference: true, AuxiliaryLocal: true, DelegationDisabled: true}

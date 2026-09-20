@@ -31,15 +31,16 @@ type Profile struct {
 	Capabilities       []Capability `json:"capabilities"`
 }
 type Config struct {
-	Restrictions      Restrictions `json:"restrictions,omitempty"`
-	ModelPolicy       string       `json:"model_policy"`
-	Deny              []string     `json:"deny"`
-	RequiredChecks    []string     `json:"required_checks"`
-	TaskLimitMS       int64        `json:"task_limit_ms"`
-	AttemptLimitMS    int64        `json:"attempt_limit_ms"`
-	RepairLimit       int          `json:"repair_limit"`
-	SupervisorProfile string       `json:"supervisor_profile"`
-	ApprovalMode      string       `json:"approval_mode"`
+	CheckDefinitions  []CheckDefinition `json:"check_definitions,omitempty"`
+	Restrictions      Restrictions      `json:"restrictions,omitempty"`
+	ModelPolicy       string            `json:"model_policy"`
+	Deny              []string          `json:"deny"`
+	RequiredChecks    []string          `json:"required_checks"`
+	TaskLimitMS       int64             `json:"task_limit_ms"`
+	AttemptLimitMS    int64             `json:"attempt_limit_ms"`
+	RepairLimit       int               `json:"repair_limit"`
+	SupervisorProfile string            `json:"supervisor_profile"`
+	ApprovalMode      string            `json:"approval_mode"`
 }
 type Layer struct {
 	Restrictions Restrictions
@@ -109,6 +110,22 @@ func Resolve(layers []Layer) (Resolved, error) {
 	return r, nil
 }
 func (c Config) Validate() error {
+	if err := validateCheckReferences(c.RequiredChecks); err != nil {
+		return err
+	}
+	if len(c.CheckDefinitions) > 100 {
+		return errors.New("too many check definitions")
+	}
+	checks := map[string]bool{}
+	for _, check := range c.CheckDefinitions {
+		if err := check.Validate(c.AttemptLimitMS); err != nil {
+			return err
+		}
+		if checks[check.ID] {
+			return errors.New("duplicate check definition")
+		}
+		checks[check.ID] = true
+	}
 	if err := c.Restrictions.Validate(); err != nil {
 		return err
 	}
@@ -176,21 +193,22 @@ type Criterion struct {
 	Manual bool   `json:"manual"`
 }
 type Task struct {
-	Restrictions   Restrictions `json:"restrictions,omitempty"`
-	ID             string       `json:"id"`
-	Objective      string       `json:"objective"`
-	Criteria       []Criterion  `json:"criteria"`
-	Dependencies   []string     `json:"dependencies"`
-	Context        []string     `json:"context"`
-	Scope          []string     `json:"scope"`
-	Checks         []string     `json:"checks"`
-	Questions      []string     `json:"questions"`
-	Implementation string       `json:"implementation_profile"`
-	Reviewer       string       `json:"reviewer_profile"`
-	Difficulty     string       `json:"difficulty"`
-	Rationale      string       `json:"rationale"`
-	ActiveLimitMS  int64        `json:"active_limit_ms"`
-	RepairLimit    int          `json:"repair_limit"`
+	ManualPrerequisites []ManualPrerequisite `json:"manual_prerequisites,omitempty"`
+	Restrictions        Restrictions         `json:"restrictions,omitempty"`
+	ID                  string               `json:"id"`
+	Objective           string               `json:"objective"`
+	Criteria            []Criterion          `json:"criteria"`
+	Dependencies        []string             `json:"dependencies"`
+	Context             []string             `json:"context"`
+	Scope               []string             `json:"scope"`
+	Checks              []string             `json:"checks"`
+	Questions           []string             `json:"questions"`
+	Implementation      string               `json:"implementation_profile"`
+	Reviewer            string               `json:"reviewer_profile"`
+	Difficulty          string               `json:"difficulty"`
+	Rationale           string               `json:"rationale"`
+	ActiveLimitMS       int64                `json:"active_limit_ms"`
+	RepairLimit         int                  `json:"repair_limit"`
 }
 
 func ValidateTasks(tasks []Task) error {
@@ -199,6 +217,12 @@ func ValidateTasks(tasks []Task) error {
 	}
 	byID := map[string]Task{}
 	for _, t := range tasks {
+		if err := validateCheckReferences(t.Checks); err != nil {
+			return err
+		}
+		if err := validatePrerequisites(t.ManualPrerequisites); err != nil {
+			return err
+		}
 		if err := t.Restrictions.Validate(); err != nil {
 			return err
 		}
