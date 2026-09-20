@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "purpose": "stage-1-preparation",
+  "codex": {
+    "version": "0.155.1",
+    "executable": "codex",
+    "transport": "app-server-stdio",
+    "model": "gpt-6-astra",
+    "provider": "openai",
+    "auth_mode": "chatgpt",
+    "auth_file_reference": "~/.codex/auth.json",
+    "config_template": "codex.toml"
+  },
+  "hermes": {
+    "version": "0.21.3",
+    "source_commit": "6a627e6eb38e28ac421d5ad8df3f676e49d0c287",
+    "installation": "~/.hermes/hermes-agent",
+    "python_relative": "venv/bin/python",
+    "transport": "tui-gateway-stdio",
+    "provider": "custom",
+    "base_url": "http://127.0.0.1:8080/v1",
+    "model": "qwen3.8-27b-local",
+    "api_key_env": "AGENT_CONTROL_LLAMA_API_KEY",
+    "config_template": "hermes.json",
+    "toolsets": ["file", "terminal", "clarify"]
+  },
+  "limits": {
+    "managed_concurrency": 1,
+    "turns_per_harness": 1,
+    "repair_attempts": 0,
+    "infrastructure_replays": 0,
+    "startup_seconds": 30,
+    "rpc_seconds": 15,
+    "attempt_active_seconds": 180,
+    "task_active_seconds": 180,
+    "request_wait_seconds": 60,
+    "absolute_wall_seconds": 300,
+    "interrupt_grace_seconds": 5,
+    "terminate_grace_seconds": 5,
+    "max_frame_bytes": 1048576,
+    "max_evidence_bytes": 16777216,
+    "max_pending_requests": 8,
+    "max_queued_events": 256
+  }
+}

@@ -1,0 +1,17 @@
+# Resolved from the existing user profile. Authentication is a separate reference.
+model = "gpt-6-astra"
+model_provider = "openai"
+model_reasoning_effort = "high"
+approval_policy = "on-request"
+approvals_reviewer = "user"
+sandbox_mode = "workspace-write"
+web_search = "disabled"
+cli_auth_credentials_store = "file"
+
+[sandbox_workspace_write]
+network_access = false
+
+[features]
+multi_agent = false
+
+[mcp_servers]

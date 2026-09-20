@@ -1,0 +1,12 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+/bin/
+/dist/
+/tmp/
+/.agent-control/
+*.log
+/.tools/
+/.cache/
+__pycache__/

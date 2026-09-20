@@ -1,0 +1,215 @@
+{
+  "date": "2026-09-20",
+  "platform": "Linux amd64",
+  "scope": "metadata and source inspection; no model turns, tool execution, or live cancellation tests",
+  "codex": {
+    "version": "0.155.1",
+    "initialize_passed": true,
+    "schema_count": 312,
+    "schema_summary": {
+      "ThreadStartParams": {
+        "required": [],
+        "properties": [
+          "approvalPolicy",
+          "approvalsReviewer",
+          "baseInstructions",
+          "config",
+          "cwd",
+          "developerInstructions",
+          "ephemeral",
+          "model",
+          "modelProvider",
+          "personality",
+          "sandbox",
+          "serviceName",
+          "serviceTier",
+          "sessionStartSource",
+          "threadSource"
+        ],
+        "sha256": "792e2f32e37cece971bd616664ea2053741acbed4e9c92e9d1766427718f2ecd"
+      },
+      "ThreadResumeParams": {
+        "required": [
+          "threadId"
+        ],
+        "properties": [
+          "approvalPolicy",
+          "approvalsReviewer",
+          "baseInstructions",
+          "config",
+          "cwd",
+          "developerInstructions",
+          "excludeTurns",
+          "model",
+          "modelProvider",
+          "personality",
+          "sandbox",
+          "serviceTier",
+          "threadId"
+        ],
+        "sha256": "36b2854eb802559e17b0e5639385a1e39d5279326c50e2cdb836749b6dd7cb6f"
+      },
+      "TurnStartParams": {
+        "required": [
+          "input",
+          "threadId"
+        ],
+        "properties": [
+          "approvalPolicy",
+          "approvalsReviewer",
+          "clientUserMessageId",
+          "cwd",
+          "effort",
+          "input",
+          "model",
+          "outputSchema",
+          "personality",
+          "sandboxPolicy",
+          "serviceTier",
+          "serviceTierForTurn",
+          "summary",
+          "threadId",
+          "toolOutput",
+          "turnTrigger"
+        ],
+        "sha256": "a3835e8c1e942e4b358e1a670939b89918b16c4d13105a579899892b7ade6dea"
+      },
+      "TurnSteerParams": {
+        "required": [
+          "expectedTurnId",
+          "input",
+          "threadId"
+        ],
+        "properties": [
+          "clientUserMessageId",
+          "expectedTurnId",
+          "input",
+          "threadId"
+        ],
+        "sha256": "4a52eb76e7a717bb388484ccd7538737fca0df35481fc30a21e259f1bfe96e37"
+      },
+      "TurnInterruptParams": {
+        "required": [
+          "threadId",
+          "turnId"
+        ],
+        "properties": [
+          "threadId",
+          "turnId"
+        ],
+        "sha256": "6dff382dae73d1dbc58406ed045605f647e7a49660e2540fbd2c6c24d60c5f2b"
+      },
+      "CommandExecutionRequestApprovalParams": {
+        "required": [
+          "itemId",
+          "startedAtMs",
+          "threadId",
+          "turnId"
+        ],
+        "properties": [
+          "approvalId",
+          "command",
+          "commandActions",
+          "cwd",
+          "environmentId",
+          "itemId",
+          "kind",
+          "networkApprovalContext",
+          "proposedExecpolicyAmendment",
+          "proposedNetworkPolicyAmendments",
+          "reason",
+          "startedAtMs",
+          "threadId",
+          "turnId"
+        ],
+        "sha256": "16a71816c2d66e319c2c4aa83dd636dfdc43c61e72b6d5475e421ce08d8e6558"
+      },
+      "ToolRequestUserInputParams": {
+        "required": [
+          "isBlocking",
+          "itemId",
+          "questions",
+          "threadId",
+          "turnId"
+        ],
+        "properties": [
+          "autoResolutionMs",
+          "isBlocking",
+          "itemId",
+          "questions",
+          "threadId",
+          "turnId"
+        ],
+        "sha256": "fda15b62e7446105b59c8ed85c908abed2a47db70653e57c92c47a2f204fa77a"
+      }
+    },
+    "sandbox_note": "First handshake failed because normal Codex state was read-only. Retried successfully with approved access to its state directory."
+  },
+  "hermes": {
+    "version": "0.21.3",
+    "commit": "6a627e6eb38e28ac421d5ad8df3f676e49d0c287",
+    "acp_check": "passed",
+    "acp_initialize": {
+      "protocol_version": 1,
+      "agent_capabilities": {
+        "loadSession": true,
+        "promptCapabilities": {
+          "image": true
+        },
+        "sessionCapabilities": {
+          "fork": {},
+          "list": {},
+          "resume": {}
+        }
+      }
+    },
+    "gateway": {
+      "results": {
+        "1": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "per_session_exclusive_submit": true
+          }
+        },
+        "2": {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "result": {
+            "server_requests": [
+              "approval",
+              "clarify",
+              "preview.act",
+              "preview.read",
+              "secret",
+              "sudo",
+              "terminal.read",
+              "tour",
+              "vault.code",
+              "vault.save_login",
+              "vault.unlock_prompt",
+              "window.read"
+            ]
+          }
+        }
+      },
+      "event_types": [
+        "gateway.ready"
+      ],
+      "model_turns_started": 0
+    },
+    "source_sha256": {
+      "acp_adapter/server.py": "62d9d0bac63bdeff6304a1e7c8c147b5d7e0296728bcdc602171edefb9eaeb0e",
+      "acp_adapter/session.py": "e8d5dfa50a1c3558d94f13058921fd54b34ec498f0b95d19699fd4876edffde0",
+      "acp_adapter/permissions.py": "99d1b52c040cfe4c4f17a212b1111e79b63966b99551555e485f24ce0618846e",
+      "acp_adapter/entry.py": "70218ec9e9f5d7590fa927b86fdcda2cf33c45457247e291382e409995e8ac54",
+      "toolsets.py": "7fa869260df75942a5b43d208a1c6bd39d880379652aecf03022b7c1856276c3",
+      "tools/approval.py": "1855949961ab5f0ff2fd5036bea1a4782317e33231b74aac937879a5c0a0ee7f",
+      "tui_gateway/contracts/sessions.py": "2859cfca2f48e20f89679e839942630621539c8cc9c3720f62426077db5ca7f8",
+      "tui_gateway/contracts/prompt_voice.py": "7a79651a55424b41d65d1bb97972087e50fc1dd953143adc1da440bc0fce86c7",
+      "tui_gateway/contracts/events.py": "b39b6d3f040749bbf9bd72ae2e965398b798a9371d078ba78118efb2134e5f90",
+      "tui_gateway/session_auto_continue.py": "69dfb58c18fa365fb7c2e9f753e671ad49a071699502d534b2ef9b883573fc34",
+      "tui_gateway/entry.py": "75b15229ea27031bdf094b5bcc14b2957694dea3c873eba4fac0d7138ace768d"
+    }
+  }
+}

@@ -1,0 +1,152 @@
+{
+  "codex_version": "codex-cli 0.155.1",
+  "hermes_commit": "6a627e6eb38e28ac421d5ad8df3f676e49d0c287",
+  "model_turns_started": 0,
+  "codex_config_parse_passed": true,
+  "codex_multi_agent_disabled": true,
+  "effective_checks": {
+    "checks": {
+      "version": true,
+      "model": true,
+      "provider": true,
+      "endpoint": true,
+      "auto_continue_disabled": true,
+      "fallback_chain_empty": true,
+      "toolsets_exact": true,
+      "max_iterations": true,
+      "compression_disabled": true,
+      "idle_compression_disabled": true,
+      "memory_disabled": true,
+      "manual_approvals": true,
+      "title_disabled": true,
+      "background_review_disabled": true,
+      "mcp_empty": true,
+      "hooks_empty": true,
+      "terminal_cwd": true,
+      "all_auxiliary_routes_pinned": true,
+      "no_delegation_tools": true,
+      "auxiliary_cloud_discovery_disabled": true,
+      "resolved_runtime": true
+    },
+    "auxiliary_tasks": [
+      "approval",
+      "background_review",
+      "compression",
+      "curator",
+      "goal_judge",
+      "kanban_decomposer",
+      "mcp",
+      "memory_query_rewrite",
+      "moa_aggregator",
+      "moa_reference",
+      "monitor",
+      "profile_describer",
+      "review",
+      "skills_hub",
+      "title_generation",
+      "triage_specifier",
+      "tts_audio_tags",
+      "vision"
+    ],
+    "tools": [
+      "clarify",
+      "patch",
+      "process_manage",
+      "read_file",
+      "search_files",
+      "terminal",
+      "write_file"
+    ],
+    "model_turns_started": 0
+  },
+  "source_sha256": {
+    "hermes_cli/config_defaults.py": "68bfae0c471d398794b1caa9a5d51c6fa3e8cf0039d0505e094497f8fd4e6558",
+    "hermes_cli/env_loader.py": "d4749b9b626adebc451669891d91580a84979e876a3ee94a14538784cba31928",
+    "hermes_cli/fallback_config.py": "84005e646d8a8b5eb9f25b84a6e2ca4a1d32cea0c6e026209c0caaf400435099",
+    "agent/auxiliary_client.py": "6e84378746b4dd59c53135dadd45d5ffacf89abce562c390603b3f93c690ff8e",
+    "tui_gateway/server.py": "72f0e7a99da3a93b6a420da3ca37dd6091d21c45f49e57862c85aaf6caff9dcd",
+    "tui_gateway/session_auto_continue.py": "69dfb58c18fa365fb7c2e9f753e671ad49a071699502d534b2ef9b883573fc34",
+    "tui_gateway/agent_callbacks.py": "f25476ef023508b472985d5bee606d71211ba5b7bc44b6db744839315661f157",
+    "toolsets.py": "7fa869260df75942a5b43d208a1c6bd39d880379652aecf03022b7c1856276c3"
+  },
+  "date": "2026-09-20",
+  "platform": "Linux amd64",
+  "stage": 1,
+  "scope": "Contract and isolated profile preparation; no inference or live lifecycle validation.",
+  "codex": {
+    "model": "gpt-6-astra",
+    "provider": "openai",
+    "reasoning_effort": "high",
+    "auth_mode": "chatgpt",
+    "login_status": "Logged in using ChatGPT",
+    "credential_handling": "Existing auth file referenced; not copied or included in evidence.",
+    "approval_policy": "on-request",
+    "approvals_reviewer": "user",
+    "schema_runtime_discrepancy": "ThreadStartParams schema includes untrusted but native config loader rejects it; on-request passes."
+  },
+  "hermes": {
+    "version": "0.21.3",
+    "provider": "custom",
+    "model": "qwen3.8-27b-local",
+    "base_url": "http://127.0.0.1:8080/v1",
+    "source_files_locally_modified": false,
+    "credential_handling": "Public no-auth placeholder for preparation; real key supplied only to live child environment.",
+    "resolved_runtime_verified_without_inference": true
+  },
+  "llama": {
+    "health_command": "curl --noproxy '*' --max-time 3 -sS http://127.0.0.1:8080/health",
+    "exit_code": 7,
+    "result": "connection refused, including outside restricted sandbox",
+    "model_metadata_checked": false,
+    "tool_compatibility_checked": false
+  },
+  "validation": [
+    {
+      "command": "make check",
+      "result": "passed before and after changes; go vet and go test; scaffold packages have no Go tests"
+    },
+    {
+      "command": "codex --version; codex login status",
+      "result": "codex-cli 0.155.1; Logged in using ChatGPT; model entitlement unverified"
+    },
+    {
+      "command": "~/.hermes/hermes-agent/venv/bin/python scripts/spike/prepare.py",
+      "result": "passed twice with final configuration; distinct private directories"
+    },
+    {
+      "command": "codex features list (isolated child environment)",
+      "result": "native config load passed; multi_agent false"
+    },
+    {
+      "command": "scripts/spike/verify_hermes.py (invoked by preparation)",
+      "result": "all 21 effective checks passed; metadata inspector blocks socket connections"
+    },
+    {
+      "command": "sh check.sh (disposable fixture)",
+      "result": "pending exits 1; exact ready exits 0; extra trailing content exits 1; original bytes restored and git status clean; no remotes"
+    },
+    {
+      "command": "verify_hermes.py with desktop.auto_continue.enabled=true",
+      "result": "exits 1 and auto_continue_disabled=false; original config restored"
+    },
+    {
+      "command": "prepare.py --base-url https://example.com/v1; prepare.py with credential-bearing loopback URL",
+      "result": "both rejected before fixture creation; no network requests"
+    },
+    {
+      "command": "git check-ignore .cache/spike/<experiment>/launch.json",
+      "result": "generated manifest ignored; private directory mode 0700 and credential environment filtering checked"
+    }
+  ],
+  "not_verified": [
+    "Codex model entitlement",
+    "llama loaded model, actual context capacity and tool template",
+    "live model execution",
+    "approval/input round trips",
+    "cancellation and writer quiescence",
+    "resume and steering",
+    "hard filesystem/network/publication enforcement",
+    "macOS runtime"
+  ],
+  "next_action": "Stage 2 Go transports and synthetic tests; start existing llama.cpp before live Hermes inference."
+}

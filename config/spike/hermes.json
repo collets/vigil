@@ -1,0 +1,33 @@
+{
+  "model": {
+    "default": "${SPIKE_MODEL}",
+    "provider": "custom",
+    "base_url": "${SPIKE_BASE_URL}",
+    "api_key": "${AGENT_CONTROL_LLAMA_API_KEY}",
+    "api_mode": "chat_completions"
+  },
+  "agent": {
+    "max_turns": 8,
+    "api_max_retries": 1,
+    "coding_context": "off",
+    "disabled_toolsets": ["delegation", "code_execution", "cronjob", "kanban", "skills", "memory", "web", "browser", "vision", "mcp"]
+  },
+  "desktop": {"auto_continue": {"enabled": false, "max_attempts": 0}},
+  "terminal": {"backend": "local", "cwd": "${SPIKE_WORKSPACE}", "timeout": 20, "lifetime_seconds": 60},
+  "platform_toolsets": {"cli": ["file", "terminal", "clarify"]},
+  "fallback_model": [],
+  "fallback_providers": [],
+  "compression": {"enabled": false, "idle_compact_after_seconds": 0},
+  "memory": {"memory_enabled": false, "user_profile_enabled": false},
+  "approvals": {"mode": "manual", "timeout": 60, "unattended_mode": "deny", "single_query_mode": "deny", "cron_mode": "deny"},
+  "auxiliary": {
+    "transient_retries": 0,
+    "title_generation": {"enabled": false, "model_upgrade_enabled": false},
+    "background_review": {"enabled": false}
+  },
+  "mcp_servers": {},
+  "hooks": {},
+  "stt": {"enabled": false},
+  "updates": {"check": false},
+  "telemetry": {"shared_metrics": {"enabled": false, "send": false}}
+}
