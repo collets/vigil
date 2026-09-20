@@ -102,3 +102,12 @@ Closed exact-value restrictions now cover profile IDs and operation categories a
 `vigil dashboard PROJECT_ID` now displays overview/readiness, task blockers/checks, pending decisions and recent history from one read-only SQLite transaction. Refresh runs asynchronously with a deadline; failures preserve the previous snapshot with a warning. Reads cannot authorize execution. Inbox and history are capped at 100 records, and terminal control sequences are removed from persisted text. Focused tests cover reopened truth, latest-event order/cap, no mutation, cancellation while loading, retained snapshots and terminal bounds.
 
 Linux and native Mac check/race/build suites passed, as did four platform cross-builds. A real Linux PTY smoke test displayed overview, inbox and named history events and quit cleanly. The first smoke assertion expected a command name while history displayed only the generic event kind; the view now includes the command name and actor from the sanitized event payload. An initial synthetic event fixture omitted its required schema version; fixing the fixture restored the full test run. Decisions and execution controls remain read-only/pending.
+
+
+## Actual controller-process crash probes
+
+`TestDockerControllerCrashQuarantines` passed on WSL/Docker and native Mac/OrbStack at three fixture points: before Docker start, after a detached writer starts, and after the synthetic native result/container exit. The killed child owns the OS lock, workspace claim, endpoint reservation, Docker start and controller-lease renewal. Only this newly spawned disposable helper receives SIGKILL.
+
+After death, reaping retained both workspace and endpoint quarantine. A replacement controller could not claim the workspace. The active container exited from lease loss in about ten seconds; the engine reported a stopped namespace/PID 0 and the writer heartbeat stopped. The pre-start container never wrote. Explicit fixture reconciliation allowed a new fenced owner. No model request was made, so the experiment's inference-idle evidence is known, not inferred from transport closure.
+
+These tests join real process death, container lifetime and coordinator recovery. They do not yet establish the full production launch/result journal, uncertain Docker create reconciliation, actual native submission crash windows, or remote inference cancellation. Offline regression and race suites passed after the addition.
