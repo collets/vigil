@@ -14,6 +14,7 @@ build:
 build-boundary:
 	CGO_ENABLED=0 GOOS=linux $(GO) build -o bin/vigil-guardian ./cmd/vigil-guardian
 	CGO_ENABLED=0 GOOS=linux $(GO) build -o bin/vigil-worker ./cmd/vigil-worker
+	CGO_ENABLED=0 GOOS=linux $(GO) build -o bin/vigil-relay ./cmd/vigil-relay
 hello:
 	$(GO) run ./cmd/vigil hello
 dashboard:

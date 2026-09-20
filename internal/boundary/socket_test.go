@@ -2,8 +2,10 @@ package boundary
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -97,7 +99,13 @@ func TestDockerWorkerUnixRelay(t *testing.T) {
 		t.Fatalf("build worker: %v: %s", err, b)
 	}
 	socket := filepath.Join(base, "provider.sock")
-	l, err := ListenRelaySocket(socket)
+	var l net.Listener
+	var err error
+	if runtime.GOOS == "darwin" {
+		l, err = net.Listen("tcp4", "127.0.0.1:0")
+	} else {
+		l, err = ListenRelaySocket(socket)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,11 +119,23 @@ func TestDockerWorkerUnixRelay(t *testing.T) {
 	defer p.Close()
 	done := make(chan error, 1)
 	go func() { done <- ServeProvider(ctx, l, p) }()
+	socketMount := "type=bind,src=" + socket + ",dst=/relay/provider.sock,readonly"
+	if runtime.GOOS == "darwin" {
+		control := filepath.Join(base, "control")
+		if err := os.Mkdir(control, 0755); err != nil {
+			t.Fatal(err)
+		}
+		lease, _ := json.Marshal(Lease{RunID: "host-route", ExpiresAt: time.Now().Add(9 * time.Second).UnixMilli()})
+		if err := os.WriteFile(filepath.Join(control, "lease.json"), lease, 0444); err != nil {
+			t.Fatal(err)
+		}
+		socketMount = vmHostRelayMount(t, ctx, control, "host-route", "30s", "selected", relayTestToken, l.Addr().String())
+	}
 	script := `set -eu
 test "$(ls /sys/class/net)" = lo
 wget -q -T 5 -O - --header="Authorization: Bearer $OPENAI_API_KEY" --post-data='{"model":"selected","messages":[]}' "$OPENAI_BASE_URL/chat/completions"
 if wget -q -T 5 -O /dev/null --header="Authorization: Bearer $OPENAI_API_KEY" --post-data='{"model":"other"}' "$OPENAI_BASE_URL/chat/completions" 2>/dev/null; then exit 50; fi`
-	id := docker("create", "--pull=never", "--label=vigil.probe=stage5", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit=64", "--memory=128m", "--cpus=0.5", "--restart=no", "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), "--env", "OPENAI_API_KEY="+relayTestToken, "--mount", "type=bind,src="+binary+",dst=/worker,readonly", "--mount", "type=bind,src="+socket+",dst=/provider.sock,readonly", image, "/worker", "--socket", "/provider.sock", "--", "sh", "-c", script)
+	id := docker("create", "--pull=never", "--label=vigil.probe=stage5", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit=64", "--memory=128m", "--cpus=0.5", "--restart=no", "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), "--env", "OPENAI_API_KEY="+relayTestToken, "--mount", "type=bind,src="+binary+",dst=/worker,readonly", "--mount", socketMount, image, "/worker", "--socket", "/relay/provider.sock", "--", "sh", "-c", script)
 	t.Cleanup(func() { docker("rm", "-f", id) })
 	out := docker("start", "-a", id)
 	if code := docker("inspect", "--format", "{{.State.ExitCode}}", id); code != "0" {

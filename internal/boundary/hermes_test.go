@@ -5,10 +5,12 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -128,7 +130,13 @@ func containedHermesProbe(t *testing.T, image, mode string) {
 		}
 	}()
 	socket := filepath.Join(base, "provider.sock")
-	listener, err := ListenRelaySocket(socket)
+	var listener net.Listener
+	var err error
+	if runtime.GOOS == "darwin" {
+		listener, err = net.Listen("tcp4", "127.0.0.1:0")
+	} else {
+		listener, err = ListenRelaySocket(socket)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,6 +147,10 @@ func containedHermesProbe(t *testing.T, image, mode string) {
 	}
 	defer relay.Close()
 	go ServeProvider(ctx, listener, relay)
+	socketMount := "type=bind,src=" + socket + ",dst=/relay/provider.sock,readonly"
+	if runtime.GOOS == "darwin" {
+		socketMount = vmHostRelayMount(t, ctx, control, mode, limit, model, token, listener.Addr().String())
+	}
 	template, err := filepath.Abs("../../config/spike/hermes.json")
 	if err != nil {
 		t.Fatal(err)
@@ -154,7 +166,7 @@ for name,value in DEFAULT_CONFIG['auxiliary'].items():
 home=pathlib.Path(os.environ['HERMES_HOME']);home.mkdir(parents=True,exist_ok=True)
 (home/'config.yaml').write_text(json.dumps(c))
 runpy.run_module('tui_gateway.entry',run_name='__main__')`
-	id := docker("create", "-i", "--pull=never", "--label=vigil.probe=stage5", "--network=none", "--read-only", "--cap-drop=ALL", "--cap-add=SETUID", "--cap-add=SETGID", "--security-opt=no-new-privileges", "--pids-limit=128", "--memory=512m", "--cpus=1", "--restart=no", "--user=0:0", "--tmpfs", "/tmp:rw,nosuid,nodev,size=32m,mode=1777", "--mount", "type=bind,src="+control+",dst=/control,readonly,bind-recursive=disabled", "--mount", "type=bind,src="+work+",dst=/work,bind-recursive=disabled", "--mount", "type=bind,src="+filepath.Join(work, ".git")+",dst=/work/.git,readonly,bind-recursive=readonly,bind-propagation=rprivate", "--mount", "type=bind,src="+native+",dst=/native,bind-recursive=disabled", "--mount", "type=bind,src="+socket+",dst=/relay/provider.sock,readonly", "--mount", "type=bind,src="+template+",dst=/instructions/hermes.json,readonly", "--env", "OPENAI_API_KEY="+token, "--env", "VIGIL_TEST_MODEL="+model, "--env", "HERMES_TUI_TOOLSETS=file,terminal,clarify", "--env", "HERMES_TUI_CHECKPOINTS=false", "--env", "HERMES_TUI_GATEWAY_SHUTDOWN_GRACE_S=1", "--env", "GIT_CONFIG_NOSYSTEM=1", "--env", "GIT_CONFIG_GLOBAL=/dev/null", image, "--run-id", mode, "--uid", fmt.Sprint(os.Getuid()), "--gid", fmt.Sprint(os.Getgid()), "--limit", limit, "--", "/opt/vigil/vigil-worker", "--", "/opt/hermes/.venv/bin/python", "-c", bootstrap)
+	id := docker("create", "-i", "--pull=never", "--label=vigil.probe=stage5", "--network=none", "--read-only", "--cap-drop=ALL", "--cap-add=SETUID", "--cap-add=SETGID", "--security-opt=no-new-privileges", "--pids-limit=128", "--memory=512m", "--cpus=1", "--restart=no", "--user=0:0", "--tmpfs", "/tmp:rw,nosuid,nodev,size=32m,mode=1777", "--mount", "type=bind,src="+control+",dst=/control,readonly,bind-recursive=disabled", "--mount", "type=bind,src="+work+",dst=/work,bind-recursive=disabled", "--mount", "type=bind,src="+filepath.Join(work, ".git")+",dst=/work/.git,readonly,bind-recursive=readonly,bind-propagation=rprivate", "--mount", "type=bind,src="+native+",dst=/native,bind-recursive=disabled", "--mount", socketMount, "--mount", "type=bind,src="+template+",dst=/instructions/hermes.json,readonly", "--env", "OPENAI_API_KEY="+token, "--env", "VIGIL_TEST_MODEL="+model, "--env", "HERMES_TUI_TOOLSETS=file,terminal,clarify", "--env", "HERMES_TUI_CHECKPOINTS=false", "--env", "HERMES_TUI_GATEWAY_SHUTDOWN_GRACE_S=1", "--env", "GIT_CONFIG_NOSYSTEM=1", "--env", "GIT_CONFIG_GLOBAL=/dev/null", image, "--run-id", mode, "--uid", fmt.Sprint(os.Getuid()), "--gid", fmt.Sprint(os.Getgid()), "--limit", limit, "--", "/opt/vigil/vigil-worker", "--", "/opt/hermes/.venv/bin/python", "-c", bootstrap)
 	t.Cleanup(func() {
 		cleanup, stop := context.WithTimeout(context.Background(), 20*time.Second)
 		defer stop()

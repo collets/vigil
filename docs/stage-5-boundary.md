@@ -18,9 +18,9 @@ The first probes protect top-level `.git` and instructions. They do not establis
 
 Limits: 8 MiB request body, 64 nesting levels, 16 MiB provider output, one in-flight request per relay, 30-minute transport ceiling. Output overflow or broken upstream streaming aborts the HTTP transport rather than reporting a clean end. Provider error bodies/cookies/auth headers are not forwarded. Proxy environment variables are ignored. Revoking the relay cancels its active transport and refuses subsequent calls, but does not prove remote inference has stopped.
 
-The Unix-socket bridge passed a real WSL/Docker test using a network-isolated worker and a host synthetic provider. The actual provider key stayed outside the container; the worker's unauthorized model request never reached upstream. This topology is verified only on this WSL engine. On macOS OrbStack 29.4.0, the mounted host socket failed with connection refused, while filesystem and guardian cleanup primitives passed. A relay container and worker can instead share a named Unix-socket volume inside the same Linux VM; that topology and credential handoff still need implementation and native testing. Do not assume a Mac host Unix socket traverses the VM boundary.
+The Unix-socket bridge passed a real WSL/Docker test using a network-isolated worker and a host synthetic provider. The actual provider key stayed outside the container; the worker's unauthorized model request never reached upstream. This topology is verified only on this WSL engine. On macOS OrbStack 29.4.0, the mounted host socket failed with connection refused, while filesystem and guardian cleanup primitives passed. The replacement VM relay now passes: a separate non-root relay process shares a socket volume read-only with the network-isolated worker. Its bounded, closed bootstrap arrives only on stdin. A root guardian controls its lease and hard deadline. Synthetic tests passed on both engines, including wrong-model denial and lease-loss revocation. Do not assume a Mac host Unix socket traverses the VM boundary.
 
-The real Hermes gateway and one local model turn now pass through the WSL boundary with a pinned image and private native home. Normal close and lease loss stop detached writers. This is partial harness evidence: full Git layouts, controller crashes, persisted dispatch and macOS qualification remain outstanding. See the results record for exact image and model identity.
+The real Hermes gateway and one local model turn per platform now pass through the WSL and OrbStack boundaries with pinned architecture-specific images and private native homes. Normal close and lease loss stop detached writers. This is partial harness evidence: full Git layouts, actual controller crashes, persisted dispatch and Codex qualification remain outstanding. See the results record for exact image and model identity.
 
 ## Qualification still required
 
@@ -32,3 +32,10 @@ The real Hermes gateway and one local model turn now pass through the WSL bounda
 6. Bind evidence to runtime/image/guardian/profile/harness versions and digests. Only the trusted core may consume successful evidence to enable dispatch; profile declarations cannot manufacture it.
 
 See [foundation results](research/stage-5-foundation-results.md) for executed primitive tests and [expanded execution plan](stage-5-execution.md) for the remaining application work.
+
+
+## OrbStack host-provider route
+
+On OrbStack, the VM relay forwards to a loopback host relay using `host.docker.internal`, the [documented Mac-host route](https://docs.orbstack.dev/docker/network). Only the VM relay has a bridge network; the worker retains `network=none`. No TCP ports are published. The host relay holds the real provider key. The VM relay receives only the per-run token on stdin, and its shared volume contains only the Unix socket. Synthetic tests exercised this full route, rather than assuming VM-to-host reachability from the shared-volume test.
+
+The Mac live probe temporarily forwarded Mac loopback port 8080 over SSH to the existing Windows llama.cpp service reached from WSL. The credential was handed to the Mac test process through SSH stdin and stayed outside both containers. The tunnel closed after the one-turn experiment. This remains test orchestration: production cross-host capacity ownership, persisted identities, admission checks and crash reconciliation are not yet wired.
