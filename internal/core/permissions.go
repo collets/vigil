@@ -258,7 +258,15 @@ type InboxEntry struct {
 }
 
 func (e *Engine) Inbox(ctx context.Context) ([]InboxEntry, error) {
-	rows, err := e.DB.SQL.QueryContext(ctx, "SELECT id,kind,state,context_json,created_at,coalesce(deadline,0) FROM requests WHERE state='pending' ORDER BY created_at,id LIMIT 100")
+	return readInbox(ctx, e.DB.SQL)
+}
+
+type queryReader interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func readInbox(ctx context.Context, reader queryReader) ([]InboxEntry, error) {
+	rows, err := reader.QueryContext(ctx, "SELECT id,kind,state,context_json,created_at,coalesce(deadline,0) FROM requests WHERE state='pending' ORDER BY created_at,id LIMIT 100")
 	if err != nil {
 		return nil, err
 	}
@@ -288,10 +296,18 @@ type Event struct {
 }
 
 func (e *Engine) Events(ctx context.Context, after int64) ([]Event, error) {
+	return readEvents(ctx, e.DB.SQL, after, false)
+}
+
+func readEvents(ctx context.Context, reader queryReader, after int64, latest bool) ([]Event, error) {
 	if after < 0 {
 		return nil, errors.New("negative event cursor")
 	}
-	rows, err := e.DB.SQL.QueryContext(ctx, "SELECT sequence,kind,occurred_at,coalesce(command_id,''),payload_json FROM events WHERE sequence>? ORDER BY sequence LIMIT 100", after)
+	query := "SELECT sequence,kind,occurred_at,coalesce(command_id,''),payload_json FROM events WHERE sequence>? ORDER BY sequence LIMIT 100"
+	if latest {
+		query = "SELECT sequence,kind,occurred_at,coalesce(command_id,''),payload_json FROM events WHERE sequence>? ORDER BY sequence DESC LIMIT 100"
+	}
+	rows, err := reader.QueryContext(ctx, query, after)
 	if err != nil {
 		return nil, err
 	}
@@ -305,6 +321,11 @@ func (e *Engine) Events(ctx context.Context, after int64) ([]Event, error) {
 		}
 		event.Payload = json.RawMessage(strings.TrimSpace(raw))
 		out = append(out, event)
+	}
+	if latest {
+		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+			out[i], out[j] = out[j], out[i]
+		}
 	}
 	return out, rows.Err()
 }

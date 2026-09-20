@@ -118,7 +118,7 @@ Deliverable: concrete design decisions and implementation tasks mapped to the ex
 
 ## Stage 5 — Deliver a narrow functional slice
 
-Follow the [expanded execution plan](stage-5-execution.md) and [Stage 5 backlog](stage-5-plan.md), including containment before strict production editing. The initial persisted planning/control slice is implemented; broad B/C requirements, D profile qualification and E–J remain in progress/pending. The original functional order remains:
+Follow the [expanded execution plan](stage-5-execution.md) and [Stage 5 backlog](stage-5-plan.md), including containment before strict production editing. The initial persisted planning/control slice and read-only project dashboard are implemented; broad B/C requirements, D profile qualification and E–J remain in progress/pending. The original functional order remains:
 
 1. Manual project/profile setup, repository discovery, branch preparation, and one persisted task execution.
 2. Sequential dispatch with approvals, pause/stop/recovery, and shared workspace/local-model coordination.

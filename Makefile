@@ -18,14 +18,14 @@ build-boundary:
 hello:
 	$(GO) run ./cmd/vigil hello
 dashboard:
-	$(GO) run ./cmd/vigil dashboard
+	$(GO) run ./cmd/vigil dashboard "$(PROJECT)"
 fmt:
 	$(GO) fmt ./...
 check:
 	$(GO) vet ./...
 	$(GO) test ./...
 check-race:
-	$(GO) test -race ./internal/harness ./internal/spike ./internal/store ./internal/artifacts ./internal/core ./internal/coordinator ./internal/boundary
+	$(GO) test -race ./internal/harness ./internal/spike ./internal/store ./internal/artifacts ./internal/core ./internal/coordinator ./internal/boundary ./internal/tui
 cross-build:
 	@set -e; for os in linux darwin; do for arch in amd64 arm64; do \
 		echo "Building $$os/$$arch"; \

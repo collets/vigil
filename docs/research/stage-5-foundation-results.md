@@ -95,3 +95,10 @@ The user's away-time spending/safety constraints and deferred decisions are trac
 ## Enclosing policy restrictions
 
 Closed exact-value restrictions now cover profile IDs and operation categories at project, plan and task scope. Offline tests prove that narrower scopes cannot widen the intersection, empty lists deny all values, invalid dimensions/values fail, readiness reports excluded profiles, and operation admission denies categories excluded by an enclosing plan. Plan replacement invalidates old authority by advancing the policy epoch; tests prove a later widening cannot revive the old operation/grant pair. These handlers still perform no external effect. Repository/path/check/manual definitions, global grants and runtime policy integration remain incomplete.
+
+
+## Persisted dashboard
+
+`vigil dashboard PROJECT_ID` now displays overview/readiness, task blockers/checks, pending decisions and recent history from one read-only SQLite transaction. Refresh runs asynchronously with a deadline; failures preserve the previous snapshot with a warning. Reads cannot authorize execution. Inbox and history are capped at 100 records, and terminal control sequences are removed from persisted text. Focused tests cover reopened truth, latest-event order/cap, no mutation, cancellation while loading, retained snapshots and terminal bounds.
+
+Linux and native Mac check/race/build suites passed, as did four platform cross-builds. A real Linux PTY smoke test displayed overview, inbox and named history events and quit cleanly. The first smoke assertion expected a command name while history displayed only the generic event kind; the view now includes the command name and actor from the sanitized event payload. An initial synthetic event fixture omitted its required schema version; fixing the fixture restored the full test run. Decisions and execution controls remain read-only/pending.

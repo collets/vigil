@@ -1,6 +1,6 @@
 # Persisted planning CLI
 
-Stage 5's first slice persists definitions and decisions. It does not launch production agents, accept tasks, or deliver changes. `dashboard` and `spike` retain their earlier scaffold/diagnostic behavior.
+Stage 5's first slice persists definitions and decisions. It does not launch production agents, accept tasks, or deliver changes. `dashboard PROJECT_ID` provides read-only persisted views; `spike` remains a separate diagnostic runner.
 
 ## Initialize and inspect
 
@@ -132,3 +132,13 @@ Project configuration, `plan.put` and each task accept an optional `restrictions
 Only those two dimensions are supported. Values are exact identifiers. An omitted dimension adds no restriction; an explicit empty list permits nothing. Null lists, duplicates, unknown dimensions/categories and wildcards are rejected. Project, plan and task sets intersect; a task cannot restore a value excluded by its plan or project. Project denies still dominate operation allowances. Profile restrictions apply to implementation, review and supervisor eligibility; status includes effective task restrictions and their origins.
 
 Operation restrictions are checked when requesting permission, granting it and internally starting its effect. Replacing a plan definition now advances the project policy epoch and retires pending decisions, conservatively invalidating old operation/grant pairs even if only plan-level restrictions changed. Later widening does not reactivate them. Reordering alone preserves the policy epoch. An allowance is a restriction ceiling, not a grant and not permission to launch an effect.
+
+
+## Terminal dashboard
+
+```sh
+./bin/vigil dashboard PROJECT_ID
+# or: make dashboard PROJECT=PROJECT_ID
+```
+
+The dashboard reads one consistent database snapshot for readiness, tasks, the first 100 pending/expired decisions and the latest 100 history events. It refreshes asynchronously every two seconds; Tab or 1–4 changes views, arrows/Page Up/Page Down scroll, `r` refreshes and `q` quits. Failed refreshes retain the previous snapshot with a visible warning. Project text is stripped of terminal control sequences. Decisions remain read-only here; use `project inbox` for full context and `project apply` for versioned human actions. No dashboard key starts a model, approves a request, accepts a task or performs delivery.

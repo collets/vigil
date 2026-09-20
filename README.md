@@ -2,7 +2,7 @@
 
 A local control panel for development agents running through existing harnesses, combining frontier and local models.
 
-Status: bounded Codex/Hermes adapters, Linux/macOS lifecycle evidence, and the first persisted Stage 5 core: project definitions, command receipts, policy decisions, artifacts, workspace ownership and endpoint queues. The dashboard remains a scaffold; production scheduling, checkpoint recovery and delivery are not implemented. Strict execution remains gated by containment qualification. Targets: Linux and macOS, on amd64 and arm64.
+Status: bounded Codex/Hermes adapters, Linux/macOS lifecycle evidence, and the first persisted Stage 5 core: project definitions, command receipts, policy decisions, artifacts, workspace ownership and endpoint queues. The read-only dashboard shows persisted readiness, tasks, inbox and history; production scheduling, checkpoint recovery and delivery are not implemented. Strict execution remains gated by containment qualification. Targets: Linux and macOS, on amd64 and arm64.
 
 - [Technology proposal](docs/technology.md): Go versus Python and the proposed foundation.
 - [Minimal architecture](docs/architecture.md): responsibilities and integration boundaries.
@@ -27,19 +27,20 @@ Install [Go 1.27.1 or newer](https://go.dev/dl/) and Make. This workspace also h
 ```sh
 make build
 ./bin/vigil hello
-./bin/vigil dashboard
+./bin/vigil project init /absolute/path/to/project
+./bin/vigil dashboard PROJECT_ID
 ```
 
-The dashboard uses an interactive terminal. Press `q`, `Esc`, or `Ctrl+C` to exit. Use `hello` for noninteractive environments. `--help`, `--version`, and Cobra shell completion are available.
+Use the project ID returned by initialization. The dashboard uses an interactive terminal and refreshes every two seconds. Use Tab or 1–4 to switch views, arrow keys to scroll, and `q`, `Esc`, or `Ctrl+C` to exit. Use `hello` for noninteractive environments. `--help`, `--version`, and Cobra shell completion are available.
 
-By default, both commands query a temporary in-memory SQLite database. To verify a file-backed connection:
+The dashboard uses private persisted application state. The separate `hello` diagnostic queries a temporary in-memory SQLite database by default. To verify a file-backed connection:
 
 ```sh
 mkdir -p .vigil
 ./bin/vigil hello --db .vigil/demo.sqlite
 ```
 
-The parent directory must exist. The scaffold queries SQLite's version and does not create application tables or persist tasks. Connection failures return a nonzero exit code.
+The parent directory must exist. The `hello` diagnostic queries SQLite's version and does not create application tables or persist tasks. Connection failures return a nonzero exit code.
 
 ## Development
 
@@ -65,7 +66,7 @@ cmd/vigil/          executable entry point
 internal/cli/       Cobra commands
 internal/harness/   bounded stdio transport and native session adapters
 internal/spike/     isolated development runner and fixture validation
-internal/tui/       Bubble Tea hello-world screen
+internal/tui/       Bubble Tea persisted project views
 internal/storage/   SQLite connection check
 internal/store/     private application databases, migrations and durable commands
 internal/core/      project definitions, readiness and human authority

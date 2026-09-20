@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"vigil/internal/core"
 	"vigil/internal/storage"
 	"vigil/internal/tui"
 )
@@ -36,11 +37,13 @@ func NewCommand() *cobra.Command {
 		},
 	})
 	root.AddCommand(&cobra.Command{
-		Use:   "dashboard",
-		Short: "Open the hello-world terminal dashboard",
-		Args:  cobra.NoArgs,
+		Use:   "dashboard PROJECT_ID",
+		Short: "Inspect persisted readiness, tasks, inbox and history",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return tui.Run(cmd.Context(), database, cmd.InOrStdin(), cmd.OutOrStdout())
+			return withProject(cmd, &stateDir, args[0], func(e *core.Engine) error {
+				return tui.RunProject(cmd.Context(), e, cmd.InOrStdin(), cmd.OutOrStdout())
+			})
 		},
 	})
 	return root
