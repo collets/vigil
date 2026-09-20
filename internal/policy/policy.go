@@ -31,26 +31,29 @@ type Profile struct {
 	Capabilities       []Capability `json:"capabilities"`
 }
 type Config struct {
-	ModelPolicy       string   `json:"model_policy"`
-	Deny              []string `json:"deny"`
-	RequiredChecks    []string `json:"required_checks"`
-	TaskLimitMS       int64    `json:"task_limit_ms"`
-	AttemptLimitMS    int64    `json:"attempt_limit_ms"`
-	RepairLimit       int      `json:"repair_limit"`
-	SupervisorProfile string   `json:"supervisor_profile"`
-	ApprovalMode      string   `json:"approval_mode"`
+	Restrictions      Restrictions `json:"restrictions,omitempty"`
+	ModelPolicy       string       `json:"model_policy"`
+	Deny              []string     `json:"deny"`
+	RequiredChecks    []string     `json:"required_checks"`
+	TaskLimitMS       int64        `json:"task_limit_ms"`
+	AttemptLimitMS    int64        `json:"attempt_limit_ms"`
+	RepairLimit       int          `json:"repair_limit"`
+	SupervisorProfile string       `json:"supervisor_profile"`
+	ApprovalMode      string       `json:"approval_mode"`
 }
 type Layer struct {
-	Name    string
-	Deny    []string
-	Checks  []string
-	LimitMS int64
+	Restrictions Restrictions
+	Name         string
+	Deny         []string
+	Checks       []string
+	LimitMS      int64
 }
 type Resolved struct {
-	Deny    []string            `json:"deny"`
-	Checks  []string            `json:"checks"`
-	LimitMS int64               `json:"limit_ms"`
-	Origins map[string][]string `json:"origins"`
+	Restrictions Restrictions        `json:"restrictions"`
+	Deny         []string            `json:"deny"`
+	Checks       []string            `json:"checks"`
+	LimitMS      int64               `json:"limit_ms"`
+	Origins      map[string][]string `json:"origins"`
 }
 
 func Contains(values []string, value string) bool {
@@ -62,9 +65,24 @@ func Contains(values []string, value string) bool {
 	return false
 }
 func Resolve(layers []Layer) (Resolved, error) {
-	r := Resolved{Origins: map[string][]string{}}
+	r := Resolved{Origins: map[string][]string{}, Restrictions: Restrictions{}}
 	denies, checks := map[string]bool{}, map[string]bool{}
 	for _, layer := range layers {
+		if err := layer.Restrictions.Validate(); err != nil {
+			return r, err
+		}
+		for dimension, values := range layer.Restrictions {
+			prior, present := r.Restrictions[dimension]
+			intersection := []string{}
+			for _, value := range values {
+				if !present || Contains(prior, value) {
+					intersection = append(intersection, value)
+				}
+			}
+			sort.Strings(intersection)
+			r.Restrictions[dimension] = intersection
+			r.Origins["restriction:"+dimension] = append(r.Origins["restriction:"+dimension], layer.Name)
+		}
 		if layer.LimitMS < 0 {
 			return r, errors.New("negative execution limit")
 		}
@@ -91,6 +109,9 @@ func Resolve(layers []Layer) (Resolved, error) {
 	return r, nil
 }
 func (c Config) Validate() error {
+	if err := c.Restrictions.Validate(); err != nil {
+		return err
+	}
 	if c.ModelPolicy != "local_only" && c.ModelPolicy != "hybrid" && c.ModelPolicy != "cloud_allowed" {
 		return errors.New("choose explicit model_policy: local_only, hybrid or cloud_allowed")
 	}
@@ -137,6 +158,9 @@ func (p Profile) Validate() error {
 }
 func Eligibility(c Config, p Profile, role string) []string {
 	var reasons []string
+	if !c.Restrictions.Allows("profile_ids", p.ID) {
+		reasons = append(reasons, "profile denied by enclosing restriction: "+p.ID)
+	}
 	if !Contains(p.Roles, role) {
 		reasons = append(reasons, "profile not eligible for "+role)
 	}
@@ -152,20 +176,21 @@ type Criterion struct {
 	Manual bool   `json:"manual"`
 }
 type Task struct {
-	ID             string      `json:"id"`
-	Objective      string      `json:"objective"`
-	Criteria       []Criterion `json:"criteria"`
-	Dependencies   []string    `json:"dependencies"`
-	Context        []string    `json:"context"`
-	Scope          []string    `json:"scope"`
-	Checks         []string    `json:"checks"`
-	Questions      []string    `json:"questions"`
-	Implementation string      `json:"implementation_profile"`
-	Reviewer       string      `json:"reviewer_profile"`
-	Difficulty     string      `json:"difficulty"`
-	Rationale      string      `json:"rationale"`
-	ActiveLimitMS  int64       `json:"active_limit_ms"`
-	RepairLimit    int         `json:"repair_limit"`
+	Restrictions   Restrictions `json:"restrictions,omitempty"`
+	ID             string       `json:"id"`
+	Objective      string       `json:"objective"`
+	Criteria       []Criterion  `json:"criteria"`
+	Dependencies   []string     `json:"dependencies"`
+	Context        []string     `json:"context"`
+	Scope          []string     `json:"scope"`
+	Checks         []string     `json:"checks"`
+	Questions      []string     `json:"questions"`
+	Implementation string       `json:"implementation_profile"`
+	Reviewer       string       `json:"reviewer_profile"`
+	Difficulty     string       `json:"difficulty"`
+	Rationale      string       `json:"rationale"`
+	ActiveLimitMS  int64        `json:"active_limit_ms"`
+	RepairLimit    int          `json:"repair_limit"`
 }
 
 func ValidateTasks(tasks []Task) error {
@@ -174,6 +199,9 @@ func ValidateTasks(tasks []Task) error {
 	}
 	byID := map[string]Task{}
 	for _, t := range tasks {
+		if err := t.Restrictions.Validate(); err != nil {
+			return err
+		}
 		if t.ID == "" || byID[t.ID].ID != "" || t.Objective == "" || len(t.Criteria) == 0 || len(t.Scope) == 0 || t.Implementation == "" || t.Reviewer == "" || t.Difficulty == "" || t.Rationale == "" || t.ActiveLimitMS <= 0 || t.RepairLimit < 0 {
 			return errors.New("duplicate task ID or incomplete task definition")
 		}

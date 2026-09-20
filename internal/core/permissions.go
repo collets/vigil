@@ -51,7 +51,7 @@ func configAt(ctx context.Context, tx *store.Tx) (policy.Config, error) {
 	return c, err
 }
 func validateOperation(ctx context.Context, tx *store.Tx, p OperationRequest, c policy.Config) error {
-	if !policy.Contains([]string{"plan_accept", "profile_assignment", "paid_spending", "task_change", "commit", "push", "draft_request", "checkpoint_restore"}, p.Category) {
+	if !policy.Contains(policy.OperationCategories, p.Category) {
 		return errors.New("unknown or forbidden permission category")
 	}
 	if policy.Contains(c.Deny, p.Category) || policy.Contains(c.Deny, "*") {
@@ -60,26 +60,42 @@ func validateOperation(ctx context.Context, tx *store.Tx, p OperationRequest, c 
 	if !validDigest(p.ResourceDigest) || !validDigest(p.ArgumentsDigest) {
 		return errors.New("exact SHA-256 resource and arguments digests required")
 	}
+	layers := []policy.Layer{{Name: "project", Restrictions: c.Restrictions}}
 	if p.TaskID != "" {
 		var plan string
 		var revision int
-		if err := tx.QueryRowContext(ctx, "SELECT plan_id,revision FROM tasks WHERE id=?", p.TaskID).Scan(&plan, &revision); err != nil {
+		var raw string
+		if err := tx.QueryRowContext(ctx, "SELECT t.plan_id,t.revision,r.definition_json FROM tasks t JOIN task_revisions r ON r.task_id=t.id AND r.revision=t.revision WHERE t.id=?", p.TaskID).Scan(&plan, &revision, &raw); err != nil {
 			return err
 		}
 		if p.PlanID != plan || p.TaskRevision != revision {
 			return errors.New("stale or foreign operation task context")
 		}
+		var task policy.Task
+		if err := json.Unmarshal([]byte(raw), &task); err != nil {
+			return err
+		}
+		layers = append(layers, policy.Layer{Name: "task", Restrictions: task.Restrictions})
 	} else if p.TaskRevision != 0 {
 		return errors.New("task revision requires task ID")
 	}
 	if p.PlanID != "" {
-		var n int
-		if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM plans WHERE id=?", p.PlanID).Scan(&n); err != nil {
+		var raw string
+		if err := tx.QueryRowContext(ctx, "SELECT r.definition_json FROM plans p JOIN plan_revisions r ON r.plan_id=p.id AND r.revision=p.revision WHERE p.id=?", p.PlanID).Scan(&raw); err != nil {
 			return err
 		}
-		if n != 1 {
-			return errors.New("unknown plan")
+		var plan Plan
+		if err := json.Unmarshal([]byte(raw), &plan); err != nil {
+			return err
 		}
+		layers = append(layers, policy.Layer{Name: "plan", Restrictions: plan.Restrictions})
+	}
+	resolved, err := policy.Resolve(layers)
+	if err != nil {
+		return err
+	}
+	if !resolved.Restrictions.Allows("operation_categories", p.Category) {
+		return errors.New("enclosing restriction denies this operation category")
 	}
 	return nil
 }

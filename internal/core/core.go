@@ -250,6 +250,14 @@ func (e *Engine) Apply(ctx context.Context, actor Authority, cmd Envelope) (json
 			result = map[string]any{"profile_id": p.ID, "profile_revision": pr}
 		case "plan.put":
 			result, err = e.putPlan(ctx, tx, cmd)
+			if err == nil {
+				// A definition replacement invalidates old operation authority,
+				// including plan-wide restrictions not bound to a task revision.
+				_, err = tx.ExecContext(ctx, "UPDATE project SET policy_epoch=policy_epoch+1")
+				if err == nil {
+					_, err = tx.ExecContext(ctx, "UPDATE requests SET state='cancelled',resolved_at=? WHERE state='pending'", store.Now())
+				}
+			}
 		case "plan.reorder":
 			result, err = e.reorder(ctx, tx, actor, cmd)
 		case "operation.request", "permission.grant", "permission.revoke", "operation.start":
@@ -268,12 +276,13 @@ func (e *Engine) Apply(ctx context.Context, actor Authority, cmd Envelope) (json
 }
 
 type Plan struct {
-	ID                       string        `json:"id"`
-	Title                    string        `json:"title"`
-	Specification            string        `json:"specification"`
-	Approved                 bool          `json:"approved"`
-	AuthorizeCriteriaChanges bool          `json:"authorize_criteria_changes"`
-	Tasks                    []policy.Task `json:"tasks"`
+	Restrictions             policy.Restrictions `json:"restrictions,omitempty"`
+	ID                       string              `json:"id"`
+	Title                    string              `json:"title"`
+	Specification            string              `json:"specification"`
+	Approved                 bool                `json:"approved"`
+	AuthorizeCriteriaChanges bool                `json:"authorize_criteria_changes"`
+	Tasks                    []policy.Task       `json:"tasks"`
 }
 
 func (e *Engine) putPlan(ctx context.Context, tx *store.Tx, cmd Envelope) (any, error) {
@@ -285,6 +294,9 @@ func (e *Engine) putPlan(ctx context.Context, tx *store.Tx, cmd Envelope) (any, 
 		return nil, errors.New("plan ID/title/specification required")
 	}
 	if err := policy.ValidateTasks(p.Tasks); err != nil {
+		return nil, err
+	}
+	if err := p.Restrictions.Validate(); err != nil {
 		return nil, err
 	}
 	var revision int
@@ -463,11 +475,13 @@ type Readiness struct {
 	ExecutionEligible bool            `json:"execution_eligible"`
 }
 type TaskReadiness struct {
-	ID             string   `json:"id"`
-	State          string   `json:"state"`
-	Revision       int      `json:"revision"`
-	Issues         []string `json:"issues"`
-	RequiredChecks []string `json:"required_checks"`
+	Restrictions   policy.Restrictions `json:"restrictions"`
+	PolicyOrigins  map[string][]string `json:"policy_origins"`
+	ID             string              `json:"id"`
+	State          string              `json:"state"`
+	Revision       int                 `json:"revision"`
+	Issues         []string            `json:"issues"`
+	RequiredChecks []string            `json:"required_checks"`
 }
 
 func (e *Engine) Readiness(ctx context.Context) (Readiness, error) {
@@ -522,16 +536,18 @@ func (e *Engine) readiness(ctx context.Context, tx *sql.Tx) (Readiness, error) {
 	} else {
 		r.DefinitionIssues = append(r.DefinitionIssues, policy.Eligibility(config, p, "supervisor")...)
 	}
-	rows, err = tx.QueryContext(ctx, "SELECT t.id,t.state,t.revision,r.definition_json FROM tasks t JOIN task_revisions r ON r.task_id=t.id AND r.revision=t.revision ORDER BY t.plan_id,t.rank,t.id")
+	rows, err = tx.QueryContext(ctx, "SELECT t.id,t.state,t.revision,r.definition_json,pr.definition_json FROM tasks t JOIN task_revisions r ON r.task_id=t.id AND r.revision=t.revision JOIN plans p ON p.id=t.plan_id JOIN plan_revisions pr ON pr.plan_id=p.id AND pr.revision=p.revision ORDER BY t.plan_id,t.rank,t.id")
 	if err != nil {
 		return r, err
 	}
 	definitions := []policy.Task{}
+	planRestrictions := []policy.Restrictions{}
 	states := map[string]string{}
 	for rows.Next() {
 		var task TaskReadiness
 		var raw string
-		if err := rows.Scan(&task.ID, &task.State, &task.Revision, &raw); err != nil {
+		var planRaw string
+		if err := rows.Scan(&task.ID, &task.State, &task.Revision, &raw, &planRaw); err != nil {
 			rows.Close()
 			return r, err
 		}
@@ -541,6 +557,12 @@ func (e *Engine) readiness(ctx context.Context, tx *sql.Tx) (Readiness, error) {
 			return r, err
 		}
 		definitions = append(definitions, d)
+		var plan Plan
+		if err := json.Unmarshal([]byte(planRaw), &plan); err != nil {
+			rows.Close()
+			return r, err
+		}
+		planRestrictions = append(planRestrictions, plan.Restrictions)
 		states[task.ID] = task.State
 		r.Tasks = append(r.Tasks, task)
 	}
@@ -552,17 +574,25 @@ func (e *Engine) readiness(ctx context.Context, tx *sql.Tx) (Readiness, error) {
 	for n, d := range definitions {
 		t := &r.Tasks[n]
 		t.Issues = []string{}
+		resolved, err := policy.Resolve([]policy.Layer{{Name: "project", Restrictions: config.Restrictions, Checks: config.RequiredChecks, Deny: config.Deny}, {Name: "plan", Restrictions: planRestrictions[n]}, {Name: "task", Restrictions: d.Restrictions, Checks: d.Checks}})
+		if err != nil {
+			return r, err
+		}
+		taskConfig := config
+		taskConfig.Restrictions = resolved.Restrictions
+		t.Restrictions = resolved.Restrictions
+		t.PolicyOrigins = resolved.Origins
 		for _, dep := range d.Dependencies {
 			if states[dep] != "accepted" {
 				t.Issues = append(t.Issues, "dependency not accepted: "+dep)
 			}
 		}
-		for role, id := range map[string]string{"implementation": d.Implementation, "review": d.Reviewer} {
+		for role, id := range map[string]string{"implementation": d.Implementation, "review": d.Reviewer, "supervisor": config.SupervisorProfile} {
 			p, ok := profiles[id]
 			if !ok {
 				t.Issues = append(t.Issues, "missing "+role+" profile: "+id)
 			} else {
-				t.Issues = append(t.Issues, policy.Eligibility(config, p, role)...)
+				t.Issues = append(t.Issues, policy.Eligibility(taskConfig, p, role)...)
 			}
 		}
 		for _, question := range d.Questions {
@@ -574,7 +604,6 @@ func (e *Engine) readiness(ctx context.Context, tx *sql.Tx) (Readiness, error) {
 		if d.RepairLimit > config.RepairLimit {
 			t.Issues = append(t.Issues, "repair allowance exceeds project ceiling")
 		}
-		resolved, _ := policy.Resolve([]policy.Layer{{Name: "project", Checks: config.RequiredChecks}, {Name: "task", Checks: d.Checks}})
 		t.RequiredChecks = resolved.Checks
 		sort.Strings(t.Issues)
 	}

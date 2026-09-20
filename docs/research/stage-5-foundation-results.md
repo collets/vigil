@@ -90,3 +90,8 @@ Exactly one live Mac qualification turn then used `qwen3.8-27b-local` through th
 The new conservative planner and alias/replacement tests passed natively on Linux and macOS. The pinned Hermes images supplied Git for inference-free Docker probes on both architectures. Allowed fixture edits succeeded; protected staging/commit/config/ref/raw writes, mount replacement, hard-link creation and a local push into the original Git directory were rejected. Native regression/race suites, builds and the four cross-builds passed. Unsupported nested/alias layouts remain explicit refusals; this does not qualify arbitrary project layouts or hostile concurrent host mutation. No additional inference or publishing occurred in this increment.
 
 The user's away-time spending/safety constraints and deferred decisions are tracked in [pending decisions](../pending-decisions.md). Stage 6 remains conditional on finishing the accepted Stage 5 milestone.
+
+
+## Enclosing policy restrictions
+
+Closed exact-value restrictions now cover profile IDs and operation categories at project, plan and task scope. Offline tests prove that narrower scopes cannot widen the intersection, empty lists deny all values, invalid dimensions/values fail, readiness reports excluded profiles, and operation admission denies categories excluded by an enclosing plan. Plan replacement invalidates old authority by advancing the policy epoch; tests prove a later widening cannot revive the old operation/grant pair. These handlers still perform no external effect. Repository/path/check/manual definitions, global grants and runtime policy integration remain incomplete.
