@@ -6,7 +6,7 @@ Status: Stage 1 complete. The Go application remains a scaffold; transport imple
 
 ## Resume here
 
-1. Work in `/home/scoletta/development/scdeveloper/agent-control`.
+1. Work in `/home/scoletta/development/scdeveloper/vigil`.
 2. Read this document, [session continuity audit](session-audit.md), [requirements](requirements.md), [architecture](architecture.md), and [harness investigation](harness-capabilities.md).
 3. Inspect current Git status and applicable repository instructions. Preserve existing files and uncommitted work; do not reset the checkout.
 4. Run `make check` to establish the starting baseline. Check installed harness versions against the evidence below; refresh affected protocol research if versions differ.
@@ -14,7 +14,7 @@ Status: Stage 1 complete. The Go application remains a scaffold; transport imple
 
 Suggested handoff prompt:
 
-> Resume agent-control using docs/next-steps.md and docs/adapter-spike.md. Stage 1 is complete. Implement Stage 2 Go transports and focused synthetic tests, then run explicit bounded fixture turns. The local llama.cpp service must be started before the Hermes live turn. Preserve the accepted requirements and existing work; do not expand into the scheduler/dashboard yet.
+> Resume vigil using docs/next-steps.md and docs/adapter-spike.md. Stage 1 is complete. Implement Stage 2 Go transports and focused synthetic tests, then run explicit bounded fixture turns. The local llama.cpp service must be started before the Hermes live turn. Preserve the accepted requirements and existing work; do not expand into the scheduler/dashboard yet.
 
 ## Current state
 

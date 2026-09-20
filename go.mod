@@ -1,4 +1,4 @@
-module agent-control
+module vigil
 
 go 1.27.1
 

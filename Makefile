@@ -10,11 +10,11 @@ export GOCACHE := $(CURDIR)/.cache/go-build
 tidy:
 	$(GO) mod tidy
 build:
-	CGO_ENABLED=0 $(GO) build -o bin/agent-control ./cmd/agent-control
+	CGO_ENABLED=0 $(GO) build -o bin/vigil ./cmd/vigil
 hello:
-	$(GO) run ./cmd/agent-control hello
+	$(GO) run ./cmd/vigil hello
 dashboard:
-	$(GO) run ./cmd/agent-control dashboard
+	$(GO) run ./cmd/vigil dashboard
 fmt:
 	$(GO) fmt ./...
 check:
@@ -23,5 +23,5 @@ check:
 cross-build:
 	@set -e; for os in linux darwin; do for arch in amd64 arm64; do \
 		echo "Building $$os/$$arch"; \
-		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -o dist/agent-control-$$os-$$arch ./cmd/agent-control; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -o dist/vigil-$$os-$$arch ./cmd/vigil; \
 	done; done

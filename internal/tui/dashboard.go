@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"io"
 
-	"agent-control/internal/storage"
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"vigil/internal/storage"
 )
 
 type databaseResult struct {
@@ -49,7 +49,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() tea.View {
-	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("63")).Render("agent-control")
+	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("63")).Render("Vigil")
 	status := m.spinner.View() + " Connecting to SQLite..."
 	if m.result != nil {
 		status = fmt.Sprintf("SQLite %s connected.", m.result.version)

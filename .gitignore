@@ -5,7 +5,7 @@
 /bin/
 /dist/
 /tmp/
-/.agent-control/
+/.vigil/
 *.log
 /.tools/
 /.cache/

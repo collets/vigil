@@ -91,7 +91,7 @@ def main():
         "SPIKE_MODEL": hermes["model"],
         "SPIKE_BASE_URL": hermes["base_url"],
         # Public dummy for unauthenticated llama.cpp; real access is supplied at live launch only.
-        "AGENT_CONTROL_LLAMA_API_KEY": "local-no-auth",
+        "VIGIL_LLAMA_API_KEY": "local-no-auth",
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_CONFIG_GLOBAL": os.devnull,
     }
@@ -109,7 +109,7 @@ def main():
     for task in aux_tasks:
         config["auxiliary"].setdefault(task, {}).update({
             "provider": "custom", "model": "${SPIKE_MODEL}", "base_url": "${SPIKE_BASE_URL}",
-            "api_key": "${AGENT_CONTROL_LLAMA_API_KEY}", "fallback_chain": [], "timeout": 20,
+            "api_key": "${VIGIL_LLAMA_API_KEY}", "fallback_chain": [], "timeout": 20,
         })
     # JSON is also valid YAML; the native Hermes loader reads this config.yaml.
     write_json(native_home / "config.yaml", config)

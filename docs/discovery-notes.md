@@ -8,7 +8,7 @@ The initial idea was a CLI control panel, possibly using tmux, that combines a f
 
 The user does not want to build another harness. Requested visibility includes the overall plan, current/upcoming/completed tasks, task detail, multiple plans, and project information. Reducing token usage and monetary cost is a central motivation; later discussion prioritizes reliability and task visibility over prominent cost displays.
 
-The provisional name agent-control was accepted. The user preferred Go or Python over TypeScript, considering performance, ecosystem, and development ease; Go and the foundation stack were subsequently accepted. The technology document preserves the comparison and notes that TypeScript's performance was not established as a bottleneck.
+The project began under a working name. After Stage 1, the user selected **Vigil**, inspired by the Prothean VI in Mass Effect, on 2026-09-20. The user preferred Go or Python over TypeScript, considering performance, ecosystem, and development ease; Go and the foundation stack were subsequently accepted. The technology document preserves the comparison and notes that TypeScript's performance was not established as a bottleneck.
 
 The requested sequence was technology selection, verified hello-world setup without orchestration, then collaborative functional discovery before workflow implementation. Latest necessary software may be installed; Linux and macOS are the targets. The user explicitly wants a product-manager/software-architect sparring partner who challenges assumptions and asks detailed questions, not just agreement or immediate implementation.
 
@@ -20,7 +20,7 @@ At work, the user uses Claude Code and pi. In their personal environment, they u
 
 The current Claude Code setup uses a Sonnet main agent and skills to break large plans into small, reproducible, testable, isolated tasks. Markdown files hold tasks, state, worklogs, and decisions. The main agent selects a task, evaluates it, and delegates to a Claude subagent or a silent pi instance using a local model. Another agent reviews the result; findings can trigger further development/review attempts until review passes. A separate agent handles testing.
 
-This describes the existing practice, not an approved workflow specification for agent-control. The main pain is that repeatable coordination steps are entrusted to an LLM, exposing task progression to hallucinations, context degradation, and unpredictable omissions.
+This describes the existing practice, not an approved workflow specification for Vigil. The main pain is that repeatable coordination steps are entrusted to an LLM, exposing task progression to hallucinations, context degradation, and unpredictable omissions.
 
 **Confirmed direction, refined in round 3:** application code enforces coordination and owns state. Agents provide plans, evaluations, implementations, and review findings through bounded tools. The main agent acts as an on-demand supervisor.
 

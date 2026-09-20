@@ -1,4 +1,4 @@
-# agent-control
+# Vigil
 
 A local control panel for development agents running through existing harnesses, combining frontier and local models.
 
@@ -20,8 +20,8 @@ Install [Go 1.27.1 or newer](https://go.dev/dl/) and Make. This workspace also h
 
 ```sh
 make build
-./bin/agent-control hello
-./bin/agent-control dashboard
+./bin/vigil hello
+./bin/vigil dashboard
 ```
 
 The dashboard uses an interactive terminal. Press `q`, `Esc`, or `Ctrl+C` to exit. Use `hello` for noninteractive environments. `--help`, `--version`, and Cobra shell completion are available.
@@ -29,8 +29,8 @@ The dashboard uses an interactive terminal. Press `q`, `Esc`, or `Ctrl+C` to exi
 By default, both commands query a temporary in-memory SQLite database. To verify a file-backed connection:
 
 ```sh
-mkdir -p .agent-control
-./bin/agent-control hello --db .agent-control/demo.sqlite
+mkdir -p .vigil
+./bin/vigil hello --db .vigil/demo.sqlite
 ```
 
 The parent directory must exist. The scaffold queries SQLite's version and does not create application tables or persist tasks. Connection failures return a nonzero exit code.
@@ -47,12 +47,12 @@ There are no application unit tests yet; this starter is verified with CLI, SQLi
 
 Dependencies are pinned in `go.mod` and verified using `go.sum`. `make tidy` updates module metadata after changing imports. Make uses project-local caches and clears the inherited `GOROOT`, avoiding interference from an older system Go installation. Build outputs, caches, local databases, and the local toolchain are ignored by Git.
 
-The module name `agent-control` is local for now; replace it with the chosen repository import path when publishing.
+The module name `vigil` is local for now; replace it with the chosen repository import path when publishing.
 
 ## Structure
 
 ```text
-cmd/agent-control/   executable entry point
+cmd/vigil/          executable entry point
 internal/cli/       Cobra commands
 internal/tui/       Bubble Tea hello-world screen
 internal/storage/   SQLite connection check

@@ -80,7 +80,7 @@ The application owns reliable coordination and state; existing harnesses execute
 | R70 | Provide a terminal-only interface initially; defer a browser dashboard |
 | R71 | Coordinate workspace ownership and shared local inference capacity across application instances without requiring background agent execution |
 
-The user accepted the project name agent-control, approved Go, Cobra, Bubble Tea, and SQLite, and requested technology selection followed by functional analysis before workflow design.
+The user selected the project name Vigil after Stage 1, approved Go, Cobra, Bubble Tea, and SQLite, and requested technology selection followed by functional analysis before workflow design.
 
 ## Proposed verification conditions
 

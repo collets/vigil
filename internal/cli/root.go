@@ -3,15 +3,15 @@ package cli
 import (
 	"fmt"
 
-	"agent-control/internal/storage"
-	"agent-control/internal/tui"
 	"github.com/spf13/cobra"
+	"vigil/internal/storage"
+	"vigil/internal/tui"
 )
 
 func NewCommand() *cobra.Command {
 	var database string
 	root := &cobra.Command{
-		Use:           "agent-control",
+		Use:           "vigil",
 		Short:         "A control panel for development agents",
 		Version:       "0.1.0-dev",
 		SilenceUsage:  true,
@@ -27,7 +27,7 @@ func NewCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Hello, world!\nagent-control is ready.\nSQLite %s connected.\n", version)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Hello, world!\nVigil is ready.\nSQLite %s connected.\n", version)
 			return err
 		},
 	})

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"agent-control/internal/cli"
+	"vigil/internal/cli"
 )
 
 func main() {

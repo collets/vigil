@@ -3,7 +3,7 @@
     "default": "${SPIKE_MODEL}",
     "provider": "custom",
     "base_url": "${SPIKE_BASE_URL}",
-    "api_key": "${AGENT_CONTROL_LLAMA_API_KEY}",
+    "api_key": "${VIGIL_LLAMA_API_KEY}",
     "api_mode": "chat_completions"
   },
   "agent": {

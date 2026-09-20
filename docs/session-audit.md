@@ -20,7 +20,7 @@ Provenance limit: several available user messages answer numbered questions with
 | --- | --- | --- |
 | Product purpose | Control existing harnesses; combine paid frontier and local agents to reduce cost while making coordination reliable; do not build another harness | Requirements R01–R08; discovery introduction/round 1 |
 | Existing workflow | Sonnet main agent, Claude subagents or silent pi local workers, Markdown plans/state/worklogs/decisions, review/repair loop, separate testing agent; LLM-driven repeatable coordination is the pain point | Discovery round 1 |
-| Name and collaboration | agent-control accepted; user wants detailed discovery and constructive challenges; scaffold before functional analysis, then implementation | Discovery introduction; next steps |
+| Name and collaboration | Vigil selected after Stage 1 on 2026-09-20; user wants detailed discovery and constructive challenges; scaffold before functional analysis, then implementation | Discovery introduction; next steps |
 | Language alternatives | Go selected over Python; TypeScript declined by preference, not a demonstrated performance failure; Python ecosystem advantage and Go distribution/concurrency tradeoffs retained | Technology |
 | Foundation | Go, Cobra, Bubble Tea/Bubbles/Lip Gloss, SQLite; versioned JSON proposed, TOML possible later; no ORM; tmux optional, not the state owner | Technology; architecture |
 | Installation/platform | Latest necessary tools may be installed; Linux/macOS targets; hardware architectures and checked versions recorded in scaffold docs | Technology; README |
