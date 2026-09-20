@@ -2,7 +2,7 @@
 
 A local control panel for development agents running through existing harnesses, combining frontier and local models.
 
-Status: bounded Codex/Hermes adapters with Linux lifecycle evidence and a completed application-core specification. The dashboard remains a scaffold; scheduling, recovery, and product workflows are not implemented. Targets: Linux and macOS, on amd64 and arm64.
+Status: bounded Codex/Hermes adapters with Linux and macOS arm64 lifecycle evidence and a completed application-core specification. The dashboard remains a scaffold; scheduling, recovery, and product workflows are not implemented. Strict execution remains gated by documented containment gaps. Targets: Linux and macOS, on amd64 and arm64.
 
 - [Technology proposal](docs/technology.md): Go versus Python and the proposed foundation.
 - [Minimal architecture](docs/architecture.md): responsibilities and integration boundaries.
@@ -15,7 +15,7 @@ Status: bounded Codex/Hermes adapters with Linux lifecycle evidence and a comple
 - [Stage 3 lifecycle/policy results](docs/research/stage-3-results.md): observed capabilities and strict execution limits.
 - [Application core specification](docs/core-spec.md): state, policy, coordination, checkpoints and storage contracts.
 - [Stage 5 backlog](docs/stage-5-plan.md): implementation slices and R01–R71 coverage.
-- [Stage 3.5 macOS plan](docs/stage-3.5-macos.md): setup and runtime checks with the user.
+- [Stage 3.5 macOS results](docs/research/stage-3.5-results.md): native runtime checks, filesystem identity and platform-specific cleanup limits.
 - [Session continuity audit](docs/session-audit.md): decisions, alternatives, open questions, and documentation provenance.
 - [Discovery history](docs/discovery-notes.md): brainstorming decisions and their evolution.
 
@@ -52,6 +52,8 @@ make cross-build  # Linux/macOS, amd64/arm64; outputs in dist/
 Synthetic tests exercise RPC correlation, native session events, request lifetimes, failure/shutdown paths, structured results, and independent fixture checks. Routine tests do not contact model providers. Cross-compilation does not establish runtime behavior on another OS.
 
 Dependencies are pinned in `go.mod` and verified using `go.sum`. `make tidy` updates module metadata after changing imports. Make uses project-local caches and clears the inherited `GOROOT`, avoiding interference from an older system Go installation. Build outputs, caches, local databases, and the local toolchain are ignored by Git.
+
+For the npm-installed Codex harness, `.nvmrc` selects Node 24 (`nvm use`, or a configured shell auto-switch hook). Node is not a Vigil binary/build dependency.
 
 The module name `vigil` is local for now; replace it with the chosen repository import path when publishing.
 

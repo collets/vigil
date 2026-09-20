@@ -1,0 +1,2329 @@
+{
+  "date": "2026-09-20",
+  "platform": "darwin/arm64",
+  "macos": "26.6.2",
+  "macos_build": "25G83",
+  "filesystem": "APFS; observed case-insensitive and Unicode-normalization aliases",
+  "go": "1.27.1",
+  "sqlite": "3.53.4",
+  "node": "24.21.0",
+  "npm": "11.19.0",
+  "python": "3.11.16",
+  "codex_version": "0.155.1",
+  "hermes_version": "0.21.3",
+  "hermes_commit": "6a627e6eb38e28ac421d5ad8df3f676e49d0c287",
+  "vigil_base_commit": "1fb5de6",
+  "model_turns_dispatched": 16,
+  "controlled_provider_rejection_submissions": 1,
+  "automatic_prompt_replays": 0,
+  "hosting_actions": 0,
+  "inference_topology": "Mac loopback -> encrypted reverse SSH -> WSL loopback -> native Windows llama.cpp",
+  "physical_mac_local_inference": false,
+  "cross_host_capacity_enforced": false,
+  "checks": [
+    "make check",
+    "make check-race",
+    "make build",
+    "vigil hello",
+    "interactive dashboard open/quit"
+  ],
+  "cases": [
+    {
+      "harness": "codex",
+      "scenario": "edit",
+      "exit_code": 0,
+      "report": {
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T10:50:17.600309Z",
+        "duration_seconds": 14.552703209,
+        "session": {
+          "run_id": "7712a86302ac0f43d4808ba6",
+          "transport_generation": "7712a86302ac0f43d4808ba6-1",
+          "harness": "codex",
+          "runtime_session_id": "01a0be70-2ea1-7cf3-9f5e-beb202a61da7",
+          "durable_session_id": "01a0be70-2ea1-7cf3-9f5e-beb202a61da7",
+          "thread_id": "01a0be70-2ea1-7cf3-9f5e-beb202a61da7",
+          "application_turn_id": "7712a86302ac0f43d4808ba6-turn-1",
+          "native_turn_id": "01a0be70-2ef7-7a10-82b1-5ab158269d57",
+          "model": "gpt-6-astra",
+          "provider": "openai",
+          "workspace": ".cache/spike/stage1-f1406vxq/fixture",
+          "outcome": "completed",
+          "native_status": "completed",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 39064,
+            "output_tokens": 138,
+            "cached_input_tokens": 25600,
+            "total_tokens": 39202,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "submitted": true,
+        "fixture_verified": true,
+        "task_accepted": false,
+        "result": {
+          "summary": "Updated message.txt",
+          "files": [
+            "message.txt"
+          ]
+        },
+        "stderr_bytes": 0,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "outcome": 1,
+          "output": 30,
+          "tool": 4,
+          "usage": 3
+        }
+      },
+      "process_ancestry": [
+        {
+          "pid": 18349,
+          "ppid": 18002,
+          "pgid": 18002,
+          "executable": "vigil"
+        },
+        {
+          "pid": 18356,
+          "ppid": 18349,
+          "pgid": 18356,
+          "executable": "node"
+        },
+        {
+          "pid": 18357,
+          "ppid": 18356,
+          "pgid": 18356,
+          "executable": "codex"
+        },
+        {
+          "pid": 18365,
+          "ppid": 18357,
+          "pgid": 18365,
+          "executable": "(git)"
+        },
+        {
+          "pid": 18474,
+          "ppid": 18357,
+          "pgid": 18474,
+          "executable": "codex-code-mode-host"
+        },
+        {
+          "pid": 18478,
+          "ppid": 18357,
+          "pgid": 18478,
+          "executable": "rg"
+        },
+        {
+          "pid": 18488,
+          "ppid": 18357,
+          "pgid": 18488,
+          "executable": "(zsh)"
+        },
+        {
+          "pid": 18503,
+          "ppid": 18349,
+          "pgid": 18002,
+          "executable": "(git)"
+        }
+      ],
+      "processes_after_runner": [],
+      "report_path": ".cache/spike/stage1-f1406vxq/evidence/result-7712a86302ac0f43d4808ba6.json",
+      "manifest_sha256": "9fd8ceb20091e8fe598e0b3b67937f5ef88885a0a94a6a31117c512ba769b28a"
+    },
+    {
+      "harness": "hermes",
+      "scenario": "edit",
+      "exit_code": 0,
+      "report": {
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T10:50:33.688995Z",
+        "duration_seconds": 23.299864,
+        "session": {
+          "run_id": "1d3550dd09f11079adaf48e1",
+          "transport_generation": "1d3550dd09f11079adaf48e1-1",
+          "harness": "hermes",
+          "runtime_session_id": "1d2d45ff",
+          "durable_session_id": "20260920_125034_9e63bf",
+          "application_turn_id": "1d3550dd09f11079adaf48e1-turn-1",
+          "model": "qwen3.8-27b-local",
+          "provider": "custom",
+          "workspace": ".cache/spike/stage1-vp0ochhc/fixture",
+          "outcome": "completed",
+          "native_status": "complete",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 24504,
+            "output_tokens": 361,
+            "cached_input_tokens": null,
+            "total_tokens": 24865,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "local_metadata": {
+          "model": "qwen3.8-27b-local",
+          "context_tokens": 131072,
+          "slots": 1,
+          "template_supports_tools": true
+        },
+        "submitted": true,
+        "fixture_verified": true,
+        "task_accepted": false,
+        "result": {
+          "summary": "Updated message.txt",
+          "files": [
+            "message.txt"
+          ]
+        },
+        "stderr_bytes": 39,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "outcome": 1,
+          "output": 127,
+          "tool": 12,
+          "usage": 3
+        }
+      },
+      "process_ancestry": [
+        {
+          "pid": 18525,
+          "ppid": 18002,
+          "pgid": 18002,
+          "executable": "vigil"
+        },
+        {
+          "pid": 18531,
+          "ppid": 18525,
+          "pgid": 18531,
+          "executable": "python"
+        },
+        {
+          "pid": 18542,
+          "ppid": 18531,
+          "pgid": 18542,
+          "executable": "<defunct>"
+        },
+        {
+          "pid": 18549,
+          "ppid": 18531,
+          "pgid": 18531,
+          "executable": "uv"
+        },
+        {
+          "pid": 18551,
+          "ppid": 18531,
+          "pgid": 18551,
+          "executable": "(git)"
+        },
+        {
+          "pid": 18556,
+          "ppid": 18531,
+          "pgid": 18556,
+          "executable": "(git)"
+        },
+        {
+          "pid": 18558,
+          "ppid": 18549,
+          "pgid": 18531,
+          "executable": "python"
+        },
+        {
+          "pid": 18559,
+          "ppid": 18549,
+          "pgid": 18531,
+          "executable": "python"
+        },
+        {
+          "pid": 18560,
+          "ppid": 18549,
+          "pgid": 18531,
+          "executable": "python"
+        },
+        {
+          "pid": 18561,
+          "ppid": 18549,
+          "pgid": 18531,
+          "executable": "python"
+        },
+        {
+          "pid": 18562,
+          "ppid": 18549,
+          "pgid": 18531,
+          "executable": "python"
+        },
+        {
+          "pid": 18563,
+          "ppid": 18549,
+          "pgid": 18531,
+          "executable": "python"
+        },
+        {
+          "pid": 18564,
+          "ppid": 18549,
+          "pgid": 18531,
+          "executable": "python"
+        },
+        {
+          "pid": 18565,
+          "ppid": 18549,
+          "pgid": 18531,
+          "executable": "python"
+        },
+        {
+          "pid": 18566,
+          "ppid": 18549,
+          "pgid": 18531,
+          "executable": "python"
+        },
+        {
+          "pid": 18567,
+          "ppid": 18549,
+          "pgid": 18531,
+          "executable": "python"
+        },
+        {
+          "pid": 18568,
+          "ppid": 18549,
+          "pgid": 18531,
+          "executable": "python"
+        },
+        {
+          "pid": 18569,
+          "ppid": 18549,
+          "pgid": 18531,
+          "executable": "python"
+        },
+        {
+          "pid": 18571,
+          "ppid": 18531,
+          "pgid": 18531,
+          "executable": "uv"
+        },
+        {
+          "pid": 18573,
+          "ppid": 18531,
+          "pgid": 18573,
+          "executable": "<defunct>"
+        },
+        {
+          "pid": 18707,
+          "ppid": 18531,
+          "pgid": 18531,
+          "executable": "tirith"
+        },
+        {
+          "pid": 18707,
+          "ppid": 18531,
+          "pgid": 18531,
+          "executable": "(tirith)"
+        },
+        {
+          "pid": 18709,
+          "ppid": 18707,
+          "pgid": 18531,
+          "executable": "tirith"
+        },
+        {
+          "pid": 18709,
+          "ppid": 1,
+          "pgid": 18531,
+          "executable": "tirith"
+        },
+        {
+          "pid": 18525,
+          "ppid": 18002,
+          "pgid": 18002,
+          "executable": "(vigil)"
+        }
+      ],
+      "processes_after_runner": [],
+      "report_path": ".cache/spike/stage1-vp0ochhc/evidence/result-1d3550dd09f11079adaf48e1.json",
+      "manifest_sha256": "175a1cbfc8938beba7c2464ba5a7a1d65915026eda8a75ffeef61ccc9339355a"
+    },
+    {
+      "harness": "codex",
+      "scenario": "resume",
+      "exit_code": 0,
+      "report": {
+        "experiment": {
+          "scenario": "resume",
+          "passed": true,
+          "observations": {
+            "exact_durable_identity": true,
+            "history_recalled": true,
+            "native_request_observed": false,
+            "resume_no_unsolicited_turn": true,
+            "trigger_observed": false,
+            "unknown_identity_rejected": true
+          },
+          "sessions": [
+            {
+              "run_id": "459af96cff9f701308b7d8d5",
+              "transport_generation": "459af96cff9f701308b7d8d5-1",
+              "harness": "codex",
+              "runtime_session_id": "01a0be70-cf05-7731-8600-df608c12a62a",
+              "durable_session_id": "01a0be70-cf05-7731-8600-df608c12a62a",
+              "thread_id": "01a0be70-cf05-7731-8600-df608c12a62a",
+              "application_turn_id": "VIGIL-459af96cff9f701308b7d8d5-first",
+              "native_turn_id": "01a0be70-cf2c-7222-af7f-493b8adde7f0",
+              "model": "gpt-6-astra",
+              "provider": "openai",
+              "workspace": ".cache/spike/stage1-2zr1bqlk/fixture",
+              "outcome": "completed",
+              "native_status": "completed",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 12778,
+                "output_tokens": 22,
+                "cached_input_tokens": 0,
+                "total_tokens": 12800,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0
+            },
+            {
+              "run_id": "459af96cff9f701308b7d8d5",
+              "transport_generation": "459af96cff9f701308b7d8d5-2",
+              "harness": "codex",
+              "runtime_session_id": "01a0be70-cf05-7731-8600-df608c12a62a",
+              "durable_session_id": "01a0be70-cf05-7731-8600-df608c12a62a",
+              "thread_id": "01a0be70-cf05-7731-8600-df608c12a62a",
+              "application_turn_id": "VIGIL-459af96cff9f701308b7d8d5-second",
+              "native_turn_id": "01a0be70-e375-7631-9fff-fd0d0ddc2b61",
+              "model": "gpt-6-astra",
+              "provider": "openai",
+              "workspace": ".cache/spike/stage1-2zr1bqlk/fixture",
+              "outcome": "completed",
+              "native_status": "completed",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 25610,
+                "output_tokens": 44,
+                "cached_input_tokens": 12544,
+                "total_tokens": 25654,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0,
+              "resumed_history_items": 1
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T10:50:58.543485Z",
+        "duration_seconds": 10.4443945,
+        "session": {
+          "run_id": "459af96cff9f701308b7d8d5",
+          "transport_generation": "459af96cff9f701308b7d8d5-1",
+          "harness": "codex",
+          "runtime_session_id": "01a0be70-cf05-7731-8600-df608c12a62a",
+          "durable_session_id": "01a0be70-cf05-7731-8600-df608c12a62a",
+          "thread_id": "01a0be70-cf05-7731-8600-df608c12a62a",
+          "application_turn_id": "VIGIL-459af96cff9f701308b7d8d5-first",
+          "native_turn_id": "01a0be70-cf2c-7222-af7f-493b8adde7f0",
+          "model": "gpt-6-astra",
+          "provider": "openai",
+          "workspace": ".cache/spike/stage1-2zr1bqlk/fixture",
+          "outcome": "completed",
+          "native_status": "completed",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 12778,
+            "output_tokens": 22,
+            "cached_input_tokens": 0,
+            "total_tokens": 12800,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "stderr_bytes": 0,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "outcome": 1,
+          "output": 36,
+          "usage": 3
+        }
+      },
+      "process_ancestry": [
+        {
+          "pid": 18760,
+          "ppid": 18002,
+          "pgid": 18002,
+          "executable": "vigil"
+        },
+        {
+          "pid": 18767,
+          "ppid": 18760,
+          "pgid": 18767,
+          "executable": "node"
+        },
+        {
+          "pid": 18768,
+          "ppid": 18767,
+          "pgid": 18767,
+          "executable": "codex"
+        },
+        {
+          "pid": 18767,
+          "ppid": 18760,
+          "pgid": 18767,
+          "executable": "(node)"
+        },
+        {
+          "pid": 18768,
+          "ppid": 18767,
+          "pgid": 18767,
+          "executable": "(codex)"
+        },
+        {
+          "pid": 18875,
+          "ppid": 18760,
+          "pgid": 18875,
+          "executable": "node"
+        },
+        {
+          "pid": 18876,
+          "ppid": 18875,
+          "pgid": 18875,
+          "executable": "codex"
+        },
+        {
+          "pid": 18875,
+          "ppid": 18760,
+          "pgid": 18875,
+          "executable": "(node)"
+        },
+        {
+          "pid": 18876,
+          "ppid": 18875,
+          "pgid": 18875,
+          "executable": "(codex)"
+        }
+      ],
+      "processes_after_runner": [],
+      "report_path": ".cache/spike/stage1-2zr1bqlk/evidence/result-459af96cff9f701308b7d8d5.json",
+      "manifest_sha256": "85c685a253ad57b6d81786a9c5ec16891ce5dfc4d8b2579331afc5086405e92c"
+    },
+    {
+      "harness": "hermes",
+      "scenario": "resume",
+      "exit_code": 0,
+      "report": {
+        "experiment": {
+          "scenario": "resume",
+          "passed": true,
+          "observations": {
+            "exact_durable_identity": true,
+            "history_recalled": true,
+            "native_request_observed": false,
+            "resume_no_unsolicited_turn": true,
+            "trigger_observed": false,
+            "unknown_identity_rejected": true
+          },
+          "sessions": [
+            {
+              "run_id": "ff0bb8889e6ab7d2c565ceba",
+              "transport_generation": "ff0bb8889e6ab7d2c565ceba-1",
+              "harness": "hermes",
+              "runtime_session_id": "13bd1e8e",
+              "durable_session_id": "20260920_125111_0985d5",
+              "application_turn_id": "VIGIL-ff0bb8889e6ab7d2c565ceba-first",
+              "model": "qwen3.8-27b-local",
+              "provider": "custom",
+              "workspace": ".cache/spike/stage1-3xrjtygj/fixture",
+              "outcome": "completed",
+              "native_status": "complete",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 5741,
+                "output_tokens": 51,
+                "cached_input_tokens": null,
+                "total_tokens": 5792,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0
+            },
+            {
+              "run_id": "ff0bb8889e6ab7d2c565ceba",
+              "transport_generation": "ff0bb8889e6ab7d2c565ceba-2",
+              "harness": "hermes",
+              "runtime_session_id": "bb8c1279",
+              "durable_session_id": "20260920_125111_0985d5",
+              "application_turn_id": "VIGIL-ff0bb8889e6ab7d2c565ceba-second",
+              "model": "qwen3.8-27b-local",
+              "provider": "custom",
+              "workspace": ".cache/spike/stage1-3xrjtygj/fixture",
+              "outcome": "completed",
+              "native_status": "complete",
+              "native_idle_observed": false,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 5804,
+                "output_tokens": 85,
+                "cached_input_tokens": null,
+                "total_tokens": 5889,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0,
+              "resumed_history_items": 2
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T10:51:10.455596Z",
+        "duration_seconds": 18.514756417,
+        "session": {
+          "run_id": "ff0bb8889e6ab7d2c565ceba",
+          "transport_generation": "ff0bb8889e6ab7d2c565ceba-1",
+          "harness": "hermes",
+          "runtime_session_id": "13bd1e8e",
+          "durable_session_id": "20260920_125111_0985d5",
+          "application_turn_id": "VIGIL-ff0bb8889e6ab7d2c565ceba-first",
+          "model": "qwen3.8-27b-local",
+          "provider": "custom",
+          "workspace": ".cache/spike/stage1-3xrjtygj/fixture",
+          "outcome": "completed",
+          "native_status": "complete",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 5741,
+            "output_tokens": 51,
+            "cached_input_tokens": null,
+            "total_tokens": 5792,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "local_metadata": {
+          "model": "qwen3.8-27b-local",
+          "context_tokens": 131072,
+          "slots": 1,
+          "template_supports_tools": true
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "stderr_bytes": 39,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "outcome": 2,
+          "output": 136
+        }
+      },
+      "process_ancestry": [
+        {
+          "pid": 18968,
+          "ppid": 18002,
+          "pgid": 18002,
+          "executable": "vigil"
+        },
+        {
+          "pid": 18974,
+          "ppid": 18968,
+          "pgid": 18974,
+          "executable": "python"
+        },
+        {
+          "pid": 18980,
+          "ppid": 18974,
+          "pgid": 18980,
+          "executable": "(git)"
+        },
+        {
+          "pid": 18985,
+          "ppid": 18974,
+          "pgid": 18985,
+          "executable": "(git)"
+        },
+        {
+          "pid": 19056,
+          "ppid": 18974,
+          "pgid": 19056,
+          "executable": "<defunct>"
+        },
+        {
+          "pid": 19058,
+          "ppid": 18968,
+          "pgid": 19058,
+          "executable": "python"
+        },
+        {
+          "pid": 19067,
+          "ppid": 19058,
+          "pgid": 19058,
+          "executable": "(python3.11)"
+        },
+        {
+          "pid": 19088,
+          "ppid": 19058,
+          "pgid": 19088,
+          "executable": "<defunct>"
+        },
+        {
+          "pid": 19090,
+          "ppid": 18968,
+          "pgid": 19090,
+          "executable": "python"
+        }
+      ],
+      "processes_after_runner": [],
+      "report_path": ".cache/spike/stage1-3xrjtygj/evidence/result-ff0bb8889e6ab7d2c565ceba.json",
+      "manifest_sha256": "bd3e99750ff2cf97dc50e38c169f52e44acb4feffef94eb76c212f7b90095087"
+    },
+    {
+      "harness": "codex",
+      "scenario": "interrupt",
+      "exit_code": 0,
+      "report": {
+        "experiment": {
+          "scenario": "interrupt",
+          "passed": true,
+          "observations": {
+            "interrupt_ack_seconds": 0.003712959,
+            "interrupt_acknowledged": true,
+            "native_request_observed": false,
+            "trigger_observed": true
+          },
+          "sessions": [
+            {
+              "run_id": "79619b784290c9e3fc997d17",
+              "transport_generation": "79619b784290c9e3fc997d17-1",
+              "harness": "codex",
+              "runtime_session_id": "01a0be71-4af4-7142-9ed5-4e30d71328ab",
+              "durable_session_id": "01a0be71-4af4-7142-9ed5-4e30d71328ab",
+              "thread_id": "01a0be71-4af4-7142-9ed5-4e30d71328ab",
+              "application_turn_id": "VIGIL-79619b784290c9e3fc997d17-first",
+              "native_turn_id": "01a0be71-4b34-7be1-89e0-6bca3b65c713",
+              "model": "gpt-6-astra",
+              "provider": "openai",
+              "workspace": ".cache/spike/stage1-82hf9pa6/fixture",
+              "outcome": "interrupted",
+              "native_status": "interrupted",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "cached_input_tokens": null,
+                "total_tokens": null,
+                "cost": null,
+                "scope": ""
+              },
+              "pending_requests": 0
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T10:51:30.370631Z",
+        "duration_seconds": 11.430508708,
+        "session": {
+          "run_id": "79619b784290c9e3fc997d17",
+          "transport_generation": "79619b784290c9e3fc997d17-1",
+          "harness": "codex",
+          "runtime_session_id": "01a0be71-4af4-7142-9ed5-4e30d71328ab",
+          "durable_session_id": "01a0be71-4af4-7142-9ed5-4e30d71328ab",
+          "thread_id": "01a0be71-4af4-7142-9ed5-4e30d71328ab",
+          "application_turn_id": "VIGIL-79619b784290c9e3fc997d17-first",
+          "native_turn_id": "01a0be71-4b34-7be1-89e0-6bca3b65c713",
+          "model": "gpt-6-astra",
+          "provider": "openai",
+          "workspace": ".cache/spike/stage1-82hf9pa6/fixture",
+          "outcome": "interrupted",
+          "native_status": "interrupted",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": null,
+            "output_tokens": null,
+            "cached_input_tokens": null,
+            "total_tokens": null,
+            "cost": null,
+            "scope": ""
+          },
+          "pending_requests": 0
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "stderr_bytes": 0,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "outcome": 1,
+          "output": 4
+        }
+      },
+      "process_ancestry": [
+        {
+          "pid": 19110,
+          "ppid": 18002,
+          "pgid": 18002,
+          "executable": "vigil"
+        },
+        {
+          "pid": 19117,
+          "ppid": 19110,
+          "pgid": 19117,
+          "executable": "node"
+        },
+        {
+          "pid": 19118,
+          "ppid": 19117,
+          "pgid": 19117,
+          "executable": "codex"
+        },
+        {
+          "pid": 19126,
+          "ppid": 19118,
+          "pgid": 19126,
+          "executable": "(git)"
+        }
+      ],
+      "processes_after_runner": [],
+      "report_path": ".cache/spike/stage1-82hf9pa6/evidence/result-79619b784290c9e3fc997d17.json",
+      "manifest_sha256": "f553f61a364f587bb654c940e3ee07994d333397f497f13279f866f464bd52ff"
+    },
+    {
+      "harness": "hermes",
+      "scenario": "interrupt",
+      "exit_code": 0,
+      "report": {
+        "experiment": {
+          "scenario": "interrupt",
+          "passed": true,
+          "observations": {
+            "interrupt_ack_seconds": 0.013297834,
+            "interrupt_acknowledged": true,
+            "native_request_observed": false,
+            "trigger_observed": true
+          },
+          "sessions": [
+            {
+              "run_id": "80ef01924b7263fb293d547f",
+              "transport_generation": "80ef01924b7263fb293d547f-1",
+              "harness": "hermes",
+              "runtime_session_id": "8e0cfee3",
+              "durable_session_id": "20260920_125144_1fc553",
+              "application_turn_id": "VIGIL-80ef01924b7263fb293d547f-first",
+              "model": "qwen3.8-27b-local",
+              "provider": "custom",
+              "workspace": ".cache/spike/stage1-106fnfds/fixture",
+              "outcome": "interrupted",
+              "native_status": "interrupted",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cached_input_tokens": null,
+                "total_tokens": 0,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T10:51:43.314813Z",
+        "duration_seconds": 3.24825325,
+        "session": {
+          "run_id": "80ef01924b7263fb293d547f",
+          "transport_generation": "80ef01924b7263fb293d547f-1",
+          "harness": "hermes",
+          "runtime_session_id": "8e0cfee3",
+          "durable_session_id": "20260920_125144_1fc553",
+          "application_turn_id": "VIGIL-80ef01924b7263fb293d547f-first",
+          "model": "qwen3.8-27b-local",
+          "provider": "custom",
+          "workspace": ".cache/spike/stage1-106fnfds/fixture",
+          "outcome": "interrupted",
+          "native_status": "interrupted",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cached_input_tokens": null,
+            "total_tokens": 0,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "local_metadata": {
+          "model": "qwen3.8-27b-local",
+          "context_tokens": 131072,
+          "slots": 1,
+          "template_supports_tools": true
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "stderr_bytes": 72,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "outcome": 1,
+          "output": 2
+        }
+      },
+      "process_ancestry": [
+        {
+          "pid": 19258,
+          "ppid": 18002,
+          "pgid": 18002,
+          "executable": "vigil"
+        },
+        {
+          "pid": 19264,
+          "ppid": 19258,
+          "pgid": 19264,
+          "executable": "python"
+        },
+        {
+          "pid": 19275,
+          "ppid": 19264,
+          "pgid": 19275,
+          "executable": "<defunct>"
+        },
+        {
+          "pid": 19285,
+          "ppid": 19264,
+          "pgid": 19285,
+          "executable": "(git)"
+        }
+      ],
+      "processes_after_runner": [],
+      "report_path": ".cache/spike/stage1-106fnfds/evidence/result-80ef01924b7263fb293d547f.json",
+      "manifest_sha256": "320342fcdafdc21fbb4c8ae586b7a289ec64ec4d333a63fd572e61eac7e9dc3d"
+    },
+    {
+      "harness": "codex",
+      "scenario": "child",
+      "exit_code": 0,
+      "report": {
+        "experiment": {
+          "scenario": "child",
+          "passed": true,
+          "observations": {
+            "heartbeat_preserved": true,
+            "heartbeat_stable_after_close": true,
+            "interrupt_ack_seconds": 0.004138208,
+            "interrupt_acknowledged": true,
+            "native_request_observed": false,
+            "trigger_observed": true,
+            "writer_observed": true
+          },
+          "sessions": [
+            {
+              "run_id": "05e0b110f7d3285ce79b619c",
+              "transport_generation": "05e0b110f7d3285ce79b619c-1",
+              "harness": "codex",
+              "runtime_session_id": "01a0be71-8ff5-7962-85f1-651c4db7d4e8",
+              "durable_session_id": "01a0be71-8ff5-7962-85f1-651c4db7d4e8",
+              "thread_id": "01a0be71-8ff5-7962-85f1-651c4db7d4e8",
+              "application_turn_id": "VIGIL-05e0b110f7d3285ce79b619c-first",
+              "native_turn_id": "01a0be71-902c-7772-bc67-8758383b512d",
+              "model": "gpt-6-astra",
+              "provider": "openai",
+              "workspace": ".cache/spike/stage1-jhdgc8m9/fixture",
+              "outcome": "interrupted",
+              "native_status": "interrupted",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 12799,
+                "output_tokens": 86,
+                "cached_input_tokens": 0,
+                "total_tokens": 12885,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T10:51:48.120425Z",
+        "duration_seconds": 11.506145875,
+        "session": {
+          "run_id": "05e0b110f7d3285ce79b619c",
+          "transport_generation": "05e0b110f7d3285ce79b619c-1",
+          "harness": "codex",
+          "runtime_session_id": "01a0be71-8ff5-7962-85f1-651c4db7d4e8",
+          "durable_session_id": "01a0be71-8ff5-7962-85f1-651c4db7d4e8",
+          "thread_id": "01a0be71-8ff5-7962-85f1-651c4db7d4e8",
+          "application_turn_id": "VIGIL-05e0b110f7d3285ce79b619c-first",
+          "native_turn_id": "01a0be71-902c-7772-bc67-8758383b512d",
+          "model": "gpt-6-astra",
+          "provider": "openai",
+          "workspace": ".cache/spike/stage1-jhdgc8m9/fixture",
+          "outcome": "interrupted",
+          "native_status": "interrupted",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 12799,
+            "output_tokens": 86,
+            "cached_input_tokens": 0,
+            "total_tokens": 12885,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "stderr_bytes": 176,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "outcome": 1,
+          "output": 16,
+          "tool": 1,
+          "usage": 1
+        }
+      },
+      "process_ancestry": [
+        {
+          "pid": 19325,
+          "ppid": 18002,
+          "pgid": 18002,
+          "executable": "vigil"
+        },
+        {
+          "pid": 19332,
+          "ppid": 19325,
+          "pgid": 19332,
+          "executable": "node"
+        },
+        {
+          "pid": 19333,
+          "ppid": 19332,
+          "pgid": 19332,
+          "executable": "codex"
+        },
+        {
+          "pid": 19410,
+          "ppid": 19333,
+          "pgid": 19410,
+          "executable": "(git)"
+        },
+        {
+          "pid": 19411,
+          "ppid": 19333,
+          "pgid": 19411,
+          "executable": "(git)"
+        },
+        {
+          "pid": 19417,
+          "ppid": 19333,
+          "pgid": 19417,
+          "executable": "(git)"
+        },
+        {
+          "pid": 19423,
+          "ppid": 19333,
+          "pgid": 19423,
+          "executable": "(git)"
+        },
+        {
+          "pid": 19468,
+          "ppid": 19333,
+          "pgid": 19468,
+          "executable": "codex-code-mode-host"
+        },
+        {
+          "pid": 19470,
+          "ppid": 19333,
+          "pgid": 19470,
+          "executable": "Python"
+        }
+      ],
+      "processes_after_runner": [],
+      "processes_after_self_limit": [],
+      "final_heartbeat_lines": 2,
+      "report_path": ".cache/spike/stage1-jhdgc8m9/evidence/result-05e0b110f7d3285ce79b619c.json",
+      "manifest_sha256": "fafe717bfcb7333093e491f75b04fcca5f112d0f3a54cee3d718f3e83f92a0f3"
+    },
+    {
+      "harness": "hermes",
+      "scenario": "child",
+      "exit_code": 0,
+      "report": {
+        "experiment": {
+          "scenario": "child",
+          "passed": true,
+          "observations": {
+            "heartbeat_preserved": true,
+            "heartbeat_stable_after_close": true,
+            "interrupt_ack_seconds": 0.002175209,
+            "interrupt_acknowledged": true,
+            "native_request_observed": false,
+            "trigger_observed": true,
+            "writer_observed": true
+          },
+          "sessions": [
+            {
+              "run_id": "63c6bf1cd714eb4cd6bf25bf",
+              "transport_generation": "63c6bf1cd714eb4cd6bf25bf-1",
+              "harness": "hermes",
+              "runtime_session_id": "7521d8a0",
+              "durable_session_id": "20260920_125233_c9cc95",
+              "application_turn_id": "VIGIL-63c6bf1cd714eb4cd6bf25bf-first",
+              "model": "qwen3.8-27b-local",
+              "provider": "custom",
+              "workspace": ".cache/spike/stage1-5tgfeiue/fixture",
+              "outcome": "interrupted",
+              "native_status": "interrupted",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 5777,
+                "output_tokens": 536,
+                "cached_input_tokens": null,
+                "total_tokens": 6313,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T10:52:32.212765Z",
+        "duration_seconds": 22.806934791,
+        "session": {
+          "run_id": "63c6bf1cd714eb4cd6bf25bf",
+          "transport_generation": "63c6bf1cd714eb4cd6bf25bf-1",
+          "harness": "hermes",
+          "runtime_session_id": "7521d8a0",
+          "durable_session_id": "20260920_125233_c9cc95",
+          "application_turn_id": "VIGIL-63c6bf1cd714eb4cd6bf25bf-first",
+          "model": "qwen3.8-27b-local",
+          "provider": "custom",
+          "workspace": ".cache/spike/stage1-5tgfeiue/fixture",
+          "outcome": "interrupted",
+          "native_status": "interrupted",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 5777,
+            "output_tokens": 536,
+            "cached_input_tokens": null,
+            "total_tokens": 6313,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "local_metadata": {
+          "model": "qwen3.8-27b-local",
+          "context_tokens": 131072,
+          "slots": 1,
+          "template_supports_tools": true
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "stderr_bytes": 39,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "outcome": 1,
+          "output": 466,
+          "tool": 3,
+          "usage": 1
+        }
+      },
+      "process_ancestry": [
+        {
+          "pid": 19535,
+          "ppid": 18002,
+          "pgid": 18002,
+          "executable": "vigil"
+        },
+        {
+          "pid": 19541,
+          "ppid": 19535,
+          "pgid": 19541,
+          "executable": "python"
+        },
+        {
+          "pid": 19548,
+          "ppid": 19541,
+          "pgid": 19548,
+          "executable": "(git)"
+        },
+        {
+          "pid": 19582,
+          "ppid": 19541,
+          "pgid": 19541,
+          "executable": "(file)"
+        },
+        {
+          "pid": 20089,
+          "ppid": 19541,
+          "pgid": 19541,
+          "executable": "tirith"
+        },
+        {
+          "pid": 20093,
+          "ppid": 19541,
+          "pgid": 20093,
+          "executable": "bash"
+        },
+        {
+          "pid": 20094,
+          "ppid": 20093,
+          "pgid": 20093,
+          "executable": "Python"
+        },
+        {
+          "pid": 20099,
+          "ppid": 19541,
+          "pgid": 19541,
+          "executable": "(git)"
+        },
+        {
+          "pid": 20100,
+          "ppid": 19541,
+          "pgid": 20100,
+          "executable": "(git)"
+        }
+      ],
+      "processes_after_runner": [],
+      "processes_after_self_limit": [],
+      "final_heartbeat_lines": 2,
+      "report_path": ".cache/spike/stage1-5tgfeiue/evidence/result-63c6bf1cd714eb4cd6bf25bf.json",
+      "manifest_sha256": "408d2ab9ed82fbe062728436412d757beb1409f1fe5725668f2b70382533e814"
+    },
+    {
+      "harness": "codex",
+      "scenario": "loss",
+      "exit_code": 1,
+      "report": {
+        "experiment": {
+          "scenario": "loss",
+          "passed": false,
+          "observations": {
+            "heartbeat_preserved": true,
+            "heartbeat_stable_after_close": false,
+            "native_request_observed": false,
+            "trigger_observed": true,
+            "writer_observed": true
+          },
+          "sessions": [
+            {
+              "run_id": "5ca4dbcf107363095e9691cf",
+              "transport_generation": "5ca4dbcf107363095e9691cf-1",
+              "harness": "codex",
+              "runtime_session_id": "01a0be73-146e-71c1-982e-e79a4988b4db",
+              "durable_session_id": "01a0be73-146e-71c1-982e-e79a4988b4db",
+              "thread_id": "01a0be73-146e-71c1-982e-e79a4988b4db",
+              "application_turn_id": "VIGIL-5ca4dbcf107363095e9691cf-first",
+              "native_turn_id": "01a0be73-14ab-7513-bd75-4dd25039629d",
+              "model": "gpt-6-astra",
+              "provider": "openai",
+              "workspace": ".cache/spike/stage1-s62q5wt1/fixture",
+              "outcome": "unknown",
+              "native_status": "",
+              "fault": "harness transport lost",
+              "native_idle_observed": false,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "cached_input_tokens": null,
+                "total_tokens": null,
+                "cost": null,
+                "scope": ""
+              },
+              "pending_requests": 0
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T10:53:27.528456Z",
+        "duration_seconds": 10.700940416,
+        "session": {
+          "run_id": "5ca4dbcf107363095e9691cf",
+          "transport_generation": "5ca4dbcf107363095e9691cf-1",
+          "harness": "codex",
+          "runtime_session_id": "01a0be73-146e-71c1-982e-e79a4988b4db",
+          "durable_session_id": "01a0be73-146e-71c1-982e-e79a4988b4db",
+          "thread_id": "01a0be73-146e-71c1-982e-e79a4988b4db",
+          "application_turn_id": "VIGIL-5ca4dbcf107363095e9691cf-first",
+          "native_turn_id": "01a0be73-14ab-7513-bd75-4dd25039629d",
+          "model": "gpt-6-astra",
+          "provider": "openai",
+          "workspace": ".cache/spike/stage1-s62q5wt1/fixture",
+          "outcome": "unknown",
+          "native_status": "",
+          "fault": "harness transport lost",
+          "native_idle_observed": false,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": null,
+            "output_tokens": null,
+            "cached_input_tokens": null,
+            "total_tokens": null,
+            "cost": null,
+            "scope": ""
+          },
+          "pending_requests": 0
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "error": "fixture writer survived owned transport close; retained until bounded script exits",
+        "stderr_bytes": 0,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "output": 16,
+          "tool": 1,
+          "transport_failure": 1
+        }
+      },
+      "process_ancestry": [
+        {
+          "pid": 20145,
+          "ppid": 18002,
+          "pgid": 18002,
+          "executable": "vigil"
+        },
+        {
+          "pid": 20152,
+          "ppid": 20145,
+          "pgid": 20152,
+          "executable": "node"
+        },
+        {
+          "pid": 20153,
+          "ppid": 20152,
+          "pgid": 20152,
+          "executable": "codex"
+        },
+        {
+          "pid": 20166,
+          "ppid": 20153,
+          "pgid": 20166,
+          "executable": "(git)"
+        },
+        {
+          "pid": 20172,
+          "ppid": 20153,
+          "pgid": 20172,
+          "executable": "(git)"
+        },
+        {
+          "pid": 20178,
+          "ppid": 20153,
+          "pgid": 20178,
+          "executable": "(git)"
+        },
+        {
+          "pid": 20272,
+          "ppid": 20153,
+          "pgid": 20272,
+          "executable": "codex-code-mode-host"
+        },
+        {
+          "pid": 20273,
+          "ppid": 20153,
+          "pgid": 20273,
+          "executable": "Python"
+        },
+        {
+          "pid": 20273,
+          "ppid": 1,
+          "pgid": 20273,
+          "executable": "Python"
+        },
+        {
+          "pid": 20145,
+          "ppid": 18002,
+          "pgid": 18002,
+          "executable": "<defunct>"
+        }
+      ],
+      "processes_after_runner": [
+        {
+          "pid": 20273,
+          "ppid": 1,
+          "pgid": 20273,
+          "executable": "Python"
+        }
+      ],
+      "processes_after_self_limit": [],
+      "final_heartbeat_lines": 150,
+      "report_path": ".cache/spike/stage1-s62q5wt1/evidence/result-5ca4dbcf107363095e9691cf.json",
+      "manifest_sha256": "b96cf4e93303a341740920c69da2d03e64463aca0d854b6671c2ff5796329d6b"
+    },
+    {
+      "harness": "hermes",
+      "scenario": "loss",
+      "exit_code": 1,
+      "report": {
+        "experiment": {
+          "scenario": "loss",
+          "passed": false,
+          "observations": {
+            "heartbeat_preserved": true,
+            "heartbeat_stable_after_close": false,
+            "native_request_observed": false,
+            "trigger_observed": true,
+            "writer_observed": true
+          },
+          "sessions": [
+            {
+              "run_id": "20931f5f7aa222e6fcfd0d64",
+              "transport_generation": "20931f5f7aa222e6fcfd0d64-1",
+              "harness": "hermes",
+              "runtime_session_id": "6bd4295e",
+              "durable_session_id": "20260920_125411_00e57a",
+              "application_turn_id": "VIGIL-20931f5f7aa222e6fcfd0d64-first",
+              "model": "qwen3.8-27b-local",
+              "provider": "custom",
+              "workspace": ".cache/spike/stage1-sgjd3s8r/fixture",
+              "outcome": "unknown",
+              "native_status": "",
+              "fault": "harness transport lost",
+              "native_idle_observed": false,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "cached_input_tokens": null,
+                "total_tokens": null,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T10:54:10.91623Z",
+        "duration_seconds": 15.983250792,
+        "session": {
+          "run_id": "20931f5f7aa222e6fcfd0d64",
+          "transport_generation": "20931f5f7aa222e6fcfd0d64-1",
+          "harness": "hermes",
+          "runtime_session_id": "6bd4295e",
+          "durable_session_id": "20260920_125411_00e57a",
+          "application_turn_id": "VIGIL-20931f5f7aa222e6fcfd0d64-first",
+          "model": "qwen3.8-27b-local",
+          "provider": "custom",
+          "workspace": ".cache/spike/stage1-sgjd3s8r/fixture",
+          "outcome": "unknown",
+          "native_status": "",
+          "fault": "harness transport lost",
+          "native_idle_observed": false,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": null,
+            "output_tokens": null,
+            "cached_input_tokens": null,
+            "total_tokens": null,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "local_metadata": {
+          "model": "qwen3.8-27b-local",
+          "context_tokens": 131072,
+          "slots": 1,
+          "template_supports_tools": true
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "error": "fixture writer survived owned transport close; retained until bounded script exits",
+        "stderr_bytes": 0,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "output": 65,
+          "tool": 2,
+          "transport_failure": 1,
+          "usage": 1
+        }
+      },
+      "process_ancestry": [
+        {
+          "pid": 20305,
+          "ppid": 18002,
+          "pgid": 18002,
+          "executable": "vigil"
+        },
+        {
+          "pid": 20311,
+          "ppid": 20305,
+          "pgid": 20311,
+          "executable": "python"
+        },
+        {
+          "pid": 20322,
+          "ppid": 20311,
+          "pgid": 20322,
+          "executable": "<defunct>"
+        },
+        {
+          "pid": 20326,
+          "ppid": 20311,
+          "pgid": 20326,
+          "executable": "(git)"
+        },
+        {
+          "pid": 20401,
+          "ppid": 20311,
+          "pgid": 20311,
+          "executable": "tirith"
+        },
+        {
+          "pid": 20405,
+          "ppid": 20311,
+          "pgid": 20405,
+          "executable": "bash"
+        },
+        {
+          "pid": 20406,
+          "ppid": 20405,
+          "pgid": 20405,
+          "executable": "Python"
+        },
+        {
+          "pid": 20405,
+          "ppid": 1,
+          "pgid": 20405,
+          "executable": "bash"
+        }
+      ],
+      "processes_after_runner": [
+        {
+          "pid": 20405,
+          "ppid": 1,
+          "pgid": 20405,
+          "executable": "bash"
+        },
+        {
+          "pid": 20406,
+          "ppid": 20405,
+          "pgid": 20405,
+          "executable": "Python"
+        }
+      ],
+      "processes_after_self_limit": [],
+      "final_heartbeat_lines": 150,
+      "report_path": ".cache/spike/stage1-sgjd3s8r/evidence/result-20931f5f7aa222e6fcfd0d64.json",
+      "manifest_sha256": "c81bfa9e3e27cbeb026f9d6ff8e88f7c938fb1f07f9af6061849c4b527da782c"
+    },
+    {
+      "harness": "codex",
+      "scenario": "approval-allow",
+      "exit_code": 0,
+      "report": {
+        "experiment": {
+          "scenario": "approval-allow",
+          "passed": true,
+          "observations": {
+            "approval_choices": [
+              "accept",
+              "structured-or-unknown-choice",
+              "cancel"
+            ],
+            "duplicate_answer_rejected": true,
+            "exact_approval_command": true,
+            "native_request_observed": true,
+            "stale_answer_rejected": true,
+            "trigger_observed": false
+          },
+          "sessions": [
+            {
+              "run_id": "07133d301b062d2edaf4f361",
+              "transport_generation": "07133d301b062d2edaf4f361-1",
+              "harness": "codex",
+              "runtime_session_id": "01a0be74-7ac7-78d0-ae16-6fa2af4a5d95",
+              "durable_session_id": "01a0be74-7ac7-78d0-ae16-6fa2af4a5d95",
+              "thread_id": "01a0be74-7ac7-78d0-ae16-6fa2af4a5d95",
+              "application_turn_id": "VIGIL-07133d301b062d2edaf4f361-first",
+              "native_turn_id": "01a0be74-7af8-7f23-b2c7-8c9248b96d88",
+              "model": "gpt-6-astra",
+              "provider": "openai",
+              "workspace": ".cache/spike/stage1-x6fw49yj/fixture",
+              "outcome": "completed",
+              "native_status": "completed",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 25675,
+                "output_tokens": 85,
+                "cached_input_tokens": 22272,
+                "total_tokens": 25760,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T10:54:59.326368Z",
+        "duration_seconds": 9.109749583,
+        "session": {
+          "run_id": "07133d301b062d2edaf4f361",
+          "transport_generation": "07133d301b062d2edaf4f361-1",
+          "harness": "codex",
+          "runtime_session_id": "01a0be74-7ac7-78d0-ae16-6fa2af4a5d95",
+          "durable_session_id": "01a0be74-7ac7-78d0-ae16-6fa2af4a5d95",
+          "thread_id": "01a0be74-7ac7-78d0-ae16-6fa2af4a5d95",
+          "application_turn_id": "VIGIL-07133d301b062d2edaf4f361-first",
+          "native_turn_id": "01a0be74-7af8-7f23-b2c7-8c9248b96d88",
+          "model": "gpt-6-astra",
+          "provider": "openai",
+          "workspace": ".cache/spike/stage1-x6fw49yj/fixture",
+          "outcome": "completed",
+          "native_status": "completed",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 25675,
+            "output_tokens": 85,
+            "cached_input_tokens": 22272,
+            "total_tokens": 25760,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "stderr_bytes": 0,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "approval_requested": 1,
+          "outcome": 1,
+          "output": 29,
+          "request_resolved": 1,
+          "tool": 2,
+          "usage": 2
+        }
+      },
+      "process_ancestry": [
+        {
+          "pid": 20467,
+          "ppid": 18002,
+          "pgid": 18002,
+          "executable": "vigil"
+        },
+        {
+          "pid": 20474,
+          "ppid": 20467,
+          "pgid": 20474,
+          "executable": "node"
+        },
+        {
+          "pid": 20475,
+          "ppid": 20474,
+          "pgid": 20474,
+          "executable": "codex"
+        },
+        {
+          "pid": 20588,
+          "ppid": 20475,
+          "pgid": 20588,
+          "executable": "codex-code-mode-host"
+        }
+      ],
+      "processes_after_runner": [],
+      "report_path": ".cache/spike/stage1-x6fw49yj/evidence/result-07133d301b062d2edaf4f361.json",
+      "manifest_sha256": "d54dc6cdaf8b8e2acb0403f6355c6c2626c43d36e95366bedee5b80f7b8e2eca"
+    },
+    {
+      "harness": "codex",
+      "scenario": "approval-deny",
+      "exit_code": 0,
+      "report": {
+        "experiment": {
+          "scenario": "approval-deny",
+          "passed": true,
+          "observations": {
+            "approval_choices": [
+              "accept",
+              "structured-or-unknown-choice",
+              "cancel"
+            ],
+            "duplicate_answer_rejected": true,
+            "exact_approval_command": true,
+            "native_request_observed": true,
+            "stale_answer_rejected": true,
+            "trigger_observed": false
+          },
+          "sessions": [
+            {
+              "run_id": "6487fd2036cd9e647d3dc814",
+              "transport_generation": "6487fd2036cd9e647d3dc814-1",
+              "harness": "codex",
+              "runtime_session_id": "01a0be74-a357-7e12-819f-2eedfba29a86",
+              "durable_session_id": "01a0be74-a357-7e12-819f-2eedfba29a86",
+              "thread_id": "01a0be74-a357-7e12-819f-2eedfba29a86",
+              "application_turn_id": "VIGIL-6487fd2036cd9e647d3dc814-first",
+              "native_turn_id": "01a0be74-a38d-79a3-8278-47402569efdc",
+              "model": "gpt-6-astra",
+              "provider": "openai",
+              "workspace": ".cache/spike/stage1-o4gvkwln/fixture",
+              "outcome": "interrupted",
+              "native_status": "interrupted",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 12762,
+                "output_tokens": 68,
+                "cached_input_tokens": 0,
+                "total_tokens": 12830,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T10:55:09.689873Z",
+        "duration_seconds": 6.846897125,
+        "session": {
+          "run_id": "6487fd2036cd9e647d3dc814",
+          "transport_generation": "6487fd2036cd9e647d3dc814-1",
+          "harness": "codex",
+          "runtime_session_id": "01a0be74-a357-7e12-819f-2eedfba29a86",
+          "durable_session_id": "01a0be74-a357-7e12-819f-2eedfba29a86",
+          "thread_id": "01a0be74-a357-7e12-819f-2eedfba29a86",
+          "application_turn_id": "VIGIL-6487fd2036cd9e647d3dc814-first",
+          "native_turn_id": "01a0be74-a38d-79a3-8278-47402569efdc",
+          "model": "gpt-6-astra",
+          "provider": "openai",
+          "workspace": ".cache/spike/stage1-o4gvkwln/fixture",
+          "outcome": "interrupted",
+          "native_status": "interrupted",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 12762,
+            "output_tokens": 68,
+            "cached_input_tokens": 0,
+            "total_tokens": 12830,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "stderr_bytes": 178,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "approval_requested": 1,
+          "outcome": 1,
+          "output": 11,
+          "request_resolved": 1,
+          "tool": 2,
+          "usage": 1
+        }
+      },
+      "process_ancestry": [
+        {
+          "pid": 20614,
+          "ppid": 18002,
+          "pgid": 18002,
+          "executable": "vigil"
+        },
+        {
+          "pid": 20621,
+          "ppid": 20614,
+          "pgid": 20621,
+          "executable": "node"
+        },
+        {
+          "pid": 20622,
+          "ppid": 20621,
+          "pgid": 20621,
+          "executable": "codex"
+        },
+        {
+          "pid": 20696,
+          "ppid": 20622,
+          "pgid": 20696,
+          "executable": "(git)"
+        },
+        {
+          "pid": 20700,
+          "ppid": 20622,
+          "pgid": 20700,
+          "executable": "(git)"
+        },
+        {
+          "pid": 20706,
+          "ppid": 20622,
+          "pgid": 20706,
+          "executable": "(git)"
+        },
+        {
+          "pid": 20712,
+          "ppid": 20622,
+          "pgid": 20712,
+          "executable": "(git)"
+        },
+        {
+          "pid": 20734,
+          "ppid": 20622,
+          "pgid": 20734,
+          "executable": "codex-code-mode-host"
+        }
+      ],
+      "processes_after_runner": [],
+      "report_path": ".cache/spike/stage1-o4gvkwln/evidence/result-6487fd2036cd9e647d3dc814.json",
+      "manifest_sha256": "b87b710f73ac904b1f635dce817bad3e41ba44f5a99a3a0eaae10ade88c0a0bd"
+    },
+    {
+      "harness": "hermes",
+      "scenario": "clarify",
+      "exit_code": 0,
+      "report": {
+        "experiment": {
+          "scenario": "clarify",
+          "passed": true,
+          "observations": {
+            "duplicate_answer_rejected": true,
+            "native_request_observed": true,
+            "stale_answer_rejected": true,
+            "trigger_observed": false
+          },
+          "sessions": [
+            {
+              "run_id": "4be0b40c183f4c9a3bc767ac",
+              "transport_generation": "4be0b40c183f4c9a3bc767ac-1",
+              "harness": "hermes",
+              "runtime_session_id": "2b6de1f0",
+              "durable_session_id": "20260920_125519_e09841",
+              "application_turn_id": "VIGIL-4be0b40c183f4c9a3bc767ac-first",
+              "model": "qwen3.8-27b-local",
+              "provider": "custom",
+              "workspace": ".cache/spike/stage1-ndnqf5un/fixture",
+              "outcome": "completed",
+              "native_status": "complete",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 11584,
+                "output_tokens": 106,
+                "cached_input_tokens": null,
+                "total_tokens": 11690,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T10:55:18.026246Z",
+        "duration_seconds": 13.157204833,
+        "session": {
+          "run_id": "4be0b40c183f4c9a3bc767ac",
+          "transport_generation": "4be0b40c183f4c9a3bc767ac-1",
+          "harness": "hermes",
+          "runtime_session_id": "2b6de1f0",
+          "durable_session_id": "20260920_125519_e09841",
+          "application_turn_id": "VIGIL-4be0b40c183f4c9a3bc767ac-first",
+          "model": "qwen3.8-27b-local",
+          "provider": "custom",
+          "workspace": ".cache/spike/stage1-ndnqf5un/fixture",
+          "outcome": "completed",
+          "native_status": "complete",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 11584,
+            "output_tokens": 106,
+            "cached_input_tokens": null,
+            "total_tokens": 11690,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "local_metadata": {
+          "model": "qwen3.8-27b-local",
+          "context_tokens": 131072,
+          "slots": 1,
+          "template_supports_tools": true
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "stderr_bytes": 39,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "input_requested": 1,
+          "outcome": 1,
+          "output": 55,
+          "request_resolved": 1,
+          "tool": 3
+        }
+      },
+      "process_ancestry": [
+        {
+          "pid": 20750,
+          "ppid": 18002,
+          "pgid": 18002,
+          "executable": "vigil"
+        },
+        {
+          "pid": 20756,
+          "ppid": 20750,
+          "pgid": 20756,
+          "executable": "python"
+        },
+        {
+          "pid": 20776,
+          "ppid": 20756,
+          "pgid": 20776,
+          "executable": "(git)"
+        },
+        {
+          "pid": 20790,
+          "ppid": 20756,
+          "pgid": 20790,
+          "executable": "(git)"
+        },
+        {
+          "pid": 20801,
+          "ppid": 20756,
+          "pgid": 20756,
+          "executable": "(python3.11)"
+        },
+        {
+          "pid": 20750,
+          "ppid": 18002,
+          "pgid": 18002,
+          "executable": "<defunct>"
+        }
+      ],
+      "processes_after_runner": [],
+      "report_path": ".cache/spike/stage1-ndnqf5un/evidence/result-4be0b40c183f4c9a3bc767ac.json",
+      "manifest_sha256": "ed2ec9de8b2d4d527e32b7f6f76a79ef56a99f97069c9e12ca68a1aa85e4bb6e"
+    },
+    {
+      "harness": "codex",
+      "scenario": "clarify",
+      "exit_code": 1,
+      "report": {
+        "experiment": {
+          "scenario": "clarify",
+          "passed": false,
+          "observations": {
+            "native_request_observed": false,
+            "trigger_observed": false
+          },
+          "sessions": [
+            {
+              "run_id": "d89a0b8f770c83747ea48602",
+              "transport_generation": "d89a0b8f770c83747ea48602-1",
+              "harness": "codex",
+              "runtime_session_id": "01a0be74-fd96-79b1-af30-dffa9d458a5d",
+              "durable_session_id": "01a0be74-fd96-79b1-af30-dffa9d458a5d",
+              "thread_id": "01a0be74-fd96-79b1-af30-dffa9d458a5d",
+              "application_turn_id": "VIGIL-d89a0b8f770c83747ea48602-first",
+              "native_turn_id": "01a0be74-fdd5-7f72-8e8d-53f92a492d39",
+              "model": "gpt-6-astra",
+              "provider": "openai",
+              "workspace": ".cache/spike/stage1-8uxrone9/fixture",
+              "outcome": "completed",
+              "native_status": "completed",
+              "native_idle_observed": true,
+              "writer_quiescence": "unconfirmed",
+              "usage": {
+                "input_tokens": 25583,
+                "output_tokens": 118,
+                "cached_input_tokens": 12544,
+                "total_tokens": 25701,
+                "cost": null,
+                "scope": "session_cumulative"
+              },
+              "pending_requests": 0
+            }
+          ]
+        },
+        "schema_version": 1,
+        "mode": "live",
+        "started_at": "2026-09-20T10:55:32.730991Z",
+        "duration_seconds": 12.768199208,
+        "session": {
+          "run_id": "d89a0b8f770c83747ea48602",
+          "transport_generation": "d89a0b8f770c83747ea48602-1",
+          "harness": "codex",
+          "runtime_session_id": "01a0be74-fd96-79b1-af30-dffa9d458a5d",
+          "durable_session_id": "01a0be74-fd96-79b1-af30-dffa9d458a5d",
+          "thread_id": "01a0be74-fd96-79b1-af30-dffa9d458a5d",
+          "application_turn_id": "VIGIL-d89a0b8f770c83747ea48602-first",
+          "native_turn_id": "01a0be74-fdd5-7f72-8e8d-53f92a492d39",
+          "model": "gpt-6-astra",
+          "provider": "openai",
+          "workspace": ".cache/spike/stage1-8uxrone9/fixture",
+          "outcome": "completed",
+          "native_status": "completed",
+          "native_idle_observed": true,
+          "writer_quiescence": "unconfirmed",
+          "usage": {
+            "input_tokens": 25583,
+            "output_tokens": 118,
+            "cached_input_tokens": 12544,
+            "total_tokens": 25701,
+            "cost": null,
+            "scope": "session_cumulative"
+          },
+          "pending_requests": 0
+        },
+        "submitted": true,
+        "fixture_verified": false,
+        "task_accepted": false,
+        "error": "native clarification not demonstrated",
+        "stderr_bytes": 0,
+        "owned_process_close_completed": true,
+        "event_counts": {
+          "outcome": 1,
+          "usage": 2
+        }
+      },
+      "process_ancestry": [
+        {
+          "pid": 20875,
+          "ppid": 18002,
+          "pgid": 18002,
+          "executable": "vigil"
+        },
+        {
+          "pid": 20882,
+          "ppid": 20875,
+          "pgid": 20882,
+          "executable": "node"
+        },
+        {
+          "pid": 20883,
+          "ppid": 20882,
+          "pgid": 20882,
+          "executable": "codex"
+        },
+        {
+          "pid": 20890,
+          "ppid": 20883,
+          "pgid": 20890,
+          "executable": "(git)"
+        }
+      ],
+      "processes_after_runner": [],
+      "report_path": ".cache/spike/stage1-8uxrone9/evidence/result-d89a0b8f770c83747ea48602.json",
+      "manifest_sha256": "dda719d592bc670d94716a250d3b721eb8dd22340d77d2b13f6590a8be6532ad"
+    }
+  ],
+  "native_codex_policy": {
+    "class": "installed-native command/exec with explicit workspaceWrite policy; no model",
+    "cases": [
+      {
+        "case": "direct_commit",
+        "exit_code": 128,
+        "rpc_error_code": null
+      },
+      {
+        "case": "python_ref_write",
+        "exit_code": 1,
+        "rpc_error_code": null
+      },
+      {
+        "case": "local_push",
+        "exit_code": 0,
+        "rpc_error_code": null
+      }
+    ],
+    "hosting_actions": 0,
+    "head_unchanged": true,
+    "alternate_ref_created": false,
+    "local_push_ref_created": true
+  },
+  "native_hermes_requests_policy": {
+    "class": "installed-native integration; controlled stimuli; no inference",
+    "requests": [
+      {
+        "method": "approval",
+        "decision": "once",
+        "returned": {
+          "choice": "once"
+        },
+        "late_response_rejected": true
+      },
+      {
+        "method": "approval",
+        "decision": "deny",
+        "returned": {
+          "choice": "deny"
+        },
+        "late_response_rejected": true
+      },
+      {
+        "method": "clarify",
+        "decision": "answer",
+        "returned": {
+          "answer": "blue"
+        },
+        "late_response_rejected": true
+      },
+      {
+        "method": "clarify",
+        "decision": "cancel",
+        "returned": {},
+        "late_response_rejected": true
+      },
+      {
+        "method": "approval",
+        "decision": "timeout",
+        "returned": null,
+        "late_response_rejected": true
+      },
+      {
+        "method": "clarify",
+        "decision": "interrupt",
+        "returned": null,
+        "late_response_rejected": true
+      }
+    ],
+    "policy": [
+      {
+        "case": "direct_commit",
+        "exit_code": 0,
+        "native_approval_requests": 0,
+        "error_present": false
+      },
+      {
+        "case": "python_commit",
+        "exit_code": -1,
+        "native_approval_requests": 1,
+        "error_present": true
+      },
+      {
+        "case": "local_push",
+        "exit_code": 0,
+        "native_approval_requests": 0,
+        "error_present": false
+      }
+    ],
+    "source_sha256": {
+      "tui_gateway/server_requests.py": "a3a58ed22cba8b9228d2b35eabb46e6bdc90b09630277ccc102cad9ad4c464fa",
+      "tools/approval.py": "1855949961ab5f0ff2fd5036bea1a4782317e33231b74aac937879a5c0a0ee7f",
+      "tools/terminal_tool.py": "83171738268c25f05f114e0fc688dd9977d54cd2d7a5ca82b8685b5058de9172"
+    },
+    "native_cancellations": [
+      [
+        "request.cancel",
+        "timeout"
+      ],
+      [
+        "request.cancel",
+        "interrupted"
+      ]
+    ],
+    "approval_mode": "manual",
+    "actual_commit_count": 1,
+    "local_push_ref": "1b787cf4125341683828c2b21a645c492add0fc7",
+    "hosting_actions": 0,
+    "hard_application_commit_push_gate": "unsupported in unrestricted Hermes terminal profile"
+  },
+  "platform_probe": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "machine": "arm64",
+    "class": "disposable native primitives; not production coordinator/containment",
+    "path_identity": {
+      "case_alias_same_inode": true,
+      "unicode_alias_same_inode": true,
+      "symlink_same_inode": true,
+      "symlink_resolves": true,
+      "case_resolve_strings_equal": false,
+      "unicode_resolve_strings_equal": false,
+      "space_in_test_path": true,
+      "ancestor_overlap_detected": true,
+      "symlink_ancestor_overlap_detected": true,
+      "similar_prefix_sibling_not_overlap": true,
+      "case_alias_overlap_detected": true,
+      "unicode_alias_overlap_detected": true,
+      "linked_worktrees_share_git_identity": true
+    },
+    "ownership_prototype": {
+      "concurrent_owner_blocked": true,
+      "symlink_owner_blocked": true,
+      "os_lock_released_after_owner_death": true,
+      "persistent_claim_after_owner_death": "unknown-writer",
+      "dispatch_blocked_by_persistent_claim": true,
+      "production_coordinator_implemented": false
+    },
+    "seatbelt_primitive": {
+      "exit_codes": {
+        "allowed_worktree_write": 0,
+        "protected_git_write": 1,
+        "synthetic_secret_read": 1,
+        "loopback_network": 1
+      },
+      "allowed_file_created": true,
+      "protected_git_file_created": false,
+      "profile": "allow-default with three explicit deny rules; NOT a complete worker policy",
+      "production_containment_qualified": false
+    }
+  },
+  "provider_error": {
+    "class": "installed gateway with controlled provider failure",
+    "error_injected": true,
+    "runner_exit": 1,
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/health",
+        "model": null
+      },
+      {
+        "method": "GET",
+        "path": "/v1/models",
+        "model": null
+      },
+      {
+        "method": "GET",
+        "path": "/props",
+        "model": null
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/models",
+        "model": null
+      },
+      {
+        "method": "GET",
+        "path": "/api/tags",
+        "model": null
+      },
+      {
+        "method": "GET",
+        "path": "/v1/props",
+        "model": null
+      },
+      {
+        "method": "GET",
+        "path": "/props",
+        "model": null
+      },
+      {
+        "method": "GET",
+        "path": "/v1/models",
+        "model": null
+      },
+      {
+        "method": "GET",
+        "path": "/v1/props",
+        "model": null
+      },
+      {
+        "method": "GET",
+        "path": "/props",
+        "model": null
+      },
+      {
+        "method": "POST",
+        "path": "/v1/chat/completions",
+        "model": "qwen3.8-27b-local"
+      }
+    ],
+    "inference_requests": 1,
+    "unexpected_model": false,
+    "os_egress_enforced": false,
+    "report": {
+      "schema_version": 1,
+      "mode": "live",
+      "started_at": "2026-09-20T10:56:13.15608Z",
+      "duration_seconds": 3.4028880839999998,
+      "session": {
+        "run_id": "9ede61203328e6269b9ec7fc",
+        "transport_generation": "9ede61203328e6269b9ec7fc-1",
+        "harness": "hermes",
+        "runtime_session_id": "aae82c99",
+        "durable_session_id": "20260920_125614_24b5b7",
+        "application_turn_id": "9ede61203328e6269b9ec7fc-turn-1",
+        "model": "qwen3.8-27b-local",
+        "provider": "custom",
+        "workspace": ".cache/spike/stage1-sg4g0zur/fixture",
+        "outcome": "failed",
+        "native_status": "error",
+        "native_idle_observed": false,
+        "writer_quiescence": "unconfirmed",
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "cached_input_tokens": null,
+          "total_tokens": 0,
+          "cost": null,
+          "scope": "session_cumulative"
+        },
+        "pending_requests": 0
+      },
+      "local_metadata": {
+        "model": "qwen3.8-27b-local",
+        "context_tokens": 131072,
+        "slots": 1,
+        "template_supports_tools": true
+      },
+      "submitted": true,
+      "fixture_verified": false,
+      "task_accepted": false,
+      "error": "native turn ended failed",
+      "stderr_bytes": 360,
+      "owned_process_close_completed": true,
+      "event_counts": {
+        "outcome": 1,
+        "output": 2
+      }
+    }
+  },
+  "cleanup": {
+    "recorded_native_pids_remaining": [],
+    "runner_lock_exists": false,
+    "copied_auth_files_remaining": 0
+  }
+}

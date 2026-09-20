@@ -1,6 +1,6 @@
 # Minimal architecture
 
-Status: Stage 4 specified on 2026-09-20. The [application core specification](core-spec.md), [draft schemas](spec/project.sql), and [implementation backlog/requirement map](stage-5-plan.md) are the detailed contracts. Stage 3's [runtime findings](research/stage-3-results.md) constrain strict execution; the production core is not implemented yet.
+Status: Stage 4 specified on 2026-09-20. The [application core specification](core-spec.md), [draft schemas](spec/project.sql), and [implementation backlog/requirement map](stage-5-plan.md) are the detailed contracts. [Linux](research/stage-3-results.md) and [macOS](research/stage-3.5-results.md) runtime findings constrain strict execution; the production core is not implemented yet.
 
 ```mermaid
 flowchart TD

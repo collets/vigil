@@ -1,8 +1,8 @@
 # Next steps and resumption plan
 
-Updated: 2026-09-20. Stage 3 Linux investigation and Stage 4 specification complete; Stage 3.5 macOS setup next with the user.
+Updated: 2026-09-20. Stages 3 and 3.5 runtime investigations and Stage 4 specification complete; Stage 5 A–C implementation next.
 
-Status: Stage 3 Linux experiments and adapter improvements are complete, with explicit unresolved qualification gates. See [Stage 3 results](research/stage-3-results.md). Both Stage 3 and Stage 4 plans were prepared before implementation. Stage 4 is complete: [core specification](core-spec.md), [validated draft schemas](spec/project.sql), and [Stage 5 backlog/requirements map](stage-5-plan.md). The user scheduled [Stage 3.5 macOS setup/runtime checks](stage-3.5-macos.md) after this work, when they return.
+Status: Stage 3 Linux experiments and adapter improvements are complete, with explicit unresolved qualification gates. See [Stage 3 results](research/stage-3-results.md). Both Stage 3 and Stage 4 plans were prepared before implementation. Stage 4 is complete: [core specification](core-spec.md), [validated draft schemas](spec/project.sql), and [Stage 5 backlog/requirements map](stage-5-plan.md). [Stage 3.5 macOS checks](research/stage-3.5-results.md) are also complete: basic runtime behavior passed, but both harnesses left writers after abrupt loss and strict production containment remains unsupported.
 
 ## Resume here
 
@@ -10,16 +10,16 @@ Status: Stage 3 Linux experiments and adapter improvements are complete, with ex
 2. Read this document, [session continuity audit](session-audit.md), [requirements](requirements.md), [architecture](architecture.md), and [harness investigation](harness-capabilities.md).
 3. Inspect current Git status and applicable repository instructions. Preserve existing files and uncommitted work; do not reset the checkout.
 4. Run `make check` to establish the starting baseline. Check installed harness versions against the evidence below; refresh affected protocol research if versions differ.
-5. Read the [Stage 1 contract and profiles](adapter-spike.md) and [Stage 2 results](research/stage-2-results.md), then read the completed [core specification](core-spec.md) and the [Stage 3.5 macOS plan](stage-3.5-macos.md). Do not start implementing the full scheduler or dashboard before resolving the critical adapter feasibility questions.
+5. Read the [Stage 1 contract and profiles](adapter-spike.md), [Stage 2 results](research/stage-2-results.md), completed [core specification](core-spec.md), and [macOS findings](research/stage-3.5-results.md). Implement Stage 5 in slices; containment qualification gates production editing/delivery.
 
 Suggested handoff prompt:
 
-> Resume Vigil using docs/next-steps.md and docs/core-spec.md. Stage 3 Linux investigation and Stage 4 specification are complete, with explicit production enforcement/recovery gates. The user has returned for Stage 3.5: inspect their Mac environment together, choose local execution or SSH access, and qualify macOS separately. Do not copy Linux credential files/native homes. After qualification, implement the sequenced Stage 5 backlog; no production scheduler has been implemented yet.
+> Resume Vigil using docs/next-steps.md, docs/core-spec.md and docs/stage-5-plan.md. Stages 3/3.5 investigations and Stage 4 specification are complete. Begin Stage 5 A–C, preserving containment gates in D. Both macOS harnesses left bounded writers after abrupt loss; native permissions do not enforce all commit/push gates. The Mac checkout is ~/development/vigil and uses fresh Mac-native profiles. llama.cpp runs in native Windows, reachable from WSL localhost; Mac inference used a temporary SSH tunnel, now closed. No production scheduler has been implemented yet.
 
 ## Current state
 
 - Go hello-world scaffold with Cobra, Bubble Tea, Bubbles, Lip Gloss, and SQLite. Commands: `hello`, `dashboard`, and the development-only `spike`. Bounded stdio transports and session adapters are implemented in `internal/harness`; isolated execution/verification lives in `internal/spike`.
-- Scaffold previously passed CLI/SQLite/interactive smoke checks, Go checks, and Linux/macOS amd64/arm64 cross-compilation. Cross-compilation is not macOS runtime verification.
+- Scaffold passed Linux CLI/SQLite/interactive smoke checks and Linux/macOS amd64/arm64 cross-compilation. Stage 3.5 separately passed native macOS arm64 Go/race/schema/build checks and CLI/dashboard smoke tests; macOS amd64 remains cross-build-only.
 - Functional baseline consolidated as R01–R71. See [first usable milestone](mvp-acceptance.md) for the eventual demonstration.
 - Recommended transports: Codex app-server over stdio; Hermes TUI gateway over stdio. Hermes ACP is an alternative, not another adapter to build now.
 - Metadata handshakes passed on Linux with Codex 0.155.1 and Hermes 0.21.3, source commit `6a627e6eb38e28ac421d5ad8df3f676e49d0c287`.
@@ -27,7 +27,7 @@ Suggested handoff prompt:
 - Stage 1 contract, versioned experiment profiles, fixture and preparation/verification scripts are complete. Both native configuration checks passed. Codex uses existing ChatGPT auth and `gpt-6-astra`; Hermes resolves `custom` / `qwen3.8-27b-local` at `http://127.0.0.1:8080/v1`.
 - llama.cpp was healthy during Stage 2: authenticated metadata and tool use passed with 131072 context tokens and one slot. The inherited `OPENAI_BASE_URL` and `OPENAI_API_KEY` work; do not print or commit the key. Codex advertised and executed `gpt-6-astra` using existing ChatGPT authentication. Recheck service health before future experiments.
 - Stage 3 added exact resume, lifecycle scenarios, native request/policy probes and provider-error injection. Resume, normal interruption, Codex approval and Hermes clarification passed; abrupt Hermes child cleanup failed. Native commit/push coverage is not a complete application gate. [Full evidence and limits](research/stage-3-results.md).
-- The user has a Mac and explicitly deferred access/setup to Stage 3.5 after the current Stage 3/4 work. No credentials or access are needed now.
+- Stage 3.5 used user-authorized SSH, Go 1.27.1, nvm Node 24.21.0, Codex 0.155.1 and locked Hermes 0.21.3/Python 3.11.16 on macOS 26.6.2 arm64. Sixteen model turns across fourteen cases yielded eleven passes and three explicit failures: both abrupt-loss writer checks and Codex native clarification. The temporary tunnel reached native Windows llama.cpp through WSL. No model was installed on the Mac, and no cross-host inference capacity guarantee is established.
 - Durable Stage 2 evidence: [validation report](research/stage-2-results.md) and [sanitized results](research/stage-2-results.json). One initial Hermes response included prose before JSON and was correctly rejected; a fresh fixture with explicit JSON-only instructions passed. No automatic replay occurred.
 - Durable Stage 1 evidence: [settings, versions and validation results](research/stage-1-results.json). Repeat preparation with `~/.hermes/hermes-agent/venv/bin/python scripts/spike/prepare.py`; it creates a fresh private experiment and starts no inference.
 - Durable evidence: [probe results](research/harness-probe-results.json). Temporary scripts and generated schemas are in ignored `.cache/research/`; do not rely on that directory being available in another checkout.
@@ -93,13 +93,13 @@ The [expanded plan](stage-3-plan.md) was executed on Linux; [results](research/s
 - [x] Forced loss retained unknown outcomes/partial files without replay. Hermes detached-child cleanup failed and now explicitly requires quarantine in the core design.
 - [x] Guarantee levels and Linux/macOS limits recorded; bounded alternative containment designs carried into Stage 4.
 - [ ] Production execution/recovery qualification: corrupt/interrupted native history, live Codex input, full inference/permission boundary and arbitrary writer cleanup still require implementation evidence. These remain gates, not passed capabilities.
-- [ ] macOS runtime qualification is scheduled with the user as Stage 3.5.
+- [x] Bounded macOS runtime investigation completed in Stage 3.5; production containment/recovery remains gated.
 
 Investigation deliverable complete: native adapters and evidence support the core specification, with strict production dispatch gated on the unresolved boundaries.
 
 ## Stage 3.5 — macOS setup and runtime qualification
 
-The user requested this follow-up after Stages 3 and 4, when they return. Follow the [macOS plan](stage-3.5-macos.md). Prefer running locally on the Mac; choose SSH only if useful. Reprepare fixtures there, do not copy Linux credentials/native homes, and qualify platform capabilities independently.
+Completed through user-authorized SSH after Stages 3 and 4. See the [plan](stage-3.5-macos.md), [results](research/stage-3.5-results.md) and [sanitized evidence](research/stage-3.5-results.json). Fresh Mac preparations passed editing, completed-history resume, normal interruption, Codex approvals and Hermes clarification. Forced transport loss left writers under both harnesses; Codex clarification was not demonstrated. Native Git gate gaps reproduced. Case/Unicode aliases, shared Git identity, advisory locks, persisted quarantine and narrow Seatbelt primitives were investigated. All recorded native processes and copied auth were cleaned up; private evidence remains in ignored caches. Strict production eligibility is not qualified.
 
 ## Stage 4 — Specify the application core
 
@@ -136,4 +136,4 @@ Acceptance: run the [agreed milestone](mvp-acceptance.md), including actual exec
 - Record the next concrete action and any input needed from the user.
 - Preserve unfinished work and running-session identities; stop experimental processes before ending the session.
 
-Next concrete action: when the user returns, start Stage 3.5 by inspecting their Mac environment and agreeing how to run the checks locally or through SSH. No access or runtime installation has been configured. The Linux implementation can continue from Stage 5 A–C independently; strict editing/delivery remains gated on containment and the unresolved lifecycle qualifications.
+Next concrete action: implement Stage 5 A–C (persisted commands, policy/readiness, coordination/recovery). Stage 5 D must establish containment on each supported platform before strict editing/delivery. Mac development tools and SSH are configured; re-establish the temporary WSL-to-Mac tunnel only when future Hermes experiments need the Windows-hosted server.

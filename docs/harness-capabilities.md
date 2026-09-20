@@ -8,13 +8,15 @@ Stage 1 follow-up (2026-09-20): [contract and reproducible isolated profiles](ad
 
 Stage 2 follow-up (2026-09-20): [bounded execution and validation](research/stage-2-results.md), with [sanitized run evidence](research/stage-2-results.json). Both harnesses passed profile/workspace checks, observable streaming/tool use, native completion, strict JSON, and independent fixture verification. Hermes used the working inherited OpenAI-compatible localhost credentials. One initial Hermes prose-prefixed result was rejected. Native input/approvals, interruption under load, resume, policy enforcement, and macOS runtime remain unverified live.
 
-Stage 3 follow-up (2026-09-20): [Linux lifecycle/policy evidence](research/stage-3-results.md). Exact completed-session resume, normal output/child interruption, Codex one-time approval/denial and Hermes clarification were exercised. Abrupt Hermes transport loss left a bounded child writing. Native policy probes did not establish full commit/push enforcement. Strict production eligibility therefore remains gated; macOS is scheduled as [Stage 3.5](stage-3.5-macos.md).
+Stage 3 follow-up (2026-09-20): [Linux lifecycle/policy evidence](research/stage-3-results.md). Exact completed-session resume, normal output/child interruption, Codex one-time approval/denial and Hermes clarification were exercised. Abrupt Hermes transport loss left a bounded child writing. Native policy probes did not establish full commit/push enforcement. Strict production eligibility therefore remains gated.
+
+Stage 3.5 follow-up (2026-09-20): [macOS arm64 results](research/stage-3.5-results.md) qualify the same pinned harness versions for bounded editing, completed-history resume and normal interruption. Both Codex and Hermes left writers running after abrupt transport loss on macOS. Native commit/push gaps reproduced; live Codex clarification was not demonstrated. Case/Unicode aliases require filesystem identity comparisons. Inference remained on native Windows through WSL and an SSH tunnel; no Mac-local model server was installed.
 
 ## Evidence and versions
 
 - Codex CLI **0.155.1**: version/help inspected; generated 312 JSON Schema files; initialize handshake passed. Its CLI labels app-server experimental, so pin and validate its protocol version rather than assuming compatibility with every update.
 - Hermes **0.21.3**, source commit `6a627e6eb38e28ac421d5ad8df3f676e49d0c287`: ACP dependency check, ACP initialize, gateway-ready event, gateway capabilities, and client request-capability registration passed. Relevant inspected files had no local modifications.
-- Tests ran on Linux amd64. No macOS harness runtime checks were performed.
+- Initial tests ran on Linux amd64; Stage 3.5 subsequently tested macOS 26.6.2 arm64 with separately recorded limits. Neither platform's observed native profile qualifies strict production containment.
 - The first Codex handshake failed because this research sandbox could not write Codex's normal SQLite state. An approved retry with normal state access passed. This was an environment restriction, not a protocol failure.
 - The initial investigation started no model turns. Stage 2 subsequently verified live streaming execution and tool use; interruption under load, native resume, and approvals remain source-backed/synthetic-tested until exercised live. No publication actions were started by a fixture.
 
