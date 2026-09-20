@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 
 	"vigil/internal/store"
@@ -33,6 +34,7 @@ type Owner struct {
 	Coordinator *Coordinator
 	ID          string
 	lock        *os.File
+	mu          sync.RWMutex
 }
 type Claim struct {
 	ID         string             `json:"id"`
@@ -120,6 +122,8 @@ func (o *Owner) live() error {
 }
 
 func (o *Owner) Claim(ctx context.Context, project, operation string, roots []workspace.Identity) ([]Claim, error) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
 	if err := o.live(); err != nil {
 		return nil, err
 	}
@@ -220,6 +224,8 @@ func quarantine(ctx context.Context, tx *store.Tx, owner, reason string) error {
 	return err
 }
 func (o *Owner) Close() error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
 	if o.lock == nil {
 		return nil
 	}
@@ -300,6 +306,8 @@ func (c *Coordinator) Reap(ctx context.Context) error {
 // Release is for a trusted supervisor observation, never a worker-supplied claim.
 // Manual recovery of a dead owner uses Reconcile with human-observed evidence.
 func (o *Owner) Release(ctx context.Context, claim Claim, proof string) error {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
 	if err := o.live(); err != nil {
 		return err
 	}
@@ -397,6 +405,8 @@ func (c *Coordinator) Endpoint(ctx context.Context, id string, aliases []string,
 }
 
 func (o *Owner) Enqueue(ctx context.Context, operation, project, run, endpoint string) (Ticket, error) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
 	var ticket Ticket
 	for _, id := range []string{operation, project, run, endpoint} {
 		if !store.SafeID(id) {
@@ -437,6 +447,8 @@ func (o *Owner) Enqueue(ctx context.Context, operation, project, run, endpoint s
 	return ticket, err
 }
 func (o *Owner) Reserve(ctx context.Context, ticket Ticket) (Ticket, error) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
 	if err := o.live(); err != nil {
 		return ticket, err
 	}
@@ -445,7 +457,7 @@ func (o *Owner) Reserve(ctx context.Context, ticket Ticket) (Ticket, error) {
 		if err := tx.QueryRowContext(ctx, "SELECT state,instance_id,endpoint_id,project_id FROM queue_tickets WHERE sequence=?", ticket.Sequence).Scan(&state, &owner, &endpoint, &project); err != nil {
 			return err
 		}
-		if owner != o.ID || endpoint != ticket.Endpoint || state != "waiting" {
+		if owner != o.ID || endpoint != ticket.Endpoint || (state != "waiting" && state != "reserved") {
 			return errors.New("stale or foreign ticket")
 		}
 		var owned int
@@ -454,6 +466,18 @@ func (o *Owner) Reserve(ctx context.Context, ticket Ticket) (Ticket, error) {
 		}
 		if owned == 0 {
 			return ErrBusy
+		}
+		if state == "reserved" {
+			var generation int64
+			if err := tx.QueryRowContext(ctx, "SELECT generation FROM endpoint_slots WHERE ticket=? AND endpoint_id=? AND state='reserved'", ticket.Sequence, endpoint).Scan(&generation); err != nil {
+				return err
+			}
+			if ticket.Generation != 0 && ticket.Generation != generation {
+				return errors.New("stale reservation generation")
+			}
+			ticket.Generation = generation
+			ticket.State = "reserved"
+			return nil
 		}
 		var first int64
 		if err := tx.QueryRowContext(ctx, "SELECT min(sequence) FROM queue_tickets WHERE endpoint_id=? AND state='waiting'", endpoint).Scan(&first); err != nil {
@@ -495,6 +519,8 @@ func (o *Owner) Reserve(ctx context.Context, ticket Ticket) (Ticket, error) {
 	return ticket, err
 }
 func (o *Owner) FinishTicket(ctx context.Context, ticket Ticket, proof string) error {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
 	if err := o.live(); err != nil {
 		return err
 	}

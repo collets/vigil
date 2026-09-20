@@ -381,6 +381,9 @@ func (s *Session) Create(ctx context.Context) error {
 	s.mu.Unlock()
 	// session.info is an event, not an RPC. Activate reads the owned session snapshot.
 	for {
+		if err := s.Err(); err != nil {
+			return err
+		}
 		var r struct {
 			Info json.RawMessage `json:"info"`
 		}
@@ -389,6 +392,11 @@ func (s *Session) Create(ctx context.Context) error {
 		}
 		if !boolField(object(r.Info), "lazy") {
 			s.mu.Lock()
+			if s.fault != nil {
+				err := s.fault
+				s.mu.Unlock()
+				return err
+			}
 			err := s.validateHermesInfoLocked(r.Info)
 			if err == nil {
 				s.created = true

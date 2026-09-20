@@ -52,6 +52,10 @@ func fakeProtocol(mode string, m Message, send func(any)) {
 	case "session.create":
 		result = map[string]any{"session_id": "runtime-1", "stored_session_id": "stored-1", "info": info}
 	case "session.activate":
+		if mode == "hermes-init-error" {
+			info["lazy"] = true
+			notify("event", map[string]any{"type": "error", "session_id": "runtime-1", "payload": map[string]string{"message": "native initialization failed"}})
+		}
 		result = map[string]any{"info": info}
 	case "session.resume":
 		r := map[string]any{"session_id": "new-runtime", "resumed": "stored-1", "message_count": 2, "info": info, "running": false}
@@ -140,6 +144,23 @@ func TestTerminalNormalizationAndEarlyEvents(t *testing.T) {
 				t.Fatal("second turn admitted")
 			}
 		})
+	}
+}
+
+func TestHermesCreateStopsOnInitializationError(t *testing.T) {
+	transport := testTransport(t, "hermes-init-error", nil)
+	s, err := NewSession("hermes", transport, Profile{Model: "fixture-model", Provider: "custom", Workspace: "/fixture", NativeParams: map[string]any{}}, "run", "generation", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err = s.Probe(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Create(ctx); err == nil || err == context.DeadlineExceeded || !strings.Contains(err.Error(), "native Hermes session error") {
+		t.Fatal("startup error did not stop lazy polling", err)
 	}
 }
 func TestConflictingTerminalAndQueuedSubmit(t *testing.T) {

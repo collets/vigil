@@ -94,6 +94,13 @@ func TestOwnershipAndFIFO(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	recovered := t1
+	recovered.Generation = 0
+	recovered.State = "waiting"
+	recovered, err = owner1.Reserve(ctx, recovered)
+	if err != nil || recovered.Generation != t1.Generation {
+		t.Fatal("reservation retry changed fencing identity", recovered, err)
+	}
 	if _, err = owner2.Reserve(ctx, t2); !errors.Is(err, ErrWaiting) {
 		t.Fatal("capacity bypass", err)
 	}

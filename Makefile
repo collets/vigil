@@ -6,11 +6,14 @@ export GOSUMDB := sum.golang.org
 export GOPATH := $(CURDIR)/.cache/gopath
 export GOCACHE := $(CURDIR)/.cache/go-build
 
-.PHONY: build hello dashboard fmt check check-race tidy cross-build
+.PHONY: build build-boundary hello dashboard fmt check check-race tidy cross-build
 tidy:
 	$(GO) mod tidy
 build:
 	CGO_ENABLED=0 $(GO) build -o bin/vigil ./cmd/vigil
+build-boundary:
+	CGO_ENABLED=0 GOOS=linux $(GO) build -o bin/vigil-guardian ./cmd/vigil-guardian
+	CGO_ENABLED=0 GOOS=linux $(GO) build -o bin/vigil-worker ./cmd/vigil-worker
 hello:
 	$(GO) run ./cmd/vigil hello
 dashboard:
