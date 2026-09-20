@@ -86,3 +86,23 @@ func TestCommonGitIdentity(t *testing.T) {
 		t.Fatal("shared Git administration bypass")
 	}
 }
+
+func TestIdentityIgnoresAmbientGitDirectory(t *testing.T) {
+	root := t.TempDir()
+	if b, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
+		t.Fatal(err, string(b))
+	}
+	before, err := Inspect(context.Background(), root)
+	if err != nil || before.CommonGit == "" {
+		t.Fatal(before, err)
+	}
+	t.Setenv("GIT_DIR", filepath.Join(t.TempDir(), "foreign"))
+	t.Setenv("GIT_WORK_TREE", t.TempDir())
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "core.bare")
+	t.Setenv("GIT_CONFIG_VALUE_0", "true")
+	after, err := Inspect(context.Background(), root)
+	if err != nil || after.CommonGit != before.CommonGit {
+		t.Fatal("ambient Git environment redirected discovery", after, err)
+	}
+}

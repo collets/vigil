@@ -83,3 +83,10 @@ The complete OrbStack host route then passed with a synthetic provider: isolated
 Hermes arm64 image `sha256:51a4c7a804d86ee15d6b1fd8e13f2af4f865cfc9f8ae84e95c575fd52d6b05c3` was built from the same pinned source/base/SQLite inputs. Manifest: `/tmp/vigil-stage5.yd7DDE/.cache/boundary/hermes-c9n18wob/image.json` on the Mac. Actual Hermes metadata, normal close and lease-loss detached-writer cleanup passed there.
 
 Exactly one live Mac qualification turn then used `qwen3.8-27b-local` through the temporary reverse SSH tunnel to Windows llama.cpp. The requested fixture edit and JSON result passed, and container/heartbeat checks proved cleanup. The host relay recorded three completed requests, zero aborted requests and no active request. Native usage was 17,260 input and 313 output tokens. Evidence: `/tmp/vigil-stage5.yd7DDE/.cache/boundary/live-hermes-1582491851/report.json`. The credential was supplied through SSH stdin, not a command argument or Docker environment. The tunnel was closed after the test. This adds one model turn to the earlier WSL turn; none was replayed or published. Production eligibility remains false.
+
+
+## Checkout admission and Git bypass evidence
+
+The new conservative planner and alias/replacement tests passed natively on Linux and macOS. The pinned Hermes images supplied Git for inference-free Docker probes on both architectures. Allowed fixture edits succeeded; protected staging/commit/config/ref/raw writes, mount replacement, hard-link creation and a local push into the original Git directory were rejected. Native regression/race suites, builds and the four cross-builds passed. Unsupported nested/alias layouts remain explicit refusals; this does not qualify arbitrary project layouts or hostile concurrent host mutation. No additional inference or publishing occurred in this increment.
+
+The user's away-time spending/safety constraints and deferred decisions are tracked in [pending decisions](../pending-decisions.md). Stage 6 remains conditional on finishing the accepted Stage 5 milestone.

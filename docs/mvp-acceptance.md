@@ -1,6 +1,6 @@
 # First usable milestone
 
-Status: scenario accepted on 2026-09-20; Stage 1 adapter preparation is complete. The runnable Go application remains a hello-world scaffold; no milestone execution has been demonstrated.
+Status: scenario accepted on 2026-09-20; Stage 1 adapter preparation is complete. The Go application now persists project planning, permissions and resource coordination. Contained Hermes probes passed on Linux and macOS; the full production milestone has not been demonstrated.
 
 ## Accepted demonstration
 
