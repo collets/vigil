@@ -10,6 +10,7 @@ import (
 
 func NewCommand() *cobra.Command {
 	var database string
+	var stateDir string
 	root := &cobra.Command{
 		Use:           "vigil",
 		Short:         "A control panel for development agents",
@@ -18,6 +19,8 @@ func NewCommand() *cobra.Command {
 		SilenceErrors: true,
 	}
 	root.PersistentFlags().StringVar(&database, "db", ":memory:", "SQLite database path (defaults to a temporary in-memory database)")
+	root.PersistentFlags().StringVar(&stateDir, "state-dir", "", "Private application state directory (defaults to XDG_STATE_HOME/vigil)")
+	root.AddCommand(projectCommand(&stateDir), resourceCommand(&stateDir), doctorCommand())
 	root.AddCommand(spikeCommand())
 	root.AddCommand(&cobra.Command{
 		Use:   "hello",

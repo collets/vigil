@@ -2,7 +2,7 @@
 
 A local control panel for development agents running through existing harnesses, combining frontier and local models.
 
-Status: bounded Codex/Hermes adapters with Linux and macOS arm64 lifecycle evidence and a completed application-core specification. The dashboard remains a scaffold; scheduling, recovery, and product workflows are not implemented. Strict execution remains gated by documented containment gaps. Targets: Linux and macOS, on amd64 and arm64.
+Status: bounded Codex/Hermes adapters, Linux/macOS lifecycle evidence, and the first persisted Stage 5 core: project definitions, command receipts, policy decisions, artifacts, workspace ownership and endpoint queues. The dashboard remains a scaffold; production scheduling, checkpoint recovery and delivery are not implemented. Strict execution remains gated by containment qualification. Targets: Linux and macOS, on amd64 and arm64.
 
 - [Technology proposal](docs/technology.md): Go versus Python and the proposed foundation.
 - [Minimal architecture](docs/architecture.md): responsibilities and integration boundaries.
@@ -15,6 +15,7 @@ Status: bounded Codex/Hermes adapters with Linux and macOS arm64 lifecycle evide
 - [Stage 3 lifecycle/policy results](docs/research/stage-3-results.md): observed capabilities and strict execution limits.
 - [Application core specification](docs/core-spec.md): state, policy, coordination, checkpoints and storage contracts.
 - [Stage 5 backlog](docs/stage-5-plan.md): implementation slices and R01–R71 coverage.
+- [Stage 5 expanded plan](docs/stage-5-execution.md) and [persisted CLI guide](docs/stage-5-cli.md): implementation order, commands and current limits.
 - [Stage 3.5 macOS results](docs/research/stage-3.5-results.md): native runtime checks, filesystem identity and platform-specific cleanup limits.
 - [Session continuity audit](docs/session-audit.md): decisions, alternatives, open questions, and documentation provenance.
 - [Discovery history](docs/discovery-notes.md): brainstorming decisions and their evolution.
@@ -45,7 +46,7 @@ The parent directory must exist. The scaffold queries SQLite's version and does 
 ```sh
 make fmt          # format Go source
 make check        # vet and compile/test all packages
-make check-race   # race detector for the transport/runner; requires a C compiler
+make check-race   # race detector for transport, runner and persisted core; requires a C compiler
 make cross-build  # Linux/macOS, amd64/arm64; outputs in dist/
 ```
 
@@ -66,6 +67,13 @@ internal/harness/   bounded stdio transport and native session adapters
 internal/spike/     isolated development runner and fixture validation
 internal/tui/       Bubble Tea hello-world screen
 internal/storage/   SQLite connection check
+internal/store/     private application databases, migrations and durable commands
+internal/core/      project definitions, readiness and human authority
+internal/policy/    closed definitions and policy evaluation
+internal/artifacts/ bounded content-addressed evidence
+internal/workspace/ physical directory and common Git identities
+internal/coordinator/ cooperative claims, endpoint queues and crash quarantine
+internal/boundary/  runtime doctor and experimental container guardian/probes
 docs/               architecture and requirements discussion
 ```
 
@@ -87,4 +95,4 @@ Private activity and result evidence stays under the experiment's `evidence/` di
 
 See [next steps](docs/next-steps.md) for current evidence and remaining lifecycle, resume, approval, policy, and macOS runtime gates.
 
-Lifecycle experiments use the same fresh manifest with `--live --scenario resume|interrupt|child|loss|clarify|approval-allow|approval-deny`. The approval stimuli are Codex-specific. These scenarios may intentionally fail and retain partial fixture files; see the Stage 3 plan before running them. Draft schemas live in `docs/spec` and are checked by `make check`; the CLI does not install them.
+Lifecycle experiments use the same fresh manifest with `--live --scenario resume|interrupt|child|loss|clarify|approval-allow|approval-deny`. The approval stimuli are Codex-specific. These scenarios may intentionally fail and retain partial fixture files; see the Stage 3 plan before running them. Historical draft schemas live in `docs/spec` and are checked by `make check`. `project init` installs separately versioned embedded migrations from `internal/store/migrations`; see the [planning CLI guide](docs/stage-5-cli.md).

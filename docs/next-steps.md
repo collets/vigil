@@ -1,6 +1,6 @@
 # Next steps and resumption plan
 
-Updated: 2026-09-20. Stages 3 and 3.5 runtime investigations and Stage 4 specification complete; Stage 5 A–C implementation next.
+Updated: 2026-09-20. Stages 3/3.5 investigations and Stage 4 specification complete; Stage 5 planning/control foundation implemented, production execution still gated.
 
 Status: Stage 3 Linux experiments and adapter improvements are complete, with explicit unresolved qualification gates. See [Stage 3 results](research/stage-3-results.md). Both Stage 3 and Stage 4 plans were prepared before implementation. Stage 4 is complete: [core specification](core-spec.md), [validated draft schemas](spec/project.sql), and [Stage 5 backlog/requirements map](stage-5-plan.md). [Stage 3.5 macOS checks](research/stage-3.5-results.md) are also complete: basic runtime behavior passed, but both harnesses left writers after abrupt loss and strict production containment remains unsupported.
 
@@ -14,10 +14,11 @@ Status: Stage 3 Linux experiments and adapter improvements are complete, with ex
 
 Suggested handoff prompt:
 
-> Resume Vigil using docs/next-steps.md, docs/core-spec.md and docs/stage-5-plan.md. Stages 3/3.5 investigations and Stage 4 specification are complete. Begin Stage 5 A–C, preserving containment gates in D. Both macOS harnesses left bounded writers after abrupt loss; native permissions do not enforce all commit/push gates. The Mac checkout is ~/development/vigil and uses fresh Mac-native profiles. llama.cpp runs in native Windows, reachable from WSL localhost; Mac inference used a temporary SSH tunnel, now closed. No production scheduler has been implemented yet.
+> Resume Vigil using docs/next-steps.md, docs/core-spec.md and docs/stage-5-execution.md. Stage 5's persisted planning/control foundation is implemented; read docs/stage-5-cli.md and docs/research/stage-5-foundation-results.md. Continue incomplete B/C requirements and D provider relay/real-harness qualification before connecting production dispatch. Docker Desktop Linux engine 29.8.0 is reachable from WSL; primitive mount/network/guardian cleanup tests passed. Strict execution remains gated. The Mac checkout is ~/development/vigil; native core/race checks passed in an isolated temporary source copy. llama.cpp runs in native Windows through WSL localhost. No production scheduler exists.
 
 ## Current state
 
+- Stage 5 plan was expanded before implementation. New `project`, `resources` and `doctor` CLI commands persist definitions, receipts, scoped decisions, artifacts and cooperative resource state. [Usage](stage-5-cli.md), [progress](stage-5-execution.md), [evidence](research/stage-5-foundation-results.md). Production model dispatch remains disabled. Linux/macOS core checks and Linux/macOS cross-builds passed; Docker guardian primitives have explicit synthetic evidence only.
 - Go hello-world scaffold with Cobra, Bubble Tea, Bubbles, Lip Gloss, and SQLite. Commands: `hello`, `dashboard`, and the development-only `spike`. Bounded stdio transports and session adapters are implemented in `internal/harness`; isolated execution/verification lives in `internal/spike`.
 - Scaffold passed Linux CLI/SQLite/interactive smoke checks and Linux/macOS amd64/arm64 cross-compilation. Stage 3.5 separately passed native macOS arm64 Go/race/schema/build checks and CLI/dashboard smoke tests; macOS amd64 remains cross-build-only.
 - Functional baseline consolidated as R01–R71. See [first usable milestone](mvp-acceptance.md) for the eventual demonstration.
@@ -117,7 +118,7 @@ Deliverable: concrete design decisions and implementation tasks mapped to the ex
 
 ## Stage 5 — Deliver a narrow functional slice
 
-Follow the detailed [Stage 5 backlog](stage-5-plan.md), including containment before strict production editing. The original functional order remains:
+Follow the [expanded execution plan](stage-5-execution.md) and [Stage 5 backlog](stage-5-plan.md), including containment before strict production editing. The initial persisted planning/control slice is implemented; broad B/C requirements, D profile qualification and E–J remain in progress/pending. The original functional order remains:
 
 1. Manual project/profile setup, repository discovery, branch preparation, and one persisted task execution.
 2. Sequential dispatch with approvals, pause/stop/recovery, and shared workspace/local-model coordination.
@@ -136,4 +137,4 @@ Acceptance: run the [agreed milestone](mvp-acceptance.md), including actual exec
 - Record the next concrete action and any input needed from the user.
 - Preserve unfinished work and running-session identities; stop experimental processes before ending the session.
 
-Next concrete action: implement Stage 5 A–C (persisted commands, policy/readiness, coordination/recovery). Stage 5 D must establish containment on each supported platform before strict editing/delivery. Mac development tools and SSH are configured; re-establish the temporary WSL-to-Mac tunnel only when future Hermes experiments need the Windows-hosted server.
+Next concrete action: finish B/C definition and journal integration, then D's credential-holding provider relay, pinned worker images and actual harness/controller-loss qualification. Docker Desktop is running; no further user setup is needed for Linux primitives. The Mac still needs container-runtime qualification before production use. Re-establish the temporary WSL-to-Mac tunnel only when future Hermes experiments need the Windows-hosted server. Preserve the unconditional execution gate until D passes.

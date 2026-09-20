@@ -21,7 +21,7 @@ check:
 	$(GO) vet ./...
 	$(GO) test ./...
 check-race:
-	$(GO) test -race ./internal/harness ./internal/spike
+	$(GO) test -race ./internal/harness ./internal/spike ./internal/store ./internal/artifacts ./internal/core ./internal/coordinator
 cross-build:
 	@set -e; for os in linux darwin; do for arch in amd64 arm64; do \
 		echo "Building $$os/$$arch"; \
