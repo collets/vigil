@@ -2,6 +2,8 @@
 
 Status: finalization behavior, local storage, and retention defaults accepted, 2026-09-20. Detailed content structure and implementation below remain proposals.
 
+Stage 4 follow-up: [core-spec.md](core-spec.md) resolves the mechanism/default questions below, and [Stage 5](stage-5-plan.md) defines implementation checks. Earlier proposed alternatives are retained for provenance; the core specification takes precedence for implementation. No production workflow or user configuration is installed by the specification.
+
 ## Accepted behavior
 
 At the end of a plan, create a visible finalization task that summarizes the work, references previously produced resources, and saves the completion record in the plan folder. Preserve summaries, decisions, checks, and commit references by default. Raw transcripts can expire after a configurable interval. Unfinished recovery checkpoints require explicit cleanup.

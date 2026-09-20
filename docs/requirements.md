@@ -1,6 +1,6 @@
 # Functional requirements baseline
 
-Status: accepted product direction consolidated on 2026-09-20. The application remains a hello-world scaffold. This baseline defines intended behavior; it is not an implementation-completion claim.
+Status: accepted product direction consolidated on 2026-09-20. The application has a scaffold and bounded harness adapters; the production workflow core remains unimplemented. This baseline defines intended behavior; it is not an implementation-completion claim.
 
 The application owns reliable coordination and state; existing harnesses execute agent work. See [MVP acceptance](mvp-acceptance.md), [architecture](architecture.md), and [discovery history](discovery-notes.md). Detailed design questions are listed below separately.
 
@@ -117,11 +117,11 @@ Local inference may have no per-token vendor charge, but still consumes hardware
 - Draft GitHub PR/GitLab MR is the delivery endpoint. Automatic merging is excluded.
 - Local plan archives and durable evidence; 30-day completed-plan transcript retention; explicit cleanup for unfinished checkpoints.
 
-## Open design and feasibility questions
+## Design and feasibility index
 
-These are unresolved details, not reasons to reopen accepted product direction:
+Stage 4 resolves the core mechanism questions in [core-spec.md](core-spec.md) and maps every requirement in [stage-5-plan.md](stage-5-plan.md). The original topic list below is retained as an index: implementation/qualification and explicitly deferred setup choices remain open; it is not a claim that the completed specification is missing.
 
-1. Complete live Codex/Hermes validation for launching, observing, cancelling, resuming, intervening, instruction resources, and enforcing gated actions. The [initial investigation](harness-capabilities.md) verified metadata handshakes and selected candidate transports; its runtime validation gates remain open. An unsupported operation must remain visible.
+1. Complete live Codex/Hermes validation for launching, observing, cancelling, resuming, intervening, instruction resources, and enforcing gated actions. The [initial investigation](harness-capabilities.md) verified metadata handshakes and selected candidate transports; Stage 3 results and Stage 3.5 identify the remaining runtime qualification gates. An unsupported operation must remain visible.
 2. Specify task/run/plan transitions, typed model tools/results, retry accounting, numerical defaults, and attribution of review/check/supervisor time.
 3. Define coordination storage, canonical folder and endpoint identity, fair queues, stale-owner recovery, and crash reconciliation. Initial scope is application instances on one machine; external clients or hosts cannot be assumed to honor these slots.
 4. Define snapshot mechanics, ownership of mixed user/agent edits, accepted-task partial commits, reapplication conflicts, retention, and multi-repository recovery.

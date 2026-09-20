@@ -1,6 +1,6 @@
 # Minimal architecture
 
-Status: architecture direction aligned with the requirements baseline on 2026-09-20. The bounded [adapter spike contract](adapter-spike.md) and isolated profiles are specified; application-core contracts and transport implementation remain ahead.
+Status: Stage 4 specified on 2026-09-20. The [application core specification](core-spec.md), [draft schemas](spec/project.sql), and [implementation backlog/requirement map](stage-5-plan.md) are the detailed contracts. Stage 3's [runtime findings](research/stage-3-results.md) constrain strict execution; the production core is not implemented yet.
 
 ```mermaid
 flowchart TD
@@ -36,7 +36,7 @@ The main agent is a configured role running through a harness. Its proposals are
 
 Task, run, and session are separate: a failed run must not erase the task or earlier evidence. Harness and model are separate: the same harness may serve both local and remote profiles.
 
-Project startup discovers nested repositories and supplies an explicit repository map to agents. Execution uses one dedicated branch per plan per affected repository and reuses it on resume; managed worktrees are deferred. Existing uncommitted changes require an explicit decision and must be preserved. Coordinated multi-repository recovery remains to be designed. Automatic delivery stops at draft MR/PR creation; merging is outside scope.
+Project startup discovers nested repositories and supplies an explicit repository map to agents. Execution uses one dedicated branch per plan per affected repository and reuses it on resume; managed worktrees are deferred. Existing uncommitted changes require an explicit decision and must be preserved. Coordinated multi-repository recovery uses verified checkpoint sets and per-repository progress journals as specified in core-spec.md; implementation remains ahead. Automatic delivery stops at draft MR/PR creation; merging is outside scope.
 
 ## Process and storage boundary
 
@@ -44,7 +44,7 @@ Start with one codebase and clear internal packages. Keep UI rendering separate 
 
 SQLite stores structured state and an append-only event history. Store large transcripts/artifacts in local files with references from the database. Use a single owner for each project's state while allowing independent project instances. This does not require a distributed event system or full event-sourcing architecture.
 
-A small shared coordination mechanism is accepted for overlapping folder-tree ownership and local inference slots across application instances. Local endpoints default to one active agent, with waiting requests queued. Storage, leases/locks, and stale-owner recovery remain design choices; no background agent daemon is required. This mechanism cannot assume control over unmanaged clients or other machines. Reopening the dashboard must query authoritative state rather than infer activity from terminal output.
+A small shared coordination mechanism is accepted for overlapping folder-tree ownership and local inference slots across application instances. Local endpoints default to one active agent, with waiting requests queued. The Stage 4 design selects host-local SQLite coordination, advisory process-owner locks, explicit fencing identities and persistent quarantine; no background agent daemon is required. This mechanism cannot assume control over unmanaged clients or other machines. Reopening the dashboard must query authoritative state rather than infer activity from terminal output.
 
 The first release is terminal-only and manages only sessions it launches. Plan archives remain local and Git-ignored by default. Completion records persist; completed-plan transcripts expire after 30 days by default, with configurable retention and preservation of unfinished recovery context.
 
@@ -54,7 +54,7 @@ Adapters should declare capabilities such as start, observe, cancel, resume, ste
 
 Prefer documented structured interfaces. Terminal scraping is unsuitable as the main source of task status. tmux panes may provide inspection but cannot replace adapter protocols. An RPC session is not automatically attachable to the harness's native interactive UI.
 
-The [initial capability investigation](harness-capabilities.md) recommends Codex app-server over stdio and Hermes TUI gateway over stdio. Installed-version metadata handshakes passed; schemas and source establish candidate lifecycle capabilities. Model-backed execution, cancellation, resume, and permission enforcement remain validation gates. Hermes ACP remains an alternative, not a second required implementation.
+The [initial capability investigation](harness-capabilities.md) recommends Codex app-server over stdio and Hermes TUI gateway over stdio. Model-backed execution, normal interruption, exact completed-session resume, and selected request paths passed on Linux. Abrupt Hermes child cleanup and complete commit/push enforcement did not; unqualified recovery/permission/platform cases remain explicit dispatch gates. Hermes ACP remains an alternative, not a second required implementation.
 
 Disable Hermes crash auto-continuation in application-managed profiles, constrain nested delegation, and account for auxiliary model calls in local-only policy. Keep native permission prompts separate from application grants: unrestricted tools can bypass gated operations unless an effective execution boundary prevents it. Unsupported guarantees must remain visible.
 
@@ -66,4 +66,4 @@ Keep policy enforcement separate from any model-based advisor. Eligibility, user
 
 [TypeSafe's Jev announcement](https://typesafe.ai/blog/introducing-system-one-models-and-jev) describes typed probabilistic decisions and early access. This makes it a candidate for later routing evaluation, not a foundational dependency. Schema correctness does not establish decision correctness. Its benefit on this project's tasks must be measured, and remote routing must respect whether project content may leave the machine.
 
-Retry strategy, escalation rules, task scheduling, workspace isolation, and completion gates belong to subsequent functional design.
+Retry/accounting, escalation, scheduling, workspace/checkpoint ownership and completion gates are specified in [core-spec.md](core-spec.md). Implement them in the [Stage 5 slice order](stage-5-plan.md), with production editing gated on a qualified execution boundary.

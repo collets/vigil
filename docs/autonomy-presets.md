@@ -2,6 +2,8 @@
 
 Status: the two-axis approach is accepted as an initial direction, 2026-09-20. Manual configuration is sufficient; guided onboarding is deferred. Approval-first is the default; the default model policy and numerical limits remain open. Role mappings below are proposed preset definitions.
 
+Stage 4 follow-up: [core-spec.md](core-spec.md) resolves the mechanism/default questions below, and [Stage 5](stage-5-plan.md) defines implementation checks. Earlier proposed alternatives are retained for provenance; the core specification takes precedence for implementation. No production workflow or user configuration is installed by the specification.
+
 ## Separate model eligibility from human approvals
 
 Recommend two independent settings instead of one increasingly large collection of combined presets. A model policy determines eligible profiles for each role. An approval mode determines which eligible actions need human input. Changing one must not silently change the other.

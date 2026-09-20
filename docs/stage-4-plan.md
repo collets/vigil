@@ -1,6 +1,6 @@
 # Stage 4 — application core specification plan
 
-Prepared 2026-09-20 alongside Stage 3, before implementation. This stage produces implementable architecture/contracts and a sequenced Stage 5 backlog, **not** the scheduler/dashboard itself. Resolve routine design choices using R01–R71 and Stage 3 evidence; keep unsupported runtime promises gated.
+Prepared 2026-09-20 alongside Stage 3 before implementation; specification completed the same day. This stage produces implementable architecture/contracts and a sequenced Stage 5 backlog, **not** the scheduler/dashboard itself. Resolve routine design choices using R01–R71 and Stage 3 evidence; keep unsupported runtime promises gated.
 
 ## Decisions that do not require the user's return
 
@@ -27,3 +27,7 @@ Prepared 2026-09-20 alongside Stage 3, before implementation. This stage produce
 - Requirements traceability has no unexplained omissions. Any unresolved product choice has a conservative explicit behavior and does not masquerade as accepted user configuration.
 - Stage 3 limitations appear in dispatch/recovery/release gates. Hard enforcement, macOS evidence and deferred integrations remain visible.
 - No production schema, background service, hosting action, or new application workflow is introduced by this specification stage.
+
+## Completion evidence
+
+Delivered [core specification](core-spec.md), executable [project](spec/project.sql) and [coordination](spec/coordination.sql) drafts, and [Stage 5 backlog with full R01–R71 coverage](stage-5-plan.md). Draft schema invariants are tested in `internal/storage/spec_test.go` against bundled SQLite 3.53.4, without installing application tables. Normal/race checks and four cross-builds pass. The [review record](research/stage-4-results.md) lists scenario coverage and remaining qualification/setup choices.

@@ -90,6 +90,8 @@ The [requirements open-question list](requirements.md#open-design-and-feasibilit
 
 ## Persistence and verification status
 
+Stage 3/4 update (2026-09-20): Linux lifecycle and policy experiments are committed, including failed Hermes abrupt-loss cleanup and observed native gate limitations. The core specification, validated draft schemas, numerical design defaults and complete requirement map are now available in [core-spec.md](core-spec.md) and [stage-5-plan.md](stage-5-plan.md). The user explicitly scheduled Mac setup/runtime work as Stage 3.5 after this work. No production scheduler/schema was installed and no access setup was required before the user left.
+
 Subsequent implementation update (2026-09-20): the project is now named Vigil, the initial scaffold/Stage 1 and rename are committed, and `origin` is `git@github.com:collets/vigil.git`. Stage 2 implements the bounded Go transports and development runner. Both Codex and local Hermes passed real fixture execution; see [Stage 2 evidence](research/stage-2-results.md) and the [current handoff](next-steps.md). The original audit notes below are historical, not the current Git or validation status.
 
 All continuity documents are saved in the project filesystem. At audit time the scaffold and docs are still untracked in the initialized Git repository; they are not a commit or remote backup. Closing the chat does not require a commit to retain these local files. No commit, push, or publication was performed by this audit.

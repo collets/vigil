@@ -2,6 +2,8 @@
 
 Status: checkpoint supervision accepted; reconciled with the final requirements baseline on 2026-09-20. Detailed mechanisms remain under discussion; this document describes design, not implemented behavior.
 
+Stage 4 follow-up: [core-spec.md](core-spec.md) resolves the mechanism/default questions below, and [Stage 5](stage-5-plan.md) defines implementation checks. Earlier proposed alternatives are retained for provenance; the core specification takes precedence for implementation. No production workflow or user configuration is installed by the specification.
+
 ## Main-agent role
 
 | Option | Benefit | Cost or limitation |

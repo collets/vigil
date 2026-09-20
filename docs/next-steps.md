@@ -1,8 +1,8 @@
 # Next steps and resumption plan
 
-Updated: 2026-09-20. Stage 3 Linux investigation complete; Stage 4 specification in progress.
+Updated: 2026-09-20. Stage 3 Linux investigation and Stage 4 specification complete; Stage 3.5 macOS setup next with the user.
 
-Status: Stage 3 Linux experiments and adapter improvements are complete, with explicit unresolved qualification gates. See [Stage 3 results](research/stage-3-results.md). Both Stage 3 and Stage 4 plans were prepared before implementation. Stage 4 is in progress. The user scheduled [Stage 3.5 macOS setup/runtime checks](stage-3.5-macos.md) after this work, when they return.
+Status: Stage 3 Linux experiments and adapter improvements are complete, with explicit unresolved qualification gates. See [Stage 3 results](research/stage-3-results.md). Both Stage 3 and Stage 4 plans were prepared before implementation. Stage 4 is complete: [core specification](core-spec.md), [validated draft schemas](spec/project.sql), and [Stage 5 backlog/requirements map](stage-5-plan.md). The user scheduled [Stage 3.5 macOS setup/runtime checks](stage-3.5-macos.md) after this work, when they return.
 
 ## Resume here
 
@@ -10,11 +10,11 @@ Status: Stage 3 Linux experiments and adapter improvements are complete, with ex
 2. Read this document, [session continuity audit](session-audit.md), [requirements](requirements.md), [architecture](architecture.md), and [harness investigation](harness-capabilities.md).
 3. Inspect current Git status and applicable repository instructions. Preserve existing files and uncommitted work; do not reset the checkout.
 4. Run `make check` to establish the starting baseline. Check installed harness versions against the evidence below; refresh affected protocol research if versions differ.
-5. Read the [Stage 1 contract and profiles](adapter-spike.md) and [Stage 2 results](research/stage-2-results.md), then follow the [Stage 4 plan](stage-4-plan.md). Do not start implementing the full scheduler or dashboard before resolving the critical adapter feasibility questions.
+5. Read the [Stage 1 contract and profiles](adapter-spike.md) and [Stage 2 results](research/stage-2-results.md), then read the completed [core specification](core-spec.md) and the [Stage 3.5 macOS plan](stage-3.5-macos.md). Do not start implementing the full scheduler or dashboard before resolving the critical adapter feasibility questions.
 
 Suggested handoff prompt:
 
-> Resume Vigil using docs/next-steps.md, docs/research/stage-3-results.md and docs/stage-4-plan.md. Stage 3 Linux investigation is complete with documented enforcement/recovery gaps. Finish the Stage 4 specification and requirement map, without implementing the production scheduler. Stage 3.5 macOS setup/runtime work is reserved for the returning user.
+> Resume Vigil using docs/next-steps.md and docs/core-spec.md. Stage 3 Linux investigation and Stage 4 specification are complete, with explicit production enforcement/recovery gates. The user has returned for Stage 3.5: inspect their Mac environment together, choose local execution or SSH access, and qualify macOS separately. Do not copy Linux credential files/native homes. After qualification, implement the sequenced Stage 5 backlog; no production scheduler has been implemented yet.
 
 ## Current state
 
@@ -103,21 +103,21 @@ The user requested this follow-up after Stages 3 and 4, when they return. Follow
 
 ## Stage 4 — Specify the application core
 
-Proceed after the spike establishes the usable adapter boundaries.
+Specified from Stage 3's observed boundaries. See [core-spec.md](core-spec.md), [draft project/coordination schemas](spec/project.sql), [validation record](research/stage-4-results.md), and [Stage 5 requirement map](stage-5-plan.md). No application schema was installed.
 
-- [ ] Define project/plan/task/run state transitions, pause versus stop, crash reconciliation, and separate finalization/delivery states.
-- [ ] Define SQLite schema and migrations, event/artifact boundaries, configuration precedence, and profile capability validation.
-- [ ] Specify approval resolution and revocation for once/task/plan/permanent scopes; project restrictions dominate narrower grants.
-- [ ] Specify retry and execution-time accounting, including review/supervisor/check time and excluded approval/resource waits.
-- [ ] Design shared folder-tree ownership and endpoint capacity coordination, canonical identities, stale-owner recovery, and fair waiting.
-- [ ] Design branch preparation and checkpoint recovery, including mixed user/agent edits, restoration conflicts, and multiple repositories.
-- [ ] Define bounded model-facing tools and validated result records. Plan edits must respect revision checks and acceptance-criteria restrictions.
+- [x] Define project/plan/task/run state transitions, pause versus stop, crash reconciliation, and separate finalization/delivery states.
+- [x] Define SQLite schema and migrations, event/artifact boundaries, configuration precedence, and profile capability validation.
+- [x] Specify approval resolution and revocation for once/task/plan/permanent scopes; project restrictions dominate narrower grants.
+- [x] Specify retry and execution-time accounting, including review/supervisor/check time and excluded approval/resource waits.
+- [x] Design shared folder-tree ownership and endpoint capacity coordination, canonical identities, stale-owner recovery, and fair waiting.
+- [x] Design branch preparation and checkpoint recovery, including mixed user/agent edits, restoration conflicts, and multiple repositories.
+- [x] Define bounded model-facing tools and validated result records. Plan edits must respect revision checks and acceptance-criteria restrictions.
 
 Deliverable: concrete design decisions and implementation tasks mapped to the existing requirements. Revisit only decisions affected by evidence or unresolved product questions.
 
 ## Stage 5 — Deliver a narrow functional slice
 
-Implement in this order, expanding only after each increment works:
+Follow the detailed [Stage 5 backlog](stage-5-plan.md), including containment before strict production editing. The original functional order remains:
 
 1. Manual project/profile setup, repository discovery, branch preparation, and one persisted task execution.
 2. Sequential dispatch with approvals, pause/stop/recovery, and shared workspace/local-model coordination.
@@ -136,4 +136,4 @@ Acceptance: run the [agreed milestone](mvp-acceptance.md), including actual exec
 - Record the next concrete action and any input needed from the user.
 - Preserve unfinished work and running-session identities; stop experimental processes before ending the session.
 
-Next concrete action: finish the Stage 4 architecture/schema/tool contracts and requirements traceability, then hand off to Stage 3.5 macOS setup with the returning user. Preserve all Stage 3 limitations as dispatch/recovery gates.
+Next concrete action: when the user returns, start Stage 3.5 by inspecting their Mac environment and agreeing how to run the checks locally or through SSH. No access or runtime installation has been configured. The Linux implementation can continue from Stage 5 A–C independently; strict editing/delivery remains gated on containment and the unresolved lifecycle qualifications.

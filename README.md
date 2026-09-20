@@ -2,7 +2,7 @@
 
 A local control panel for development agents running through existing harnesses, combining frontier and local models.
 
-Status: foundation plus a bounded development spike for Codex app-server and Hermes TUI gateway. The dashboard remains a scaffold; scheduling, recovery, and product workflows are not implemented. Targets: Linux and macOS, on amd64 and arm64.
+Status: bounded Codex/Hermes adapters with Linux lifecycle evidence and a completed application-core specification. The dashboard remains a scaffold; scheduling, recovery, and product workflows are not implemented. Targets: Linux and macOS, on amd64 and arm64.
 
 - [Technology proposal](docs/technology.md): Go versus Python and the proposed foundation.
 - [Minimal architecture](docs/architecture.md): responsibilities and integration boundaries.
@@ -12,6 +12,10 @@ Status: foundation plus a bounded development spike for Codex app-server and Her
 - [Next steps and resumption plan](docs/next-steps.md): ordered work, validation gates, and handoff for the next session.
 - [Stage 1 adapter spike](docs/adapter-spike.md): adapter contract, isolated profile preparation, limits, and runtime prerequisites.
 - [Stage 2 plan and runner](docs/stage-2-plan.md): transport implementation, controlled execution, verification, and limitations.
+- [Stage 3 lifecycle/policy results](docs/research/stage-3-results.md): observed capabilities and strict execution limits.
+- [Application core specification](docs/core-spec.md): state, policy, coordination, checkpoints and storage contracts.
+- [Stage 5 backlog](docs/stage-5-plan.md): implementation slices and R01–R71 coverage.
+- [Stage 3.5 macOS plan](docs/stage-3.5-macos.md): setup and runtime checks with the user.
 - [Session continuity audit](docs/session-audit.md): decisions, alternatives, open questions, and documentation provenance.
 - [Discovery history](docs/discovery-notes.md): brainstorming decisions and their evolution.
 
@@ -80,3 +84,5 @@ Start llama.cpp before a Hermes run. The runner uses `VIGIL_LLAMA_API_KEY`, a pr
 Private activity and result evidence stays under the experiment's `evidence/` directory. Raw stderr and protocol payloads are omitted. Native histories remain private and separate. The runner enforces one attempt at a time per checkout, finite time/output limits, no prompt replay, and immediate denial/cancellation of native requests. A crash may leave `runner.lock` or a private Codex auth copy: inspect the recorded process before removing a stale lock, preserve experiment evidence, and prepare a new fixture. Cross-checkout endpoint coordination belongs to the later application core.
 
 See [next steps](docs/next-steps.md) for current evidence and remaining lifecycle, resume, approval, policy, and macOS runtime gates.
+
+Lifecycle experiments use the same fresh manifest with `--live --scenario resume|interrupt|child|loss|clarify|approval-allow|approval-deny`. The approval stimuli are Codex-specific. These scenarios may intentionally fail and retain partial fixture files; see the Stage 3 plan before running them. Draft schemas live in `docs/spec` and are checked by `make check`; the CLI does not install them.

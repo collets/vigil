@@ -2,6 +2,8 @@
 
 Status: save/restore behavior accepted, implementation mechanism still proposed, 2026-09-20. Automatic saving and clearing of agent-owned changes is allowed while preserving pre-existing user work; bringing saved changes back requires approval. No Git mutations are implemented or authorized for this design step.
 
+Stage 4 follow-up: [core-spec.md](core-spec.md) resolves the mechanism/default questions below, and [Stage 5](stage-5-plan.md) defines implementation checks. Earlier proposed alternatives are retained for provenance; the core specification takes precedence for implementation. No production workflow or user configuration is installed by the specification.
+
 ## Product behavior
 
 Call this a checkpoint to distinguish it from Git's staging area. Associate every checkpoint with project, plan, task, attempt, repository, timestamp, and the base revision. The dashboard should expose saved attempts and recovery options.
