@@ -70,6 +70,15 @@ func projectCommand(stateDir *string) *cobra.Command {
 		}
 		return printJSON(cmd, p)
 	}})
+	root.AddCommand(&cobra.Command{Use: "discover PROJECT_ID", Short: "Inventory nested Git roots without enrolling repositories or changing branches", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			result, err := e.DiscoverRepositories(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, result)
+		})
+	}})
 	root.AddCommand(&cobra.Command{Use: "status PROJECT_ID", Short: "Show persisted task readiness and execution blockers", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
 			r, err := e.Readiness(cmd.Context())

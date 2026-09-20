@@ -34,6 +34,9 @@ func TestPersistedCLIWorkflow(t *testing.T) {
 	if err = json.Unmarshal([]byte(out), &p); err != nil {
 		t.Fatal(err)
 	}
+	if out, err := run("project", "discover", p.ID); err != nil || !strings.Contains(out, `"repositories": []`) {
+		t.Fatal("read-only discovery", out, err)
+	}
 	file := filepath.Join(base, "command.json")
 	input := `{"command_id":"config-1","expected_revision":1,"kind":"project.configure","payload":{"model_policy":"local_only","deny":["push"],"required_checks":[],"task_limit_ms":600000,"attempt_limit_ms":300000,"repair_limit":1,"supervisor_profile":"local","approval_mode":"supervised"}}`
 	if err = os.WriteFile(file, []byte(input), 0600); err != nil {

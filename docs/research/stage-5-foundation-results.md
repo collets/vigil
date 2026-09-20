@@ -123,3 +123,8 @@ Offline failure injection after intent, claim, queue insertion, slot acquisition
 ## Check and manual prerequisite definitions
 
 Project snapshots now include bounded check argv/cwd/timeout definitions. Readiness reports missing required/task check definitions, and task check sets cannot remove project-required checks. Manual setup prerequisites remain blocking until a human supplies satisfaction evidence through a versioned plan command. Tests distinguish setup evidence from manual functional Pass, acceptance and actual execution: those tables remain untouched. Invalid check paths/arguments/timeouts, duplicate prerequisites and satisfaction without evidence are rejected. No configured check command was executed in this increment; the boundary check runner and fingerprint-bound quality/manual-result records remain pending.
+
+
+## Read-only repository inventory
+
+Nested repository discovery passed on Linux and native macOS, including linked worktrees with shared common-Git identity, unborn branches, ambient Git environment overrides, skipped directory symlinks, unsupported Git-administration symlinks and special files. A configured fsmonitor hook did not execute. Metadata discovery performs only bounded rev-parse/symbolic-ref observations with hooks/optional locks disabled and no status, filters or repository scripts. The CLI reads through the trusted core and revalidates the registered project identity. Enrollment, approved base/branch maps and dirty-work preservation remain pending.

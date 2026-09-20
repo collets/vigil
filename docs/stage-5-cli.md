@@ -9,6 +9,7 @@ make build
 ./bin/vigil project init /absolute/path/to/project
 ./bin/vigil project list
 ./bin/vigil project status PROJECT_ID
+./bin/vigil project discover PROJECT_ID
 ./bin/vigil project inbox PROJECT_ID
 ./bin/vigil project events PROJECT_ID --after 0
 ./bin/vigil resources status
@@ -161,3 +162,10 @@ Tasks can also carry `manual_prerequisites`, for example:
 ```
 
 An unsatisfied prerequisite blocks readiness. A human plan revision may set `satisfied` to true only with nonempty `evidence` text. This records setup evidence only: it creates no manual functional Pass, quality evidence, acceptance or run. Manual criteria on finished code still need the later fingerprint-bound review flow. Definition changes remain versioned and invalidate prior operation authority.
+
+
+## Read-only repository discovery
+
+`vigil project discover PROJECT_ID` validates the registered root identity and reports existing nested Git roots, canonical/common-Git identities, current HEAD commit/ref when available, gitfile layouts and explicit unsupported/unborn issues. It excludes Git administration trees from traversal and skips directory symlinks. Discovery is bounded to 100 repositories, 100,000 entries and 15 seconds. Git output is bounded, ambient Git overrides are removed, and no status/filter/hook, repository script, submodule update or mutation runs.
+
+This is an observed inventory. It does not enroll repositories, select bases, create branches, infer a dirty-work choice or qualify unsupported layouts. Those remain explicit setup and execution steps.

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -39,7 +38,7 @@ func node(path string) (Node, error) {
 	}
 	return Node{Path: path, Key: fmt.Sprintf("%d:%d", s.Dev, s.Ino)}, nil
 }
-func Inspect(ctx context.Context, path string) (Identity, error) {
+func inspectDirectory(path string) (Identity, error) {
 	path, err := filepath.Abs(path)
 	if err != nil {
 		return Identity{}, err
@@ -63,19 +62,21 @@ func Inspect(ctx context.Context, path string) (Identity, error) {
 			break
 		}
 	}
+	return id, nil
+}
+
+func Inspect(ctx context.Context, path string) (Identity, error) {
+	id, err := inspectDirectory(path)
+	if err != nil {
+		return Identity{}, err
+	}
+	path = id.Root
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "-C", path, "rev-parse", "--git-common-dir")
 	// The caller's Git shell environment must not redirect identity discovery
 	// to an unrelated repository or inject configuration into the probe.
-	for _, variable := range os.Environ() {
-		if !strings.HasPrefix(variable, "GIT_") {
-			cmd.Env = append(cmd.Env, variable)
-		}
-	}
-	cmd.Env = append(cmd.Env, "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1", "GIT_OPTIONAL_LOCKS=0")
-	if b, err := cmd.Output(); err == nil {
-		gitPath := strings.TrimSpace(string(b))
+	if b, err := gitObservation(ctx, path, "rev-parse", "--git-common-dir"); err == nil {
+		gitPath := strings.TrimSpace(b)
 		if !filepath.IsAbs(gitPath) {
 			gitPath = filepath.Join(path, gitPath)
 		}
@@ -83,7 +84,7 @@ func Inspect(ctx context.Context, path string) (Identity, error) {
 		if err != nil {
 			return Identity{}, err
 		}
-		n, err = node(gitPath)
+		n, err := node(gitPath)
 		if err != nil {
 			return Identity{}, err
 		}
