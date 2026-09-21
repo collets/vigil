@@ -16,6 +16,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -145,9 +147,39 @@ func (s *DB) Write(ctx context.Context, fn func(*Tx) error) error {
 }
 
 func (s *DB) migrate(ctx context.Context) error {
-	b, err := migrations.ReadFile("migrations/" + s.Kind + "-001.sql")
+	entries, err := migrations.ReadDir("migrations")
 	if err != nil {
 		return err
+	}
+	type migration struct {
+		version int
+		body    []byte
+	}
+	var available []migration
+	prefix := s.Kind + "-"
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, ".sql") {
+			continue
+		}
+		version, parseErr := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(name, prefix), ".sql"))
+		if parseErr != nil || version < 1 {
+			return fmt.Errorf("invalid migration name %q", name)
+		}
+		body, readErr := migrations.ReadFile("migrations/" + name)
+		if readErr != nil {
+			return readErr
+		}
+		available = append(available, migration{version: version, body: body})
+	}
+	sort.Slice(available, func(i, j int) bool { return available[i].version < available[j].version })
+	if len(available) == 0 {
+		return errors.New("no migrations for database kind")
+	}
+	for n, migration := range available {
+		if migration.version != n+1 {
+			return errors.New("migration history has a version gap")
+		}
 	}
 	return s.Write(ctx, func(tx *Tx) error {
 		var exists int
@@ -162,11 +194,15 @@ func (s *DB) migrate(ctx context.Context) error {
 			if tables != 0 {
 				return errors.New("refusing unrecognized database")
 			}
-			if _, err := tx.ExecContext(ctx, string(b)); err != nil {
-				return err
+			for _, migration := range available {
+				if _, err := tx.ExecContext(ctx, string(migration.body)); err != nil {
+					return fmt.Errorf("apply migration %d: %w", migration.version, err)
+				}
+				if _, err := tx.ExecContext(ctx, "INSERT INTO schema_migrations VALUES(?,?,?)", migration.version, Digest(migration.body), Now()); err != nil {
+					return err
+				}
 			}
-			_, err := tx.ExecContext(ctx, "INSERT INTO schema_migrations VALUES(1,?,?)", Digest(b), Now())
-			return err
+			return nil
 		}
 		rows, err := tx.QueryContext(ctx, "SELECT version,digest FROM schema_migrations ORDER BY version")
 		if err != nil {
@@ -181,18 +217,30 @@ func (s *DB) migrate(ctx context.Context) error {
 				return err
 			}
 			count++
-			if version != 1 || count != 1 {
+			if version != count || version > len(available) {
 				return errors.New("unsupported or newer schema version")
 			}
-			if digest != Digest(b) {
+			if digest != Digest(available[version-1].body) {
 				return errors.New("historical migration digest mismatch (or wrong database kind)")
 			}
 		}
 		if err := rows.Err(); err != nil {
+			rows.Close()
 			return err
 		}
-		if count != 1 {
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		if count == 0 {
 			return errors.New("missing migration history")
+		}
+		for _, migration := range available[count:] {
+			if _, err := tx.ExecContext(ctx, string(migration.body)); err != nil {
+				return fmt.Errorf("apply migration %d: %w", migration.version, err)
+			}
+			if _, err := tx.ExecContext(ctx, "INSERT INTO schema_migrations VALUES(?,?,?)", migration.version, Digest(migration.body), Now()); err != nil {
+				return err
+			}
 		}
 		return nil
 	})

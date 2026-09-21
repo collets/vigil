@@ -4,6 +4,8 @@ Stage 4 output, updated after Stage 3.5 on 2026-09-20. Implement [core-spec.md](
 
 The [expanded execution plan](stage-5-execution.md) now supplies commit-sized steps, command/storage boundaries, prerequisite checks and concrete failure tests. Implementation begins with A–C; D remains a hard gate on production editing.
 
+For the remaining implementation after the foundation, use the [Stage 5.1–5.7 standalone plans](stage-5/README.md). Their index maps each assignment back to A–J and states dependencies and user decisions. This document remains the complete requirement coverage reference.
+
 ## Increment order and executable acceptance
 
 | Slice | Work | Acceptance / failure test |

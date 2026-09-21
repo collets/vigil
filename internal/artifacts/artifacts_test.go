@@ -31,6 +31,22 @@ func TestPublicationCrashAndCorruption(t *testing.T) {
 	if b, err := r.Read(ctx, a.ID); err != nil || string(b) != "evidence" {
 		t.Fatal("read", err)
 	}
+	if err := r.Verify(ctx, a.ID, a.Digest, "check"); err != nil {
+		t.Fatal("verify", err)
+	}
+	if err := r.Verify(ctx, a.ID, store.Digest([]byte("other")), "check"); err == nil {
+		t.Fatal("accepted wrong expected digest")
+	}
+	if err := r.Verify(ctx, a.ID, a.Digest, "other"); err == nil {
+		t.Fatal("accepted wrong artifact kind")
+	}
+	transcript, err := r.Put(ctx, "transcript", "check", "transcript", strings.NewReader("transcript evidence"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Verify(ctx, transcript.ID, transcript.Digest, "check"); err == nil {
+		t.Fatal("accepted non-durable evidence")
+	}
 	db.Close()
 	if _, err = r.Put(ctx, "interrupted", "check", "durable", strings.NewReader("orphan")); err == nil {
 		t.Fatal("closed DB accepted manifest")

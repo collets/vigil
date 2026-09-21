@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"vigil/internal/boundary"
 	"vigil/internal/coordinator"
 	"vigil/internal/policy"
 	"vigil/internal/store"
@@ -493,7 +494,7 @@ func (e *Engine) Readiness(ctx context.Context) (Readiness, error) {
 	return e.readiness(ctx, tx)
 }
 func (e *Engine) readiness(ctx context.Context, tx *sql.Tx) (Readiness, error) {
-	r := Readiness{DefinitionIssues: []string{}, RuntimeIssues: []string{"production execution boundary has not been qualified", "production dispatcher is not implemented"}, Tasks: []TaskReadiness{}}
+	r := Readiness{DefinitionIssues: []string{}, RuntimeIssues: []string{"exact trusted execution qualification is required at effect start", "production launch/recovery integration is pending Stage 5.2"}, Tasks: []TaskReadiness{}}
 	err := tx.QueryRowContext(ctx, "SELECT id,root,revision,state FROM project").Scan(&r.Project.ID, &r.Project.Root, &r.Project.Revision, &r.Project.State)
 	if err != nil {
 		return r, err
@@ -639,6 +640,50 @@ func (e *Engine) readiness(ctx context.Context, tx *sql.Tx) (Readiness, error) {
 	sort.Strings(r.DefinitionIssues)
 	return r, nil
 }
+
+// ExecutionEligibility binds a launcher's exact runtime inputs to the latest
+// persisted profile revision before consulting trusted qualification evidence.
+// It performs no launch and is the API Stage 5.2 must call again immediately
+// before an external effect starts.
+func (e *Engine) ExecutionEligibility(ctx context.Context, request boundary.EligibilityRequest) (boundary.Eligibility, error) {
+	result := boundary.Eligibility{Status: "unsupported", Reasons: []string{}}
+	var digest, raw string
+	err := e.DB.SQL.QueryRowContext(ctx, `
+		SELECT c.digest,c.resolved_json
+		FROM profiles p JOIN config_snapshots c ON c.id=p.config_id
+		WHERE p.id=? AND p.revision=?
+		  AND p.revision=(SELECT max(revision) FROM profiles WHERE id=p.id)`,
+		request.Inputs.ProfileID, request.Inputs.ProfileRevision).Scan(&digest, &raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		result.Reasons = []string{"execution inputs do not reference the latest persisted profile revision"}
+		return result, nil
+	}
+	if err != nil {
+		return result, err
+	}
+	var profile policy.Profile
+	if err := json.Unmarshal([]byte(raw), &profile); err != nil {
+		return result, err
+	}
+	if digest != request.Inputs.ProfileDigest {
+		result.Reasons = append(result.Reasons, "execution profile digest does not match persisted configuration")
+	}
+	if profile.Harness != request.Inputs.Harness || profile.Version != request.Inputs.HarnessVersion || profile.Model != request.Inputs.Model || profile.Provider != request.Inputs.Provider {
+		result.Reasons = append(result.Reasons, "execution harness, version, model or provider does not match persisted profile")
+	}
+	if profile.EndpointID != "" && profile.EndpointID != request.Inputs.EndpointAuthority {
+		result.Reasons = append(result.Reasons, "execution endpoint authority does not match persisted profile")
+	}
+	if !policy.Contains(profile.Roles, request.Role) {
+		result.Reasons = append(result.Reasons, "persisted profile does not permit role: "+request.Role)
+	}
+	if len(result.Reasons) != 0 {
+		sort.Strings(result.Reasons)
+		return result, nil
+	}
+	return boundary.QueryEligibility(ctx, e.DB, request)
+}
+
 func DefaultStateDir() (string, error) {
 	if base := os.Getenv("XDG_STATE_HOME"); base != "" {
 		if !filepath.IsAbs(base) {

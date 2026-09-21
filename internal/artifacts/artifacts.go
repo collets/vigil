@@ -138,6 +138,29 @@ func (r *Repository) Read(ctx context.Context, id string) ([]byte, error) {
 	return readBlob(filepath.Join(r.Dir, path), digest, size)
 }
 
+// Verify resolves a durable content-addressed reference and re-reads its bytes.
+// Callers must invoke it again at consumption time because retained evidence can
+// disappear or become corrupt after its manifest was admitted.
+func (r *Repository) Verify(ctx context.Context, id, expectedDigest, expectedKind string) error {
+	if !store.SafeID(id) || len(expectedDigest) != 64 || !store.SafeID(expectedDigest) || expectedKind == "" || len(expectedKind) > 128 {
+		return errors.New("invalid artifact reference")
+	}
+	var digest, path, state, retention, kind string
+	var size int64
+	err := r.DB.SQL.QueryRowContext(ctx, "SELECT digest,relative_path,byte_count,state,retention,kind FROM artifacts WHERE id=?", id).Scan(&digest, &path, &size, &state, &retention, &kind)
+	if err != nil {
+		return fmt.Errorf("resolve artifact: %w", err)
+	}
+	if state != "available" || retention != "durable" || kind != expectedKind || digest != expectedDigest || path != "blobs/"+digest || !store.SafeID(digest) {
+		return errors.New("artifact reference is unavailable or does not match")
+	}
+	if err := store.PrivateDir(filepath.Join(r.Dir, "blobs")); err != nil {
+		return err
+	}
+	_, err = readBlob(filepath.Join(r.Dir, path), digest, size)
+	return err
+}
+
 type Reconciliation struct {
 	Orphans []string `json:"orphans"`
 	Corrupt []string `json:"corrupt_artifact_ids"`

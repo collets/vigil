@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"path/filepath"
@@ -9,6 +10,73 @@ import (
 	"sync/atomic"
 	"testing"
 )
+
+func TestProjectV1UpgradeAndRollback(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "private", "state.sqlite")
+	db, err := Open(ctx, path, "project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.SQL.Exec("INSERT INTO config_snapshots VALUES('existing','digest',1,'{}','{}',1)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.SQL.Exec("DROP TABLE execution_qualifications"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.SQL.Exec("DELETE FROM schema_migrations WHERE version=2"); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// A conflicting object injects a migration failure. The migration and its
+	// history row must roll back together, preserving populated v1 data.
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = raw.Exec("CREATE TABLE execution_qualifications(id TEXT)"); err != nil {
+		t.Fatal(err)
+	}
+	if err = raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if failed, err := Open(ctx, path, "project"); err == nil {
+		failed.Close()
+		t.Fatal("migration failure was accepted")
+	}
+	raw, err = sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var versions, existing int
+	if err = raw.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 1 {
+		t.Fatal("failed migration changed history", versions, err)
+	}
+	if err = raw.QueryRow("SELECT count(*) FROM config_snapshots WHERE id='existing'").Scan(&existing); err != nil || existing != 1 {
+		t.Fatal("failed migration changed v1 data", existing, err)
+	}
+	if _, err = raw.Exec("DROP TABLE execution_qualifications"); err != nil {
+		t.Fatal(err)
+	}
+	if err = raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	upgraded, err := Open(ctx, path, "project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer upgraded.Close()
+	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 2 {
+		t.Fatal("v1 database was not upgraded", versions, err)
+	}
+	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM config_snapshots WHERE id='existing'").Scan(&existing); err != nil || existing != 1 {
+		t.Fatal("upgrade lost populated data", existing, err)
+	}
+}
 
 func TestDurableCommandsAndMigrations(t *testing.T) {
 	ctx := context.Background()
