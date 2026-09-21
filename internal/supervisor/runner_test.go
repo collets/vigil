@@ -117,6 +117,10 @@ func setupFixture(t *testing.T) fixture {
 
 func TestOnePersistedSyntheticExecutionStopsAtChecking(t *testing.T) {
 	fixture := setupFixture(t)
+	loaded, err := LoadPrepared(context.Background(), fixture.engine, fixture.prepared.RunID)
+	if err != nil || loaded.GenerationID != fixture.prepared.GenerationID || loaded.EndpointID != fixture.prepared.EndpointID {
+		t.Fatal(loaded, err)
+	}
 	runner := Runner{Engine: fixture.engine, Driver: fixture.driver}
 	result, err := runner.Run(context.Background(), fixture.prepared, fixture.reservation, "Write the fixture result")
 	if err != nil || result.Status != "completed" || len(result.ChangedPaths) != 1 {
@@ -136,6 +140,59 @@ func TestOnePersistedSyntheticExecutionStopsAtChecking(t *testing.T) {
 	stored, err := runner.Result(context.Background(), fixture.prepared.RunID)
 	if err != nil || stored.Summary != result.Summary {
 		t.Fatal(stored, err)
+	}
+}
+
+func TestCrashMatrixReopensWithoutDuplicateSubmission(t *testing.T) {
+	points := []string{"after_runtime_create", "after_runtime_start", "after_runtime_attach", "after_native_create", "after_prompt_write", "before_prompt_ack", "after_prompt_ack", "after_terminal_observe", "after_artifact_publish", "before_outcome_commit", "after_outcome_commit"}
+	for _, point := range points {
+		t.Run(point, func(t *testing.T) {
+			fixture := setupFixture(t)
+			injected := errors.New("controller crash at " + point)
+			runner := Runner{Engine: fixture.engine, Driver: fixture.driver, Fault: func(at string) error {
+				if at == point {
+					return injected
+				}
+				return nil
+			}}
+			if _, err := runner.Run(context.Background(), fixture.prepared, fixture.reservation, "fixture"); !errors.Is(err, injected) {
+				t.Fatal("fault not reached", err)
+			}
+			reopened, err := fixture.manager.Open(context.Background(), fixture.project.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.DB.Close()
+			prepared, err := LoadPrepared(context.Background(), reopened, fixture.prepared.RunID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reconciler := Runner{Engine: reopened, Driver: fixture.driver}
+			view, err := reconciler.Reconcile(context.Background(), prepared)
+			if err != nil {
+				t.Fatal(view, err)
+			}
+			if view.RunState != "completed" {
+				if _, err = reconciler.Run(context.Background(), prepared, fixture.reservation, "fixture"); err != nil {
+					t.Fatal(view, err)
+				}
+				view, err = reconciler.Inspect(context.Background(), prepared)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if view.RunState != "completed" || view.TaskState != "checking" {
+				t.Fatal(view)
+			}
+			if fixture.driver.Calls["submit"] != 1 {
+				t.Fatal("duplicate prompt submission", fixture.driver.Calls)
+			}
+			for _, call := range []string{"create", "start", "attach", "native_create"} {
+				if fixture.driver.Calls[call] != 1 {
+					t.Fatal("duplicate runtime effect", call, fixture.driver.Calls)
+				}
+			}
+		})
 	}
 }
 
@@ -220,6 +277,19 @@ func TestPersistenceFailureTriggersBoundedContainment(t *testing.T) {
 	var results int
 	if err := fixture.engine.DB.SQL.QueryRow("SELECT count(*) FROM execution_results").Scan(&results); err != nil || results != 0 {
 		t.Fatal(results, err)
+	}
+}
+
+func TestOutputFloodStopsAndContains(t *testing.T) {
+	fixture := setupFixture(t)
+	fixture.driver.ExtraEvents = 1001
+	runner := Runner{Engine: fixture.engine, Driver: fixture.driver}
+	if _, err := runner.Run(context.Background(), fixture.prepared, fixture.reservation, "fixture"); err == nil {
+		t.Fatal("output flood accepted")
+	}
+	view, err := runner.Inspect(context.Background(), fixture.prepared)
+	if err != nil || view.WriterState != "contained_stopped" || view.TaskState == "checking" {
+		t.Fatal(view, err)
 	}
 }
 

@@ -497,7 +497,7 @@ func (e *Engine) Readiness(ctx context.Context) (Readiness, error) {
 	return e.readiness(ctx, tx)
 }
 func (e *Engine) readiness(ctx context.Context, tx *sql.Tx) (Readiness, error) {
-	r := Readiness{DefinitionIssues: []string{}, RuntimeIssues: []string{"exact trusted execution qualification is required at effect start", "production launch/recovery integration is pending Stage 5.2"}, Tasks: []TaskReadiness{}}
+	r := Readiness{DefinitionIssues: []string{}, RuntimeIssues: []string{"exact trusted execution qualification is required at effect start", "no selected live combination has the complete production launch/recovery evidence set"}, Tasks: []TaskReadiness{}}
 	err := tx.QueryRowContext(ctx, "SELECT id,root,revision,state FROM project").Scan(&r.Project.ID, &r.Project.Root, &r.Project.Revision, &r.Project.State)
 	if err != nil {
 		return r, err

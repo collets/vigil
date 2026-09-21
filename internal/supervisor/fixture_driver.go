@@ -25,6 +25,13 @@ type FixtureDriver struct {
 	Calls           map[string]int
 	CreateUncertain bool
 	SubmitUncertain bool
+	ExtraEvents     int
+}
+
+func (d *FixtureDriver) Restore(observation Observation) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.observation = observation
 }
 
 func (d *FixtureDriver) count(name string) {
@@ -35,7 +42,7 @@ func (d *FixtureDriver) count(name string) {
 }
 func (d *FixtureDriver) validate(prepared PreparedRun) error {
 	clean := filepath.Clean(d.RelativePath)
-	if prepared.RuntimeKind != "synthetic" || d.RepositoryID == "" || d.RelativePath == "" || filepath.IsAbs(d.RelativePath) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+	if prepared.RuntimeKind != "synthetic" || d.RepositoryID == "" || d.RelativePath == "" || len(d.Content) > 65536 || filepath.IsAbs(d.RelativePath) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return errors.New("invalid synthetic fixture driver")
 	}
 	marker := filepath.Join(d.Root, ".vigil-disposable-fixture")
@@ -146,6 +153,9 @@ func (d *FixtureDriver) Submit(_ context.Context, prepared PreparedRun, _ string
 	d.observation.Outcome = "completed"
 	d.observation.WriterState = "contained_stopped"
 	d.observation.Events = []DriverEvent{{Sequence: 1, Kind: "fixture_write", At: store.Now(), Payload: json.RawMessage(`{"bounded":true}`)}}
+	for n := 0; n < d.ExtraEvents; n++ {
+		d.observation.Events = append(d.observation.Events, DriverEvent{Sequence: int64(n + 2), Kind: "fixture_output", At: store.Now(), Payload: json.RawMessage(`{"bytes":1}`)})
+	}
 	return "delivered", d.observation.NativeTurnID, nil
 }
 func (d *FixtureDriver) Await(_ context.Context, prepared PreparedRun) (Observation, error) {

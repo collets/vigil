@@ -61,8 +61,22 @@ func (r *Runner) Inspect(ctx context.Context, prepared PreparedRun) (RunView, er
 // Reconcile inspects the stable runtime identity and records what is proven. It
 // never calls Submit or any create/start operation.
 func (r *Runner) Reconcile(ctx context.Context, prepared PreparedRun) (RunView, error) {
+	commandID := r.ReconcileCommandID
+	if commandID == "" {
+		commandID = "execution-reconcile:" + prepared.RunID
+	}
+	if err := r.recordControlCommand(ctx, commandID, "execution.reconcile", prepared, map[string]string{"mode": "inspect_owned_state"}); err != nil {
+		return RunView{}, err
+	}
 	observation, err := r.Driver.Inspect(ctx, prepared)
 	if err != nil {
+		return RunView{}, err
+	}
+	termination := int64(0)
+	if observation.WriterState == "contained_stopped" {
+		termination = store.Now()
+	}
+	if err := r.ReconcileOpenSegment(ctx, prepared, termination); err != nil {
 		return RunView{}, err
 	}
 	rows, err := r.Engine.DB.SQL.QueryContext(ctx, "SELECT id,kind,state FROM execution_effects WHERE generation_id=? ORDER BY ordinal", prepared.GenerationID)

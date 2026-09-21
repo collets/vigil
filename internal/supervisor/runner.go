@@ -20,10 +20,12 @@ import (
 )
 
 type Runner struct {
-	Engine   *core.Engine
-	Driver   Driver
-	Checkout *boundary.Checkout
-	Fault    func(string) error
+	Engine             *core.Engine
+	Driver             Driver
+	Checkout           *boundary.Checkout
+	StartCommandID     string
+	ReconcileCommandID string
+	Fault              func(string) error
 }
 
 var productionRecoveryClasses = []string{
@@ -140,6 +142,9 @@ func (r *Runner) ensureDriverEffect(ctx context.Context, prepared PreparedRun, o
 	if state == "uncertain" {
 		return fmt.Errorf("%s remains uncertain; reconcile before any retry", kind)
 	}
+	if err := r.checkpointSegment(ctx, prepared); err != nil {
+		return err
+	}
 	if err := r.checkpoint("before_" + kind); err != nil {
 		return err
 	}
@@ -246,6 +251,13 @@ func (r *Runner) Run(ctx context.Context, prepared PreparedRun, reservation core
 	if prompt == "" || len(prompt) > 65536 {
 		return result, errors.New("bounded nonempty prompt required")
 	}
+	commandID := r.StartCommandID
+	if commandID == "" {
+		commandID = "execution-start:" + prepared.RunID
+	}
+	if err := r.recordControlCommand(ctx, commandID, "execution.start", prepared, map[string]string{"prompt_digest": store.Digest([]byte(prompt)), "reservation_operation_id": reservation.OperationID}); err != nil {
+		return result, err
+	}
 	if err := r.validateStart(ctx, prepared, reservation); err != nil {
 		return result, err
 	}
@@ -340,6 +352,24 @@ func (r *Runner) Run(ctx context.Context, prepared PreparedRun, reservation core
 		return fail(err)
 	}
 	return result, nil
+}
+
+func (r *Runner) recordControlCommand(ctx context.Context, commandID, kind string, prepared PreparedRun, detail map[string]string) error {
+	if !store.SafeID(commandID) {
+		return errors.New("valid control command ID required")
+	}
+	args, _ := json.Marshal(map[string]any{"run_id": prepared.RunID, "generation_id": prepared.GenerationID, "detail": detail})
+	_, err := r.Engine.DB.Command(ctx, store.Command{ID: commandID, Actor: string(core.Core), Kind: kind, Args: args}, func(tx *store.Tx) (any, error) {
+		var count int
+		if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM run_generations WHERE id=? AND run_id=?", prepared.GenerationID, prepared.RunID).Scan(&count); err != nil {
+			return nil, err
+		}
+		if count != 1 {
+			return nil, errors.New("run generation changed")
+		}
+		return map[string]string{"run_id": prepared.RunID, "generation_id": prepared.GenerationID, "state": "intent_recorded"}, nil
+	})
+	return err
 }
 
 func (r *Runner) persistNativeSession(ctx context.Context, prepared PreparedRun, nativeID string) error {
@@ -447,10 +477,10 @@ func (r *Runner) setSubmission(ctx context.Context, prepared PreparedRun, state,
 		if state == "proven_not_delivered" {
 			runState = "failed"
 		}
-		if _, err := tx.ExecContext(ctx, "UPDATE run_generations SET submission_state=?,native_turn_id=?,state=? WHERE id=?", state, nullableString(nativeTurn), map[bool]string{true: "active", false: "unknown"}[state == "delivered"], prepared.GenerationID); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE run_generations SET submission_state=?,native_turn_id=?,state=CASE WHEN state='terminal' THEN state ELSE ? END WHERE id=?", state, nullableString(nativeTurn), map[bool]string{true: "active", false: "unknown"}[state == "delivered"], prepared.GenerationID); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, "UPDATE runs SET state=? WHERE id=?", runState, prepared.RunID)
+		_, err := tx.ExecContext(ctx, "UPDATE runs SET state=CASE WHEN state='completed' THEN state ELSE ? END WHERE id=?", runState, prepared.RunID)
 		return err
 	})
 }
@@ -471,6 +501,10 @@ func (r *Runner) awaitWithLease(ctx context.Context, prepared PreparedRun) (Obse
 		case response := <-done:
 			return response.observation, response.err
 		case <-ticker.C:
+			if err := r.checkpointSegment(ctx, prepared); err != nil {
+				cancel()
+				return Observation{}, err
+			}
 			if err := r.Driver.RenewLease(ctx, prepared); err != nil {
 				cancel()
 				return Observation{}, err

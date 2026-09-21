@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"vigil/internal/artifacts"
@@ -13,6 +14,7 @@ import (
 	"vigil/internal/coordinator"
 	"vigil/internal/core"
 	"vigil/internal/store"
+	"vigil/internal/supervisor"
 )
 
 func printJSON(cmd *cobra.Command, value any) error {
@@ -123,6 +125,161 @@ func projectCommand(stateDir *string) *cobra.Command {
 	prepare.Flags().StringVar(&prepareCommand, "command-id", "", "Unique replay-safe command identifier")
 	prepare.Flags().IntVar(&prepareRevision, "expected-revision", 0, "Expected project revision")
 	root.AddCommand(prepare)
+	var executionCommand string
+	var executionRevision int
+	var executionWall int64
+	var syntheticFixture bool
+	executionPrepare := &cobra.Command{Use: "execution-prepare PROJECT_ID TASK_ID", Short: "Persist an execution attempt without launching it", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		if !syntheticFixture {
+			return errors.New("only --synthetic-fixture is available; production dispatch remains qualification-gated")
+		}
+		if executionCommand == "" || executionRevision < 1 {
+			return errors.New("--command-id and --expected-revision required")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			r, err := supervisor.Prepare(cmd.Context(), e, supervisor.PrepareRequest{CommandID: executionCommand, ExpectedProjectRevision: executionRevision, TaskID: args[1], RuntimeKind: "synthetic", WallLimitMS: executionWall})
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, r)
+		})
+	}}
+	executionPrepare.Flags().StringVar(&executionCommand, "command-id", "", "Unique replay-safe preparation command")
+	executionPrepare.Flags().IntVar(&executionRevision, "expected-revision", 0, "Expected project revision")
+	executionPrepare.Flags().Int64Var(&executionWall, "wall-limit-ms", 60000, "Absolute fixture attempt wall limit")
+	executionPrepare.Flags().BoolVar(&syntheticFixture, "synthetic-fixture", false, "Use the deterministic disposable-fixture driver")
+	root.AddCommand(executionPrepare)
+	var fixtureRepository, fixturePath, fixtureContent, fixturePrompt, startCommand string
+	executionStart := &cobra.Command{Use: "execution-start PROJECT_ID RUN_ID", Short: "Explicitly start a prepared disposable synthetic execution", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		if !syntheticFixture {
+			return errors.New("--synthetic-fixture required; no production or spike fallback is available")
+		}
+		if startCommand == "" || fixtureRepository == "" || fixturePath == "" || fixturePrompt == "" {
+			return errors.New("--command-id, --repository, --path and --prompt required")
+		}
+		m, err := manager(cmd, stateDir)
+		if err != nil {
+			return err
+		}
+		defer m.Close()
+		e, err := m.Open(cmd.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		defer e.DB.Close()
+		prepared, err := supervisor.LoadPrepared(cmd.Context(), e, args[1])
+		if err != nil {
+			return err
+		}
+		if prepared.RuntimeKind != "synthetic" {
+			return errors.New("this CLI build has no production execution driver")
+		}
+		var repositoryRoot string
+		for _, repository := range prepared.Repositories {
+			if repository.ID == fixtureRepository {
+				repositoryRoot = repository.Root
+			}
+		}
+		if repositoryRoot == "" {
+			return errors.New("fixture repository is not enrolled in this run")
+		}
+		owner, err := m.Coordinator.Register(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer owner.Close()
+		reservation, err := e.ReserveResources(cmd.Context(), owner, "run-resources-"+prepared.RunID, prepared.RunID, prepared.EndpointID)
+		if err != nil {
+			return err
+		}
+		driver := &supervisor.FixtureDriver{RepositoryID: fixtureRepository, Root: repositoryRoot, RelativePath: fixturePath, Content: []byte(fixtureContent)}
+		runner := supervisor.Runner{Engine: e, Driver: driver, StartCommandID: startCommand}
+		result, err := runner.Run(cmd.Context(), prepared, reservation, fixturePrompt)
+		if err != nil {
+			return err
+		}
+		if err := owner.FinishTicket(cmd.Context(), reservation.Ticket, "contained_stopped"); err != nil {
+			return err
+		}
+		for _, claim := range reservation.Claims {
+			if err := owner.Release(cmd.Context(), claim, "contained_stopped"); err != nil {
+				return err
+			}
+		}
+		return printJSON(cmd, map[string]any{"run": prepared.RunID, "result": result, "task_state": "checking", "accepted": false})
+	}}
+	executionStart.Flags().BoolVar(&syntheticFixture, "synthetic-fixture", false, "Use only the deterministic disposable-fixture driver")
+	executionStart.Flags().StringVar(&startCommand, "command-id", "", "Unique replay-safe start command")
+	executionStart.Flags().StringVar(&fixtureRepository, "repository", "", "Enrolled repository ID")
+	executionStart.Flags().StringVar(&fixturePath, "path", "", "Repository-relative path to write")
+	executionStart.Flags().StringVar(&fixtureContent, "content", "persisted fixture execution\n", "Bounded fixture file content")
+	executionStart.Flags().StringVar(&fixturePrompt, "prompt", "", "Recorded bounded fixture instruction")
+	root.AddCommand(executionStart)
+	executionInspect := &cobra.Command{Use: "execution-inspect PROJECT_ID RUN_ID", Short: "Inspect persisted execution, uncertainty and allowed next commands", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			prepared, err := supervisor.LoadPrepared(cmd.Context(), e, args[1])
+			if err != nil {
+				return err
+			}
+			runner := supervisor.Runner{Engine: e}
+			view, err := runner.Inspect(cmd.Context(), prepared)
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, view)
+		})
+	}}
+	root.AddCommand(executionInspect)
+	var reconcileRepository, reconcilePath, reconcileCommand string
+	executionReconcile := &cobra.Command{Use: "execution-reconcile PROJECT_ID RUN_ID", Short: "Reconcile a disposable synthetic execution without replaying submission", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		if !syntheticFixture {
+			return errors.New("--synthetic-fixture required; production reconciliation needs its qualified runtime driver")
+		}
+		if reconcileCommand == "" || reconcileRepository == "" || reconcilePath == "" {
+			return errors.New("--command-id, --repository and --path required")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			prepared, err := supervisor.LoadPrepared(cmd.Context(), e, args[1])
+			if err != nil {
+				return err
+			}
+			if prepared.RuntimeKind != "synthetic" {
+				return errors.New("synthetic reconciliation cannot inspect a production runtime")
+			}
+			var root string
+			for _, repository := range prepared.Repositories {
+				if repository.ID == reconcileRepository {
+					root = repository.Root
+				}
+			}
+			if root == "" {
+				return errors.New("repository is not part of the run")
+			}
+			driver := &supervisor.FixtureDriver{RepositoryID: reconcileRepository, Root: root, RelativePath: reconcilePath}
+			runner := supervisor.Runner{Engine: e, Driver: driver, ReconcileCommandID: reconcileCommand}
+			view, err := runner.Inspect(cmd.Context(), prepared)
+			if err != nil {
+				return err
+			}
+			observation := supervisor.Observation{Exists: view.Effects["runtime_create"] != "", Started: view.Effects["runtime_start"] != "", Attached: view.Effects["runtime_attach"] != "", NativeSessionID: view.NativeSessionID, NativeTurnID: view.NativeTurnID, SubmissionState: view.SubmissionState, WriterState: view.WriterState}
+			path := filepath.Join(root, filepath.FromSlash(reconcilePath))
+			if info, statErr := os.Lstat(path); statErr == nil && info.Mode().IsRegular() && view.SubmissionState == "delivered" {
+				observation.Terminal, observation.Outcome, observation.WriterState = true, "completed", "contained_stopped"
+				observation.Result, _ = json.Marshal(supervisor.Result{SchemaVersion: 1, Status: "completed", Summary: "reconciled deterministic fixture edit", ChangedPaths: []string{reconcileRepository + ":" + filepath.ToSlash(reconcilePath)}})
+			}
+			driver.Restore(observation)
+			view, err = runner.Reconcile(cmd.Context(), prepared)
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, view)
+		})
+	}}
+	executionReconcile.Flags().BoolVar(&syntheticFixture, "synthetic-fixture", false, "Use only the deterministic disposable-fixture reconciler")
+	executionReconcile.Flags().StringVar(&reconcileCommand, "command-id", "", "Unique replay-safe reconciliation command")
+	executionReconcile.Flags().StringVar(&reconcileRepository, "repository", "", "Enrolled repository ID")
+	executionReconcile.Flags().StringVar(&reconcilePath, "path", "", "Expected repository-relative fixture path")
+	root.AddCommand(executionReconcile)
 	var file string
 	apply := &cobra.Command{Use: "apply PROJECT_ID --file COMMAND.json", Short: "Apply one versioned human command atomically (never launches a model)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		if file == "" {
