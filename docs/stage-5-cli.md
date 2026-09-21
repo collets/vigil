@@ -167,6 +167,89 @@ Inspection is read-only. Reconciliation requires its own receipt and cannot subm
 
 An uncertain submission exposes only inspect/reconcile/stop as allowed next commands. A durably delivered generation is also never resubmitted, even when current driver inspection is unavailable. Successful outcome persistence atomically rechecks the persisted task ledger, run allowance, crash-gap uncertainty and any open active segment; reconciliation cannot turn an over-budget terminal observation into `completed`/`checking`. Proven native human/resource waits suspend the active await timer but not the absolute wall timeout or lease renewal; the active timer resumes from cumulative consumption when the wait ends. These fixture commands are not model dispatch and never fall back to `spike`. Production runtime drivers must independently report the exact runtime inputs and route set they will use; Vigil binds those to the persisted profile, endpoint, checkout roots/layout/mount digest and Stage 5.1 evidence before invoking core eligibility. No production driver currently satisfies/enables that contract.
 
+## Pause, stop and checkpoint recovery
+
+Pause prohibits later dispatch; continue rechecks unresolved runs, checkpoint operations and cumulative budgets:
+
+```sh
+./bin/vigil project pause PROJECT_ID \
+  --command-id pause-001 --expected-revision 7
+./bin/vigil project continue PROJECT_ID \
+  --command-id continue-001 --expected-revision 8
+```
+
+The available stop driver remains fixture-only. Stop first persists paused dispatch, request retirement and containment intent, then performs bounded interrupt/termination:
+
+```sh
+./bin/vigil project execution-stop PROJECT_ID RUN_ID \
+  --command-id stop-001 --synthetic-fixture \
+  --repository primary --path src/result.txt \
+  --interrupt-grace-ms 100 --terminate-grace-ms 5000
+```
+
+Save is non-destructive and always includes every immutable participating repository. For a later scoped clear, retain a baseline set from before execution and a captured set from after contained execution:
+
+```sh
+./bin/vigil project checkpoint-save PROJECT_ID RUN_ID \
+  --command-id save-baseline-001 --expected-revision 9
+./bin/vigil project checkpoint-save PROJECT_ID RUN_ID \
+  --command-id save-captured-001 --expected-revision 10
+./bin/vigil project checkpoint-clear PROJECT_ID CAPTURED_CHECKPOINT_ID BASELINE_CHECKPOINT_ID \
+  --command-id clear-001 --expected-revision 11
+```
+
+Clear derives agent-owned paths only from the validated execution result; there is no arbitrary path flag. It verifies both complete sets before changing any repository. Mixed or concurrent edits fail closed.
+
+Restore additionally requires a checkpoint of the current destination. The restore command is the explicit human approval bound to all three set IDs and the current project revision:
+
+```sh
+./bin/vigil project checkpoint-save PROJECT_ID RUN_ID \
+  --command-id save-destination-001 --expected-revision 12
+./bin/vigil project checkpoint-restore PROJECT_ID TARGET_CHECKPOINT_ID BASELINE_CHECKPOINT_ID DESTINATION_CHECKPOINT_ID \
+  --command-id restore-001 --expected-revision 13
+```
+
+If restore reports conflicts or is interrupted, do not discard any checkpoint. Inspect the persisted operation/path journal and repeat the identical command only after destination state still matches an expected or already-applied state.
+
+## Exact resume and new attempts
+
+The current CLI history inspector is intentionally synthetic-only. Record an explicit recovery choice after containment and a verified checkpoint:
+
+```sh
+./bin/vigil project execution-recovery-choose PROJECT_ID RUN_ID \
+  --command-id recovery-001 --expected-revision 14 \
+  --mode exact_resume --history-state readable --history-class interrupted \
+  --synthetic-fixture
+```
+
+`--mode fresh_context` accepts `missing`, `corrupt` or `unsupported` history only when writer containment and a full verified checkpoint are available. `--mode remain_blocked` records the safe decision without creating an attempt.
+
+For eligible exact resume, prepare a new generation and invoke `execution-start` without `--prompt`; a replacement prompt is rejected:
+
+```sh
+./bin/vigil project execution-resume-prepare PROJECT_ID CHOICE_ID \
+  --command-id resume-prepare-001 --expected-revision 15
+./bin/vigil project execution-start PROJECT_ID RUN_ID \
+  --command-id resume-start-001 --synthetic-fixture \
+  --repository primary --path src/result.txt
+```
+
+Fresh reconstruction is a new attempt linked to the choice and bound checkpoint. Repair and infrastructure retries use the same command but separate kinds/limits; infrastructure retry additionally requires proof that no prompt or tool effect was delivered:
+
+```sh
+./bin/vigil project execution-followup-prepare PROJECT_ID SOURCE_RUN_ID \
+  --command-id fresh-001 --expected-revision 16 \
+  --kind fresh_context --choice-id CHOICE_ID --wall-limit-ms 60000
+./bin/vigil project execution-followup-prepare PROJECT_ID SOURCE_RUN_ID \
+  --command-id repair-001 --expected-revision 16 \
+  --kind repair --wall-limit-ms 60000
+./bin/vigil project execution-followup-prepare PROJECT_ID SOURCE_RUN_ID \
+  --command-id infra-001 --expected-revision 16 \
+  --kind infrastructure --wall-limit-ms 60000
+```
+
+All generations and attempts consume the same task ledger. Exact resume retains the remaining wall allowance; fresh/repair/infrastructure attempts do not reset cumulative active charge. Exhaustion blocks progression and leaves a pending supervisor assessment for Stage 5.4. Production resume/history drivers and live qualification remain unavailable.
+
 ## Permissions and artifacts
 
 `operation.request` records intent using `category`, `resource_digest`, `arguments_digest`, `plan_id`, `task_id`, and `task_revision`. Digests must identify exact resources/arguments; this command performs no external effect. The inbox returns a request ID. `permission.grant` takes `request_id`, `decision` (`allow`/`deny`), `scope` (`once`/`task`/`plan`/`project_permanent`) and optional `expires_at` in Unix milliseconds. `permission.revoke` takes `grant_id`. All use the same command envelope and expected revision. Project commands still reject global scope; trusted coordinator APIs now serialize separately created explicit global grants and effect-start reservations with revocation. There is no user-facing global-grant command yet.

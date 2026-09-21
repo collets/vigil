@@ -18,9 +18,9 @@ Keep all seven. Each has a distinct result and acceptance boundary. The larger s
 
 The numbers express a working order, not permission to bypass a dependency. Build 5.1's boundary/evidence contract first; build 5.2's journal against synthetic workers next; then close their shared real-launch qualification gate. This resolves their integration dependency without pretending either alone proves production safety. Likewise, 5.2 can initially support a clean disposable checkout while 5.3 adds saved-work handling. Keep those paths visibly unavailable until implemented.
 
-Current implementation status: 5.1's offline evidence ledger, eligibility API, Codex images, admission and lifecycle contracts are implemented. R1–R4 from [independent validation](../research/stage-5.1-astra-review.md) are corrected with permanent negative tests. Stage 5.2 checkpoints A–D are implemented. Its [independent re-review](../research/stage-5.2-astra-review.md) closed R1–R5, R7 and R9; `d34f894` submits follow-up corrections for R6/R8 with permanent tests and native Mac validation. See [Stage 5.2 results](../research/stage-5.2-results.md). Astra re-review, live contained Codex, provider-idle proof and the same recovery matrix through each live combination remain pending; Stage 5.2 is not yet accepted and production dispatch remains disabled.
+Current implementation status: 5.1's offline evidence ledger, eligibility API, Codex images, admission and lifecycle contracts are implemented; R1–R4 are closed. Stage 5.2 checkpoints A–D and R1–R9 fixes are independently accepted offline at `d34f894`. Stage 5.3 controls, verified checkpoint sets, scoped clear/restore, recovery classification and cumulative retry/budget handling are implemented through `5617679`; see [Stage 5.3 results](../research/stage-5.3-results.md). Stage 5.3 independent review, live contained Codex, provider-idle proof, shared capacity authority and the recovery matrix through each live combination remain pending. Production dispatch remains disabled.
 
-Suggested sequence: 5.1 offline work → 5.2 offline work → joint live qualification → 5.3 → 5.4 → 5.5 → 5.6 → 5.7. If a live gate needs the user, continue the next plan's explicitly independent work. Do not mark the blocked plan complete. UI shells, quality schemas, checkpoint fixtures and fake hosting tests can be implemented offline; their integration remains open.
+Suggested sequence: 5.1 offline work → 5.2 offline work → 5.3 offline recovery → 5.4 → 5.5 → 5.6 → 5.7, with joint live qualification kept as a separate gate. If a live gate needs the user, continue the next plan's explicitly independent work. Do not mark a live or review gate complete from local implementation evidence.
 
 ## Shared operating contract
 
@@ -65,8 +65,9 @@ No immediate answer is required to begin implementation. A plan may be autonomou
 - [ ] 5.1 qualification and trusted eligibility complete.
   - Implemented: offline qualification/admission/lifecycle contract and two-platform containment matrix. Pending: live Codex/provider-idle and 5.2 integration.
 - [ ] 5.2 repository preparation and persisted execution complete.
-  - Implemented: checkpoints A–D, initial review remediation and `d34f894` R6/R8 follow-up, synthetic crash matrix and disposable CLI execution on WSL/native Mac. Pending completion gates: Astra re-review and qualified live combinations.
+  - Implemented and independently accepted offline: checkpoints A–D, R1–R9 remediation through `d34f894`, synthetic crash matrix and disposable CLI execution on WSL/native Mac. Pending completion gate: qualified live combinations.
 - [ ] 5.3 recovery and controls complete.
+  - Implemented through `5617679`: durable controls, verified multi-repository checkpoints, scoped clear/restore, exact/fresh recovery and cumulative budgets. Pending completion gates: independent review and qualified live recovery combinations.
 - [ ] 5.4 quality and acceptance complete.
 - [ ] 5.5 interactive workflow and planning complete.
 - [ ] 5.6 delivery and finalization complete.
