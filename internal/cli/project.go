@@ -7,11 +7,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"vigil/internal/artifacts"
 	"vigil/internal/boundary"
+	"vigil/internal/checkpoint"
 	"vigil/internal/coordinator"
 	"vigil/internal/core"
 	"vigil/internal/store"
@@ -349,6 +351,95 @@ func projectCommand(stateDir *string) *cobra.Command {
 	executionReconcile.Flags().StringVar(&reconcileRepository, "repository", "", "Enrolled repository ID")
 	executionReconcile.Flags().StringVar(&reconcilePath, "path", "", "Expected repository-relative fixture path")
 	root.AddCommand(executionReconcile)
+	var checkpointCommand string
+	var checkpointRevision int
+	checkpointSave := &cobra.Command{Use: "checkpoint-save PROJECT_ID RUN_ID", Short: "Save and verify every participating repository without clearing work", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		if checkpointCommand == "" || checkpointRevision < 1 {
+			return errors.New("--command-id and --expected-revision required")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			prepared, err := supervisor.LoadPrepared(cmd.Context(), e, args[1])
+			if err != nil {
+				return err
+			}
+			var repositories []checkpoint.RepositorySpec
+			for _, repository := range prepared.Repositories {
+				repositories = append(repositories, checkpoint.RepositorySpec{ID: repository.ID, Root: repository.Root, Identity: repository.Identity, Exclusions: repository.Baseline.Exclusions, UntrackedScope: prepared.Task.Scope})
+			}
+			manager, err := checkpoint.NewManager(e)
+			if err != nil {
+				return err
+			}
+			receipt, err := manager.Save(cmd.Context(), checkpoint.SaveRequest{CommandID: checkpointCommand, ExpectedRevision: checkpointRevision, RunID: args[1], Repositories: repositories})
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, receipt)
+		})
+	}}
+	checkpointSave.Flags().StringVar(&checkpointCommand, "command-id", "", "Unique replay-safe save command")
+	checkpointSave.Flags().IntVar(&checkpointRevision, "expected-revision", 0, "Expected project revision")
+	root.AddCommand(checkpointSave)
+
+	var clearCommand string
+	var clearRevision int
+	checkpointClear := &cobra.Command{Use: "checkpoint-clear PROJECT_ID CHECKPOINT_ID BASELINE_CHECKPOINT_ID", Short: "Clear only result paths proven agent-owned after full-set verification", Args: cobra.ExactArgs(3), RunE: func(cmd *cobra.Command, args []string) error {
+		if clearCommand == "" || clearRevision < 1 {
+			return errors.New("--command-id and --expected-revision required")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			var runID string
+			if err := e.DB.SQL.QueryRowContext(cmd.Context(), "SELECT run_id FROM checkpoint_sets WHERE id=?", args[1]).Scan(&runID); err != nil {
+				return err
+			}
+			result, err := (&supervisor.Runner{Engine: e}).Result(cmd.Context(), runID)
+			if err != nil {
+				return errors.New("clear requires a validated execution result naming agent-owned paths")
+			}
+			owned := map[string][]string{}
+			for _, changed := range result.ChangedPaths {
+				parts := strings.SplitN(changed, ":", 2)
+				if len(parts) != 2 {
+					return errors.New("validated result contains an invalid changed path")
+				}
+				owned[parts[0]] = append(owned[parts[0]], parts[1])
+			}
+			manager, err := checkpoint.NewManager(e)
+			if err != nil {
+				return err
+			}
+			receipt, err := manager.Clear(cmd.Context(), checkpoint.ClearRequest{CommandID: clearCommand, ExpectedRevision: clearRevision, CheckpointID: args[1], BaselineCheckpointID: args[2], OwnedPaths: owned})
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, receipt)
+		})
+	}}
+	checkpointClear.Flags().StringVar(&clearCommand, "command-id", "", "Unique replay-safe clear command")
+	checkpointClear.Flags().IntVar(&clearRevision, "expected-revision", 0, "Expected project revision")
+	root.AddCommand(checkpointClear)
+
+	var restoreCommand string
+	var restoreRevision int
+	checkpointRestore := &cobra.Command{Use: "checkpoint-restore PROJECT_ID CHECKPOINT_ID BASELINE_CHECKPOINT_ID DESTINATION_CHECKPOINT_ID", Short: "Apply an explicitly approved restore bound to a verified destination snapshot", Args: cobra.ExactArgs(4), RunE: func(cmd *cobra.Command, args []string) error {
+		if restoreCommand == "" || restoreRevision < 1 {
+			return errors.New("--command-id and --expected-revision required")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			manager, err := checkpoint.NewManager(e)
+			if err != nil {
+				return err
+			}
+			receipt, err := manager.Restore(cmd.Context(), checkpoint.RestoreRequest{CommandID: restoreCommand, ExpectedRevision: restoreRevision, CheckpointID: args[1], BaselineCheckpointID: args[2], DestinationCheckpointID: args[3]})
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, receipt)
+		})
+	}}
+	checkpointRestore.Flags().StringVar(&restoreCommand, "command-id", "", "Unique human approval and replay-safe restore command")
+	checkpointRestore.Flags().IntVar(&restoreRevision, "expected-revision", 0, "Expected project revision")
+	root.AddCommand(checkpointRestore)
 	var file string
 	apply := &cobra.Command{Use: "apply PROJECT_ID --file COMMAND.json", Short: "Apply one versioned human command atomically (never launches a model)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		if file == "" {

@@ -54,20 +54,21 @@ type PathEntry struct {
 }
 
 type RepositoryManifest struct {
-	SchemaVersion int                `json:"schema_version"`
-	RepositoryID  string             `json:"repository_id"`
-	Identity      workspace.Identity `json:"identity"`
-	HeadOID       string             `json:"head_oid"`
-	HeadRef       string             `json:"head_ref,omitempty"`
-	HeadDigest    string             `json:"head_digest"`
-	IndexDigest   string             `json:"index_digest"`
-	IndexBlob     string             `json:"index_blob"`
-	BundleDigest  string             `json:"bundle_digest"`
-	BundleBlob    string             `json:"bundle_blob"`
-	Exclusions    []string           `json:"exclusions"`
-	IndexEntries  []IndexEntry       `json:"index_entries"`
-	Paths         []PathEntry        `json:"paths"`
-	Digest        string             `json:"digest"`
+	SchemaVersion  int                `json:"schema_version"`
+	RepositoryID   string             `json:"repository_id"`
+	Identity       workspace.Identity `json:"identity"`
+	HeadOID        string             `json:"head_oid"`
+	HeadRef        string             `json:"head_ref,omitempty"`
+	HeadDigest     string             `json:"head_digest"`
+	IndexDigest    string             `json:"index_digest"`
+	IndexBlob      string             `json:"index_blob"`
+	BundleDigest   string             `json:"bundle_digest"`
+	BundleBlob     string             `json:"bundle_blob"`
+	Exclusions     []string           `json:"exclusions"`
+	UntrackedScope []string           `json:"untracked_scope"`
+	IndexEntries   []IndexEntry       `json:"index_entries"`
+	Paths          []PathEntry        `json:"paths"`
+	Digest         string             `json:"digest"`
 }
 
 type SetManifest struct {
@@ -314,8 +315,9 @@ func (s *Store) captureRepository(ctx context.Context, spec RepositorySpec) (Rep
 	if filepath.Join(identity.Root, ".git") != identity.CommonGitPath {
 		return result, 0, errors.New("linked worktrees are not supported for checkpoint capture")
 	}
-	result = RepositoryManifest{SchemaVersion: SchemaVersion, RepositoryID: spec.ID, Identity: identity, Exclusions: append([]string(nil), spec.Exclusions...)}
+	result = RepositoryManifest{SchemaVersion: SchemaVersion, RepositoryID: spec.ID, Identity: identity, Exclusions: append([]string(nil), spec.Exclusions...), UntrackedScope: append([]string(nil), spec.UntrackedScope...)}
 	sort.Strings(result.Exclusions)
+	sort.Strings(result.UntrackedScope)
 	if head, err := safeGit(ctx, identity.Root, "rev-parse", "--verify", "HEAD^{commit}"); err == nil {
 		result.HeadOID = strings.TrimSpace(string(head))
 	} else {
@@ -351,8 +353,9 @@ func (s *Store) captureRepository(ctx context.Context, spec RepositorySpec) (Rep
 	}
 	tracked := map[string]bool{}
 	total := int64(len(indexBytes) + len(headBytes))
+	filteredIndex := make([]IndexEntry, 0, len(result.IndexEntries))
 	for n := range result.IndexEntries {
-		entry := &result.IndexEntries[n]
+		entry := result.IndexEntries[n]
 		if excluded(entry.Path, result.Exclusions) {
 			continue
 		}
@@ -366,7 +369,9 @@ func (s *Store) captureRepository(ctx context.Context, spec RepositorySpec) (Rep
 			return result, total, err
 		}
 		total += int64(len(content))
+		filteredIndex = append(filteredIndex, entry)
 	}
+	result.IndexEntries = filteredIndex
 	untrackedRaw, err := safeGit(ctx, identity.Root, "ls-files", "--others", "--exclude-standard", "-z")
 	if err != nil {
 		return result, total, err
