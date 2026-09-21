@@ -193,6 +193,9 @@ func (e *Engine) Apply(ctx context.Context, actor Authority, cmd Envelope) (json
 	if cmd.ExpectedRevision < 1 {
 		return nil, errors.New("expected_revision required")
 	}
+	if cmd.Kind == "repository.enroll" {
+		return e.applyRepositoryEnrollment(ctx, actor, cmd)
+	}
 	args, err := json.Marshal(cmd)
 	if err != nil {
 		return nil, err

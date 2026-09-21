@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func TestProjectV1UpgradeAndRollback(t *testing.T) {
+func TestProjectV2UpgradeAndRollback(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "private", "state.sqlite")
 	db, err := Open(ctx, path, "project")
@@ -21,10 +21,12 @@ func TestProjectV1UpgradeAndRollback(t *testing.T) {
 	if _, err = db.SQL.Exec("INSERT INTO config_snapshots VALUES('existing','digest',1,'{}','{}',1)"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.SQL.Exec("DROP TABLE execution_qualifications"); err != nil {
-		t.Fatal(err)
+	for _, object := range []string{"repository_branch_operations", "repository_fingerprints", "repository_revisions"} {
+		if _, err = db.SQL.Exec("DROP TABLE " + object); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if _, err = db.SQL.Exec("DELETE FROM schema_migrations WHERE version=2"); err != nil {
+	if _, err = db.SQL.Exec("DELETE FROM schema_migrations WHERE version=3"); err != nil {
 		t.Fatal(err)
 	}
 	if err = db.Close(); err != nil {
@@ -37,7 +39,7 @@ func TestProjectV1UpgradeAndRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = raw.Exec("CREATE TABLE execution_qualifications(id TEXT)"); err != nil {
+	if _, err = raw.Exec("CREATE TABLE repository_revisions(id TEXT)"); err != nil {
 		t.Fatal(err)
 	}
 	if err = raw.Close(); err != nil {
@@ -52,13 +54,13 @@ func TestProjectV1UpgradeAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	var versions, existing int
-	if err = raw.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 1 {
+	if err = raw.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 2 {
 		t.Fatal("failed migration changed history", versions, err)
 	}
 	if err = raw.QueryRow("SELECT count(*) FROM config_snapshots WHERE id='existing'").Scan(&existing); err != nil || existing != 1 {
 		t.Fatal("failed migration changed v1 data", existing, err)
 	}
-	if _, err = raw.Exec("DROP TABLE execution_qualifications"); err != nil {
+	if _, err = raw.Exec("DROP TABLE repository_revisions"); err != nil {
 		t.Fatal(err)
 	}
 	if err = raw.Close(); err != nil {
@@ -70,8 +72,8 @@ func TestProjectV1UpgradeAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer upgraded.Close()
-	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 2 {
-		t.Fatal("v1 database was not upgraded", versions, err)
+	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 3 {
+		t.Fatal("v2 database was not upgraded", versions, err)
 	}
 	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM config_snapshots WHERE id='existing'").Scan(&existing); err != nil || existing != 1 {
 		t.Fatal("upgrade lost populated data", existing, err)

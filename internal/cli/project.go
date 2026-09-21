@@ -97,6 +97,32 @@ func projectCommand(stateDir *string) *cobra.Command {
 			return printJSON(cmd, r)
 		})
 	}})
+	root.AddCommand(&cobra.Command{Use: "repository PROJECT_ID REPOSITORY_ID", Short: "Inspect the latest explicit repository enrollment and baseline", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			r, err := e.Repository(cmd.Context(), args[1])
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, r)
+		})
+	}})
+	var prepareCommand string
+	var prepareRevision int
+	prepare := &cobra.Command{Use: "prepare-repository PROJECT_ID REPOSITORY_ID", Short: "Journal and prepare an explicitly enrolled clean plan branch", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		if prepareCommand == "" || prepareRevision < 1 {
+			return errors.New("--command-id and --expected-revision required")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			r, err := e.PrepareRepository(cmd.Context(), prepareCommand, args[1], prepareRevision)
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, r)
+		})
+	}}
+	prepare.Flags().StringVar(&prepareCommand, "command-id", "", "Unique replay-safe command identifier")
+	prepare.Flags().IntVar(&prepareRevision, "expected-revision", 0, "Expected project revision")
+	root.AddCommand(prepare)
 	var file string
 	apply := &cobra.Command{Use: "apply PROJECT_ID --file COMMAND.json", Short: "Apply one versioned human command atomically (never launches a model)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		if file == "" {
