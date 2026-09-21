@@ -236,3 +236,44 @@ func TestCrashRetainsQuarantine(t *testing.T) {
 		t.Fatal("fencing token reused")
 	}
 }
+
+func TestGlobalEffectStartSerializesRevocation(t *testing.T) {
+	ctx := context.Background()
+	c, err := Open(ctx, filepath.Join(t.TempDir(), "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.DB.Close()
+	owner, err := c.Register(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+	resource, arguments := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	if _, err = c.CreateGlobalGrant(ctx, "grant-before", "commit", resource, arguments, true); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.RevokeGlobalGrant(ctx, "grant-before"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = owner.AuthorizeGlobalEffect(ctx, "shared-before", "project-before", "project", "grant-before", "commit", resource, arguments); err == nil {
+		t.Fatal("revoked grant won effect start")
+	}
+	if _, err = c.CreateGlobalGrant(ctx, "grant-after", "commit", resource, arguments, true); err != nil {
+		t.Fatal(err)
+	}
+	started, err := owner.AuthorizeGlobalEffect(ctx, "shared-after", "project-after", "project", "grant-after", "commit", resource, arguments)
+	if err != nil || started.State != "executing" {
+		t.Fatal(started, err)
+	}
+	if err = c.RevokeGlobalGrant(ctx, "grant-after"); err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := owner.AuthorizeGlobalEffect(ctx, "shared-after", "project-after", "project", "grant-after", "commit", resource, arguments)
+	if err != nil || replayed != started {
+		t.Fatal("same effect identity did not reconcile", replayed, err)
+	}
+	if _, err = owner.AuthorizeGlobalEffect(ctx, "different", "project-different", "project", "grant-after", "commit", resource, arguments); err == nil {
+		t.Fatal("revoked grant started a new effect")
+	}
+}

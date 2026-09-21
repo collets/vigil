@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"vigil/internal/coordinator"
 	"vigil/internal/store"
@@ -14,14 +15,15 @@ import (
 // authorizes native launch and never claims cross-database atomicity. A lost
 // owner leaves its resources quarantined; a new owner cannot resume this intent.
 type Reservation struct {
-	OperationID string              `json:"operation_id"`
-	OwnerID     string              `json:"owner_id"`
-	RunID       string              `json:"run_id"`
-	Endpoint    string              `json:"endpoint_id"`
-	Root        workspace.Identity  `json:"root"`
-	Claims      []coordinator.Claim `json:"claims"`
-	Ticket      coordinator.Ticket  `json:"ticket"`
-	Phase       string              `json:"phase"`
+	OperationID string               `json:"operation_id"`
+	OwnerID     string               `json:"owner_id"`
+	RunID       string               `json:"run_id"`
+	Endpoint    string               `json:"endpoint_id"`
+	Root        workspace.Identity   `json:"root"`
+	Roots       []workspace.Identity `json:"roots"`
+	Claims      []coordinator.Claim  `json:"claims"`
+	Ticket      coordinator.Ticket   `json:"ticket"`
+	Phase       string               `json:"phase"`
 }
 
 // ReserveResources acquires the primary registered checkout before queuing for
@@ -37,32 +39,11 @@ func (e *Engine) reserveResources(ctx context.Context, owner *coordinator.Owner,
 	if owner == nil || owner.Coordinator == nil || owner.Coordinator.DB == nil || !store.SafeID(owner.ID) || !store.SafeID(operationID) || !store.SafeID(runID) || !store.SafeID(endpoint) {
 		return result, errors.New("explicit reservation identities required")
 	}
-	var root string
-	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT root FROM project WHERE id=?", e.ProjectID).Scan(&root); err != nil {
-		return result, err
-	}
-	var identityJSON string
-	if err := owner.Coordinator.DB.SQL.QueryRowContext(ctx, "SELECT identity_json FROM project_registry WHERE id=? AND root=?", e.ProjectID, root).Scan(&identityJSON); err != nil {
-		return result, err
-	}
-	var id workspace.Identity
-	if err := json.Unmarshal([]byte(identityJSON), &id); err != nil {
-		return result, err
-	}
-	if id.Root != root {
-		return result, errors.New("registered project identity does not match")
-	}
-	if err := id.Validate(); err != nil {
-		return result, err
-	}
-	current, err := workspace.Inspect(ctx, root)
+	roots, err := e.participatingRoots(ctx, owner)
 	if err != nil {
 		return result, err
 	}
-	if current.Key != id.Key || current.CommonGit != id.CommonGit || current.CommonGitPath != id.CommonGitPath {
-		return result, errors.New("registered Git identity changed; reconcile the project before reserving")
-	}
-	intent := Reservation{OperationID: operationID, OwnerID: owner.ID, RunID: runID, Endpoint: endpoint, Root: id, Phase: "intent"}
+	intent := Reservation{OperationID: operationID, OwnerID: owner.ID, RunID: runID, Endpoint: endpoint, Root: roots[0], Roots: roots, Phase: "intent"}
 	args, _ := json.Marshal(intent)
 	_, err = e.DB.Command(ctx, store.Command{ID: "reservation:" + store.Digest([]byte(operationID)), Actor: string(Core), Kind: "resource.reserve", Args: args}, func(tx *store.Tx) (any, error) {
 		if _, err := configAt(ctx, tx); err != nil {
@@ -72,7 +53,11 @@ func (e *Engine) reserveResources(ctx context.Context, owner *coordinator.Owner,
 		if err := tx.QueryRowContext(ctx, "SELECT policy_epoch FROM project WHERE id=?", e.ProjectID).Scan(&epoch); err != nil {
 			return nil, err
 		}
-		_, err := tx.ExecContext(ctx, "INSERT INTO operations(id,kind,resource_digest,args_digest,policy_epoch,state,evidence_json,created_at) VALUES(?,'resource.reserve',?,?,?,'prepared',?,?)", operationID, store.Digest([]byte(id.Key)), store.Digest(args), epoch, string(args), store.Now())
+		keys := make([]string, 0, len(roots))
+		for _, root := range roots {
+			keys = append(keys, root.Key+"\x00"+root.CommonGit)
+		}
+		_, err := tx.ExecContext(ctx, "INSERT INTO operations(id,kind,resource_digest,args_digest,policy_epoch,state,evidence_json,created_at) VALUES(?,'resource.reserve',?,?,?,'prepared',?,?)", operationID, store.Digest([]byte(strings.Join(keys, "\x00"))), store.Digest(args), epoch, string(args), store.Now())
 		return map[string]string{"operation_id": operationID}, err
 	})
 	if err != nil {
@@ -94,8 +79,13 @@ func (e *Engine) reserveResources(ctx context.Context, owner *coordinator.Owner,
 	if result.OwnerID != owner.ID || result.RunID != runID || result.Endpoint != endpoint {
 		return result, store.ErrConflict
 	}
-	if err := result.Root.Validate(); err != nil {
-		return result, err
+	if len(result.Roots) == 0 {
+		result.Roots = []workspace.Identity{result.Root}
+	}
+	for _, root := range result.Roots {
+		if err := root.Validate(); err != nil {
+			return result, err
+		}
 	}
 	// Check policy before any coordinator effect; the same check runs before
 	// recording each observation. A policy race leaves inspectable ownership.
@@ -103,7 +93,7 @@ func (e *Engine) reserveResources(ctx context.Context, owner *coordinator.Owner,
 		return result, err
 	}
 	sharedID := store.Digest([]byte(e.ProjectID + "\x00" + operationID))
-	claims, err := owner.Claim(ctx, e.ProjectID, sharedID, []workspace.Identity{result.Root})
+	claims, err := owner.Claim(ctx, e.ProjectID, sharedID, result.Roots)
 	if err != nil {
 		return result, err
 	}
@@ -143,6 +133,66 @@ func (e *Engine) reserveResources(ctx context.Context, owner *coordinator.Owner,
 		return result, err
 	}
 	return result, nil
+}
+
+func (e *Engine) participatingRoots(ctx context.Context, owner *coordinator.Owner) ([]workspace.Identity, error) {
+	var projectRoot, registeredJSON string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT root FROM project WHERE id=?", e.ProjectID).Scan(&projectRoot); err != nil {
+		return nil, err
+	}
+	if err := owner.Coordinator.DB.SQL.QueryRowContext(ctx, "SELECT identity_json FROM project_registry WHERE id=? AND root=?", e.ProjectID, projectRoot).Scan(&registeredJSON); err != nil {
+		return nil, err
+	}
+	var registered workspace.Identity
+	if err := json.Unmarshal([]byte(registeredJSON), &registered); err != nil {
+		return nil, err
+	}
+	rows, err := e.DB.SQL.QueryContext(ctx, `SELECT rr.root_identity_json FROM repositories r JOIN repository_revisions rr ON rr.repository_id=r.id WHERE r.inclusion='participating' AND rr.revision=(SELECT max(x.revision) FROM repository_revisions x WHERE x.repository_id=r.id) ORDER BY r.root,r.id`)
+	if err != nil {
+		return nil, err
+	}
+	var roots []workspace.Identity
+	seen := map[string]bool{}
+	for rows.Next() {
+		var raw string
+		var identity workspace.Identity
+		if err := rows.Scan(&raw); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(raw), &identity); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if !seen[identity.Key] {
+			roots = append(roots, identity)
+			seen[identity.Key] = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	if !seen[registered.Key] {
+		roots = append([]workspace.Identity{registered}, roots...)
+	}
+	if len(roots) == 0 {
+		return nil, errors.New("no participating workspace roots")
+	}
+	for _, identity := range roots {
+		if err := identity.Validate(); err != nil {
+			return nil, err
+		}
+		current, err := workspace.Inspect(ctx, identity.Root)
+		if err != nil {
+			return nil, err
+		}
+		if current.Key != identity.Key || current.CommonGit != identity.CommonGit || current.CommonGitPath != identity.CommonGitPath {
+			return nil, errors.New("participating repository identity changed; reconcile before reserving")
+		}
+	}
+	return roots, nil
 }
 
 func (e *Engine) Reservation(ctx context.Context, id string) (Reservation, error) {

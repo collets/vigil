@@ -5,6 +5,7 @@ package coordinator
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,6 +47,26 @@ type Ticket struct {
 	Generation int64  `json:"generation"`
 	Endpoint   string `json:"endpoint"`
 	State      string `json:"state"`
+}
+
+type GlobalGrant struct {
+	ID              string `json:"id"`
+	Category        string `json:"category"`
+	ResourceDigest  string `json:"resource_digest"`
+	ArgumentsDigest string `json:"arguments_digest"`
+	PolicyEpoch     int64  `json:"policy_epoch"`
+	Revoked         bool   `json:"revoked"`
+}
+
+type GlobalEffect struct {
+	OperationID        string `json:"operation_id"`
+	ProjectOperationID string `json:"project_operation_id"`
+	ProjectID          string `json:"project_id"`
+	GrantID            string `json:"grant_id"`
+	PolicyEpoch        int64  `json:"policy_epoch"`
+	ResourceDigest     string `json:"resource_digest"`
+	ArgumentsDigest    string `json:"arguments_digest"`
+	State              string `json:"state"`
 }
 
 func Open(ctx context.Context, dir string) (*Coordinator, error) {
@@ -633,4 +654,140 @@ func (c *Coordinator) Status(ctx context.Context) (map[string]any, error) {
 	}
 	result["claims"] = claims
 	return result, nil
+}
+
+func exactDigest(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+// CreateGlobalGrant records an explicit user-wide choice. It is intentionally
+// not exposed through project commands: callers must present the exact global
+// scope separately from any narrower project approval.
+func (c *Coordinator) CreateGlobalGrant(ctx context.Context, id, category, resourceDigest, argumentsDigest string, explicit bool) (GlobalGrant, error) {
+	var result GlobalGrant
+	if !explicit || !store.SafeID(id) || category == "" || len(category) > 128 || !exactDigest(resourceDigest) || !exactDigest(argumentsDigest) {
+		return result, errors.New("explicit bounded global grant and exact digests required")
+	}
+	resources, _ := json.Marshal(map[string]string{"resource_digest": resourceDigest, "arguments_digest": argumentsDigest})
+	err := c.DB.Write(ctx, func(tx *store.Tx) error {
+		var epoch int64
+		if err := tx.QueryRowContext(ctx, "SELECT epoch FROM global_policy WHERE singleton=1").Scan(&epoch); err != nil {
+			return err
+		}
+		epoch++
+		if _, err := tx.ExecContext(ctx, "UPDATE global_policy SET epoch=? WHERE singleton=1", epoch); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "INSERT INTO global_grants(id,category,resources_json,explicit_global_choice,granted_at,policy_epoch) VALUES(?,?,?,1,?,?)", id, category, string(resources), store.Now(), epoch); err != nil {
+			return err
+		}
+		result = GlobalGrant{ID: id, Category: category, ResourceDigest: resourceDigest, ArgumentsDigest: argumentsDigest, PolicyEpoch: epoch}
+		return nil
+	})
+	return result, err
+}
+
+func (c *Coordinator) RevokeGlobalGrant(ctx context.Context, id string) error {
+	if !store.SafeID(id) {
+		return errors.New("global grant identity required")
+	}
+	return c.DB.Write(ctx, func(tx *store.Tx) error {
+		r, err := tx.ExecContext(ctx, "UPDATE global_grants SET revoked_at=? WHERE id=? AND revoked_at IS NULL", store.Now(), id)
+		if err != nil {
+			return err
+		}
+		n, _ := r.RowsAffected()
+		if n != 1 {
+			return errors.New("global grant missing or already revoked")
+		}
+		_, err = tx.ExecContext(ctx, "UPDATE global_policy SET epoch=epoch+1 WHERE singleton=1")
+		return err
+	})
+}
+
+// AuthorizeGlobalEffect is the shared authorization linearization point. Grant
+// revocation and this insert serialize in the same BEGIN IMMEDIATE transaction.
+func (o *Owner) AuthorizeGlobalEffect(ctx context.Context, operationID, projectOperationID, projectID, grantID, category, resourceDigest, argumentsDigest string) (GlobalEffect, error) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	var result GlobalEffect
+	if err := o.live(); err != nil {
+		return result, err
+	}
+	for _, id := range []string{operationID, projectOperationID, projectID, grantID} {
+		if !store.SafeID(id) {
+			return result, errors.New("invalid global effect identity")
+		}
+	}
+	if category == "" || len(category) > 128 || !exactDigest(resourceDigest) || !exactDigest(argumentsDigest) {
+		return result, errors.New("exact global effect authority required")
+	}
+	err := o.Coordinator.DB.Write(ctx, func(tx *store.Tx) error {
+		var priorOwner, priorProject, priorProjectOperation, priorGrant, priorResource, priorArgs, state string
+		var epoch int64
+		err := tx.QueryRowContext(ctx, `SELECT instance_id,project_id,coalesce(project_operation_id,''),grant_id,policy_epoch,resource_digest,coalesce(arguments_digest,''),state FROM effect_authorizations WHERE operation_id=?`, operationID).Scan(&priorOwner, &priorProject, &priorProjectOperation, &priorGrant, &epoch, &priorResource, &priorArgs, &state)
+		if err == nil {
+			if priorOwner != o.ID || priorProject != projectID || priorProjectOperation != projectOperationID || priorGrant != grantID || priorResource != resourceDigest || priorArgs != argumentsDigest {
+				return store.ErrConflict
+			}
+			result = GlobalEffect{operationID, projectOperationID, projectID, grantID, epoch, resourceDigest, argumentsDigest, state}
+			return nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		var grantCategory, resources string
+		var revoked sql.NullInt64
+		if err := tx.QueryRowContext(ctx, "SELECT category,resources_json,revoked_at FROM global_grants WHERE id=?", grantID).Scan(&grantCategory, &resources, &revoked); err != nil {
+			return err
+		}
+		var exact map[string]string
+		if err := json.Unmarshal([]byte(resources), &exact); err != nil {
+			return err
+		}
+		if revoked.Valid || grantCategory != category || exact["resource_digest"] != resourceDigest || exact["arguments_digest"] != argumentsDigest {
+			return errors.New("global grant revoked or does not exactly cover the effect")
+		}
+		if err := tx.QueryRowContext(ctx, "SELECT epoch FROM global_policy WHERE singleton=1").Scan(&epoch); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO effect_authorizations(operation_id,project_id,instance_id,grant_id,policy_epoch,resource_digest,state,authorized_at,project_operation_id,arguments_digest) VALUES(?,?,?,?,?,?,'executing',?,?,?)`, operationID, projectID, o.ID, grantID, epoch, resourceDigest, store.Now(), projectOperationID, argumentsDigest); err != nil {
+			return err
+		}
+		result = GlobalEffect{operationID, projectOperationID, projectID, grantID, epoch, resourceDigest, argumentsDigest, "executing"}
+		return nil
+	})
+	return result, err
+}
+
+func (c *Coordinator) GlobalEffect(ctx context.Context, operationID string) (GlobalEffect, error) {
+	var result GlobalEffect
+	err := c.DB.SQL.QueryRowContext(ctx, `SELECT operation_id,coalesce(project_operation_id,''),project_id,grant_id,policy_epoch,resource_digest,coalesce(arguments_digest,''),state FROM effect_authorizations WHERE operation_id=?`, operationID).Scan(&result.OperationID, &result.ProjectOperationID, &result.ProjectID, &result.GrantID, &result.PolicyEpoch, &result.ResourceDigest, &result.ArgumentsDigest, &result.State)
+	return result, err
+}
+
+func (o *Owner) ObserveGlobalEffect(ctx context.Context, operationID, state string) error {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	if err := o.live(); err != nil {
+		return err
+	}
+	if state != "observed" && state != "uncertain" && state != "cancelled" {
+		return errors.New("invalid global effect observation")
+	}
+	return o.Coordinator.DB.Write(ctx, func(tx *store.Tx) error {
+		r, err := tx.ExecContext(ctx, "UPDATE effect_authorizations SET state=?,observed_at=? WHERE operation_id=? AND instance_id=? AND state='executing'", state, store.Now(), operationID, o.ID)
+		if err != nil {
+			return err
+		}
+		n, _ := r.RowsAffected()
+		if n != 1 {
+			return errors.New("global effect is stale or already observed")
+		}
+		return nil
+	})
 }

@@ -212,3 +212,34 @@ func TestResourceJournalWaitsWithoutDuplicatingCapacity(t *testing.T) {
 		t.Fatal(slots, err)
 	}
 }
+
+func TestReservationClaimsEveryEnrolledRepositoryAtomically(t *testing.T) {
+	m, e, p := setup(t)
+	ctx := context.Background()
+	initRepository(t, p.Root)
+	nested := filepath.Join(p.Root, "nested")
+	if err := os.Mkdir(nested, 0700); err != nil {
+		t.Fatal(err)
+	}
+	initRepository(t, nested)
+	apply(t, e, "project.configure", config())
+	apply(t, e, "plan.put", plan())
+	apply(t, e, "repository.enroll", RepositoryEnrollment{ID: "root", PlanID: "plan", Root: p.Root, BaseRef: "main", PlanBranch: "vigil/root", DirtyChoice: "clean", NestedBoundaries: []string{"nested"}})
+	apply(t, e, "repository.enroll", RepositoryEnrollment{ID: "nested", PlanID: "plan", Root: nested, BaseRef: "main", PlanBranch: "vigil/nested", DirtyChoice: "clean"})
+	if err := m.Coordinator.Endpoint(ctx, "local", []string{"http://127.0.0.1:1/v1"}, 1, coordinator.Host()); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := m.Coordinator.Register(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+	reservation, err := e.ReserveResources(ctx, owner, "all-roots", "run", "local")
+	if err != nil || len(reservation.Roots) != 2 || len(reservation.Claims) != 2 {
+		t.Fatal(reservation, err)
+	}
+	var count int
+	if err := m.Coordinator.DB.SQL.QueryRow("SELECT count(*) FROM workspace_claims WHERE instance_id=?", owner.ID).Scan(&count); err != nil || count != 2 {
+		t.Fatal(count, err)
+	}
+}
