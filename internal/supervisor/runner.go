@@ -31,6 +31,13 @@ type Runner struct {
 	Fault              func(string) error
 	budgetMu           sync.Mutex
 	budgetChanged      chan struct{}
+	executionMu        sync.Mutex
+	activeExecutions   map[string]activeExecution
+}
+
+type activeExecution struct {
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 var productionRecoveryClasses = []string{
@@ -65,12 +72,18 @@ func (r *Runner) effect(ctx context.Context, prepared PreparedRun, ordinal int, 
 		return "", err
 	}
 	err = r.Engine.DB.Write(ctx, func(tx *store.Tx) error {
-		_, err := tx.ExecContext(ctx, `INSERT INTO execution_effects(id,run_id,generation_id,ordinal,kind,state,stable_identity,intent_json,prepared_at) VALUES(?,?,?,?,?,'prepared',?,?,?) ON CONFLICT(id) DO NOTHING`, id, prepared.RunID, prepared.GenerationID, ordinal, kind, prepared.RuntimeResourceID, string(raw), store.Now())
-		if err != nil {
+		var existingKind, identity, existingIntent string
+		err := tx.QueryRowContext(ctx, "SELECT kind,stable_identity,intent_json FROM execution_effects WHERE id=?", id).Scan(&existingKind, &identity, &existingIntent)
+		if errors.Is(err, sql.ErrNoRows) {
+			if kind != "containment_stop" {
+				if err := dispatchAllowedTx(ctx, tx, prepared.RunID, prepared.GenerationID); err != nil {
+					return err
+				}
+			}
+			_, err = tx.ExecContext(ctx, `INSERT INTO execution_effects(id,run_id,generation_id,ordinal,kind,state,stable_identity,intent_json,prepared_at) VALUES(?,?,?,?,?,'prepared',?,?,?)`, id, prepared.RunID, prepared.GenerationID, ordinal, kind, prepared.RuntimeResourceID, string(raw), store.Now())
 			return err
 		}
-		var existingKind, identity, existingIntent string
-		if err := tx.QueryRowContext(ctx, "SELECT kind,stable_identity,intent_json FROM execution_effects WHERE id=?", id).Scan(&existingKind, &identity, &existingIntent); err != nil {
+		if err != nil {
 			return err
 		}
 		if existingKind != kind || identity != prepared.RuntimeResourceID || store.Digest([]byte(existingIntent)) != store.Digest(raw) {
@@ -145,16 +158,42 @@ func phaseProvenAbsent(kind string, observation Observation) bool {
 
 func (r *Runner) beginEffect(ctx context.Context, id string) error {
 	return r.Engine.DB.Write(ctx, func(tx *store.Tx) error {
-		var state string
-		if err := tx.QueryRowContext(ctx, "SELECT state FROM execution_effects WHERE id=?", id).Scan(&state); err != nil {
+		var state, kind, runID, generationID string
+		if err := tx.QueryRowContext(ctx, "SELECT state,kind,run_id,generation_id FROM execution_effects WHERE id=?", id).Scan(&state, &kind, &runID, &generationID); err != nil {
 			return err
 		}
 		if state != "prepared" && state != "cancelled" {
 			return fmt.Errorf("effect is not safe to start from state %s", state)
 		}
+		if kind != "containment_stop" {
+			if err := dispatchAllowedTx(ctx, tx, runID, generationID); err != nil {
+				return err
+			}
+		}
 		_, err := tx.ExecContext(ctx, "UPDATE execution_effects SET state='executing' WHERE id=?", id)
 		return err
 	})
+}
+
+func dispatchAllowedTx(ctx context.Context, tx *store.Tx, runID, generationID string) error {
+	var runState, generationState string
+	if err := tx.QueryRowContext(ctx, `SELECT r.state,g.state FROM runs r JOIN run_generations g ON g.run_id=r.id WHERE r.id=? AND g.id=?`, runID, generationID).Scan(&runState, &generationState); err != nil {
+		return err
+	}
+	if runState != "prepared" && runState != "starting" && runState != "active" {
+		return fmt.Errorf("execution dispatch is fenced by run state %s", runState)
+	}
+	if generationState == "contained" || generationState == "terminal" || generationState == "unknown" {
+		return fmt.Errorf("execution dispatch is fenced by generation state %s", generationState)
+	}
+	var controls int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM execution_controls WHERE run_id=? AND generation_id=?`, runID, generationID).Scan(&controls); err != nil {
+		return err
+	}
+	if controls != 0 {
+		return errors.New("execution dispatch is fenced by an explicit stop control")
+	}
+	return nil
 }
 
 func (r *Runner) ensureDriverEffect(ctx context.Context, prepared PreparedRun, ordinal int, kind string, call func(context.Context) error) error {
@@ -270,7 +309,7 @@ func (r *Runner) validateStart(ctx context.Context, prepared PreparedRun, reserv
 	var repositoriesJSON, taskJSON, qualificationJSON, routesJSON string
 	var persistedProfileRevision, persistedExpectedRevision int
 	var persistedActiveLimit, persistedWallLimit int64
-	if err := r.Engine.DB.SQL.QueryRowContext(ctx, `SELECT r.state,g.runtime_kind,r.plan_id,r.task_id,r.profile_id,r.profile_revision,c.digest,g.transport_generation,g.runtime_resource_id,coalesce(g.container_name,''),coalesce(l.expected_project_revision,s.expected_project_revision),r.active_limit_ms,r.wall_limit_ms,s.repository_snapshot_json,s.task_snapshot_json,g.qualification_request_json,g.expected_routes_json FROM runs r JOIN run_generations g ON g.run_id=r.id AND g.id=? JOIN run_snapshots s ON s.run_id=r.id JOIN profiles p ON p.id=r.profile_id AND p.revision=r.profile_revision JOIN config_snapshots c ON c.id=p.config_id LEFT JOIN recovery_attempt_links l ON l.prepared_generation_id=g.id WHERE r.id=?`, prepared.GenerationID, prepared.RunID).Scan(&runState, &persistedRuntime, &persistedPlan, &persistedTask, &persistedProfile, &persistedProfileRevision, &persistedProfileDigest, &persistedTransport, &persistedResource, &persistedContainer, &persistedExpectedRevision, &persistedActiveLimit, &persistedWallLimit, &repositoriesJSON, &taskJSON, &qualificationJSON, &routesJSON); err != nil {
+	if err := r.Engine.DB.SQL.QueryRowContext(ctx, `SELECT r.state,g.runtime_kind,r.plan_id,r.task_id,r.profile_id,r.profile_revision,c.digest,g.transport_generation,g.runtime_resource_id,coalesce(g.container_name,''),coalesce(l.expected_project_revision,s.expected_project_revision),r.active_limit_ms,r.wall_limit_ms,coalesce(grs.repository_snapshot_json,s.repository_snapshot_json),s.task_snapshot_json,g.qualification_request_json,g.expected_routes_json FROM runs r JOIN run_generations g ON g.run_id=r.id AND g.id=? JOIN run_snapshots s ON s.run_id=r.id JOIN profiles p ON p.id=r.profile_id AND p.revision=r.profile_revision JOIN config_snapshots c ON c.id=p.config_id LEFT JOIN recovery_attempt_links l ON l.prepared_generation_id=g.id LEFT JOIN generation_recovery_snapshots grs ON grs.generation_id=g.id WHERE r.id=?`, prepared.GenerationID, prepared.RunID).Scan(&runState, &persistedRuntime, &persistedPlan, &persistedTask, &persistedProfile, &persistedProfileRevision, &persistedProfileDigest, &persistedTransport, &persistedResource, &persistedContainer, &persistedExpectedRevision, &persistedActiveLimit, &persistedWallLimit, &repositoriesJSON, &taskJSON, &qualificationJSON, &routesJSON); err != nil {
 		return err
 	}
 	if persistedRuntime != prepared.RuntimeKind || persistedPlan != prepared.PlanID || persistedTask != prepared.TaskID || persistedProfile != prepared.ProfileID || persistedProfileRevision != prepared.ProfileRevision || persistedProfileDigest != prepared.ProfileDigest || persistedTransport != prepared.TransportGeneration || persistedResource != prepared.RuntimeResourceID || persistedContainer != prepared.ContainerName || persistedExpectedRevision+1 != prepared.ExpectedRevision || persistedActiveLimit != prepared.ActiveLimitMS || persistedWallLimit != prepared.WallLimitMS {
@@ -301,8 +340,30 @@ func (r *Runner) validateStart(ctx context.Context, prepared PreparedRun, reserv
 			return err
 		}
 		baselineMatches := current.HeadOID == repository.Baseline.HeadOID && current.IndexDigest == repository.Baseline.IndexDigest && current.ContentDigest == repository.Baseline.ContentDigest && current.Dirty == repository.Baseline.Dirty && snapshotEqualValue(current.DirtyPaths, repository.Baseline.DirtyPaths)
-		if !baselineMatches || (prepared.AttemptKind == "initial" && current.Dirty) || current.HeadOID != repository.BaseOID || current.HeadRef != "refs/heads/"+repository.PlanBranch {
+		if !baselineMatches || (prepared.AttemptKind == "initial" && !prepared.ExactResume && current.Dirty) || current.HeadOID != repository.BaseOID || current.HeadRef != "refs/heads/"+repository.PlanBranch {
 			return fmt.Errorf("repository %s baseline no longer matches", repository.ID)
+		}
+	}
+	if prepared.ExactResume {
+		inspector, ok := r.Driver.(HistoryInspector)
+		if !ok {
+			return errors.New("exact resume requires live native-history inspection")
+		}
+		history, err := inspector.InspectHistory(ctx, prepared)
+		if err != nil {
+			return fmt.Errorf("exact resume native history cannot be revalidated: %w", err)
+		}
+		var nativeHome, nativeSession, profileDigest, workspaceIdentity, sourceTransport string
+		if err := r.Engine.DB.SQL.QueryRowContext(ctx, `SELECT native_home_ref,coalesce(durable_id,''),profile_digest,workspace_identity,generation FROM sessions WHERE run_id=? AND durable_id=? ORDER BY rowid DESC LIMIT 1`, prepared.RunID, prepared.ResumeNativeSession).Scan(&nativeHome, &nativeSession, &profileDigest, &workspaceIdentity, &sourceTransport); err != nil {
+			return errors.New("exact resume source session identity is unavailable")
+		}
+		identityMatches := history.State == "readable" && history.NativeHomeRef == nativeHome && history.NativeSessionID == nativeSession && history.ProfileDigest == profileDigest && history.WorkspaceIdentity == workspaceIdentity && history.TransportGeneration == sourceTransport && !history.AutomaticWork
+		qualified := prepared.RuntimeKind == "synthetic" && history.Qualification == "synthetic"
+		if prepared.RuntimeKind != "synthetic" && history.Qualification == "supported" && prepared.Eligibility != nil && stringSetContains(prepared.Eligibility.RequiredRecoveryClasses, "exact_resume:"+history.RecoveryClass) {
+			qualified = true
+		}
+		if !identityMatches || !qualified {
+			return errors.New("exact resume native history identity or qualification changed before dispatch")
 		}
 	}
 	var charged, unknown, limit int64
@@ -427,9 +488,28 @@ func (r *Runner) Run(ctx context.Context, prepared PreparedRun, reservation core
 	if len(roots) == 0 && reservation.Root.Root != "" {
 		roots = []workspace.Identity{reservation.Root}
 	}
-	err := r.Owner.HoldReservation(ctx, r.Engine.ProjectID, prepared.RunID, prepared.EndpointID, roots, reservation.Claims, reservation.Ticket, func() error {
+	r.executionMu.Lock()
+	if r.activeExecutions == nil {
+		r.activeExecutions = map[string]activeExecution{}
+	}
+	if _, exists := r.activeExecutions[prepared.GenerationID]; exists {
+		r.executionMu.Unlock()
+		return result, errors.New("generation already has an active dispatcher")
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	active := activeExecution{cancel: cancel, done: make(chan struct{})}
+	r.activeExecutions[prepared.GenerationID] = active
+	r.executionMu.Unlock()
+	defer func() {
+		cancel()
+		r.executionMu.Lock()
+		delete(r.activeExecutions, prepared.GenerationID)
+		close(active.done)
+		r.executionMu.Unlock()
+	}()
+	err := r.Owner.HoldReservation(runCtx, r.Engine.ProjectID, prepared.RunID, prepared.EndpointID, roots, reservation.Claims, reservation.Ticket, func() error {
 		var runErr error
-		result, runErr = r.runAuthorized(ctx, prepared, reservation, prompt)
+		result, runErr = r.runAuthorized(runCtx, prepared, reservation, prompt)
 		return runErr
 	})
 	return result, err
@@ -971,6 +1051,17 @@ func (r *Runner) persistResult(ctx context.Context, prepared PreparedRun, observ
 	if err != nil {
 		return result, err
 	}
+	artifactState, err := r.effectState(ctx, artifactEffect)
+	if err != nil {
+		return result, err
+	}
+	if artifactState == "prepared" || artifactState == "cancelled" {
+		if err := r.beginEffect(ctx, artifactEffect); err != nil {
+			return result, err
+		}
+	} else if artifactState != "executing" && artifactState != "observed" && artifactState != "reconciled" {
+		return result, fmt.Errorf("artifact publication is not recoverable from state %s", artifactState)
+	}
 	repository, err := artifacts.New(r.Engine.DB)
 	if err != nil {
 		return result, err
@@ -999,6 +1090,20 @@ func (r *Runner) persistResult(ctx context.Context, prepared PreparedRun, observ
 	changedJSON, _ := json.Marshal(result.ChangedPaths)
 	canonical, _ := json.Marshal(result)
 	err = r.Engine.DB.Write(ctx, func(tx *store.Tx) error {
+		var existingDigest string
+		existingErr := tx.QueryRowContext(ctx, "SELECT result_digest FROM execution_results WHERE run_id=?", prepared.RunID).Scan(&existingDigest)
+		if existingErr == nil {
+			if existingDigest != store.Digest(canonical) {
+				return store.ErrConflict
+			}
+			return nil
+		}
+		if !errors.Is(existingErr, sql.ErrNoRows) {
+			return existingErr
+		}
+		if err := dispatchAllowedTx(ctx, tx, prepared.RunID, prepared.GenerationID); err != nil {
+			return err
+		}
 		if err := r.enforceCompletionBudget(ctx, tx, prepared); err != nil {
 			return err
 		}

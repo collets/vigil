@@ -122,6 +122,39 @@ func TestLiveReservationAuthorityCannotCloseDuringDispatch(t *testing.T) {
 	}
 }
 
+func TestStopFencesRunBlockedInCreate(t *testing.T) {
+	fixture := setupFixture(t)
+	driver := &blockingCreateDriver{FixtureDriver: fixture.driver, entered: make(chan struct{}), release: make(chan struct{})}
+	runner := Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: driver}
+	done := make(chan error, 1)
+	go func() {
+		_, err := runner.Run(context.Background(), fixture.prepared, fixture.reservation, "write result")
+		done <- err
+	}()
+	select {
+	case <-driver.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("dispatch did not reach blocked create")
+	}
+	receipt, err := runner.Stop(context.Background(), fixture.prepared, "stop-during-create", 0, time.Second)
+	if err != nil || receipt.State != "observed" {
+		close(driver.release)
+		<-done
+		t.Fatal(receipt, err)
+	}
+	close(driver.release)
+	if err := <-done; err == nil {
+		t.Fatal("stopped dispatcher reported success")
+	}
+	if driver.Calls["start"] != 0 || driver.Calls["native_create"] != 0 || driver.Calls["submit"] != 0 {
+		t.Fatal("stopped generation began a later effect", driver.Calls)
+	}
+	view, err := runner.Inspect(context.Background(), fixture.prepared)
+	if err != nil || view.RunState != "interrupted" || view.GenerationState != "contained" {
+		t.Fatal(view, err)
+	}
+}
+
 func TestFixtureWriteRejectsSymlinkAndReplacesHardlink(t *testing.T) {
 	t.Run("symlink", func(t *testing.T) {
 		fixture := setupFixture(t)

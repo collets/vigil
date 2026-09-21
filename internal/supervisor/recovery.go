@@ -35,6 +35,11 @@ type CheckpointVerifier interface {
 	VerifyCheckpoint(context.Context, string) error
 }
 
+type CurrentCheckpointVerifier interface {
+	CheckpointVerifier
+	VerifyCheckpointCurrent(context.Context, string) error
+}
+
 type RecoveryInspector interface {
 	HistoryInspector
 	CheckpointVerifier
@@ -46,11 +51,31 @@ func (f CheckpointVerifierFunc) VerifyCheckpoint(ctx context.Context, checkpoint
 	return f(ctx, checkpointID)
 }
 
+type CheckpointVerifierPair struct {
+	Verify        func(context.Context, string) error
+	VerifyCurrent func(context.Context, string) error
+}
+
+func (v CheckpointVerifierPair) VerifyCheckpoint(ctx context.Context, checkpointID string) error {
+	if v.Verify == nil {
+		return errors.New("checkpoint verifier is unavailable")
+	}
+	return v.Verify(ctx, checkpointID)
+}
+
+func (v CheckpointVerifierPair) VerifyCheckpointCurrent(ctx context.Context, checkpointID string) error {
+	if v.VerifyCurrent == nil {
+		return errors.New("current checkpoint verifier is unavailable")
+	}
+	return v.VerifyCurrent(ctx, checkpointID)
+}
+
 type RecoveryEligibility struct {
-	ExactResume  bool     `json:"exact_resume"`
-	FreshContext bool     `json:"fresh_context"`
-	CheckpointID string   `json:"checkpoint_id,omitempty"`
-	Reasons      []string `json:"reasons"`
+	ExactResume        bool                    `json:"exact_resume"`
+	FreshContext       bool                    `json:"fresh_context"`
+	CheckpointID       string                  `json:"checkpoint_id,omitempty"`
+	ResumeRepositories []core.RepositoryRecord `json:"resume_repositories,omitempty"`
+	Reasons            []string                `json:"reasons"`
 }
 
 type RecoveryChoiceRequest struct {
@@ -151,6 +176,25 @@ func (r *Runner) RecoveryEligibility(ctx context.Context, prepared PreparedRun, 
 			}
 		}
 	}
+	if result.ExactResume {
+		currentVerifier, ok := inspector.(CurrentCheckpointVerifier)
+		if !result.FreshContext || !ok {
+			result.ExactResume = false
+			result.Reasons = append(result.Reasons, "exact resume requires a verified current checkpoint workspace")
+		} else if verifyErr := currentVerifier.VerifyCheckpointCurrent(ctx, result.CheckpointID); verifyErr != nil {
+			result.ExactResume = false
+			result.Reasons = append(result.Reasons, "exact resume checkpoint no longer matches the current workspace")
+		} else {
+			result.ResumeRepositories = append([]core.RepositoryRecord(nil), prepared.Repositories...)
+			for n := range result.ResumeRepositories {
+				current, fingerprintErr := workspace.Fingerprint(ctx, result.ResumeRepositories[n].Root, withoutGit(result.ResumeRepositories[n].Baseline.Exclusions))
+				if fingerprintErr != nil {
+					return result, observation, fingerprintErr
+				}
+				result.ResumeRepositories[n].Baseline = current
+			}
+		}
+	}
 	if !result.FreshContext {
 		result.Reasons = append(result.Reasons, "fresh reconstruction requires contained writers and a verified checkpoint set")
 	}
@@ -223,7 +267,13 @@ func (r *Runner) ChooseRecovery(ctx context.Context, request RecoveryChoiceReque
 	}
 	if persistedState == "eligible" || persistedState == "ineligible" || persistedState == "consumed" {
 		receipt.State = persistedState
-		_ = json.Unmarshal([]byte(eligibilityJSON), &receipt.Eligibility)
+		var persisted struct {
+			Eligibility RecoveryEligibility `json:"eligibility"`
+		}
+		if err := json.Unmarshal([]byte(eligibilityJSON), &persisted); err != nil {
+			return receipt, err
+		}
+		receipt.Eligibility = persisted.Eligibility
 		if artifact.Valid {
 			receipt.ContextArtifactID = artifact.String
 		}
@@ -259,7 +309,7 @@ func (r *Runner) ChooseRecovery(ctx context.Context, request RecoveryChoiceReque
 		if _, err := tx.ExecContext(ctx, "UPDATE recovery_choices SET state=?,eligibility_json=?,context_artifact_id=? WHERE id=? AND state='prepared'", state, string(eligibilityBytes), nullableString(contextArtifactID), receipt.ChoiceID); err != nil {
 			return err
 		}
-		if state == "eligible" && request.Mode == "fresh_context" {
+		if state == "eligible" && (request.Mode == "fresh_context" || request.Mode == "exact_resume") {
 			_, err := tx.ExecContext(ctx, "INSERT INTO recovery_choice_checkpoints(choice_id,checkpoint_id,created_at) VALUES(?,?,?)", receipt.ChoiceID, eligibility.CheckpointID, store.Now())
 			return err
 		}
@@ -347,6 +397,22 @@ func (r *Runner) PrepareExactResume(ctx context.Context, request ExactResumeRequ
 	if writerState != "contained_stopped" || runState == "completed" || nativeSession == "" {
 		return result, errors.New("exact resume requires a non-completed run, contained writers and an exact native session")
 	}
+	var checkpointID, eligibilityJSON string
+	if err := r.Engine.DB.SQL.QueryRowContext(ctx, `SELECT b.checkpoint_id,c.eligibility_json FROM recovery_choices c JOIN recovery_choice_checkpoints b ON b.choice_id=c.id WHERE c.id=?`, request.ChoiceID).Scan(&checkpointID, &eligibilityJSON); err != nil {
+		return result, errors.New("exact resume lacks bound checkpoint workspace authority")
+	}
+	var persisted struct {
+		Eligibility RecoveryEligibility `json:"eligibility"`
+	}
+	if err := json.Unmarshal([]byte(eligibilityJSON), &persisted); err != nil || persisted.Eligibility.CheckpointID != checkpointID || len(persisted.Eligibility.ResumeRepositories) == 0 {
+		return result, errors.New("exact resume workspace authority is invalid")
+	}
+	for _, repository := range persisted.Eligibility.ResumeRepositories {
+		current, err := workspace.Fingerprint(ctx, repository.Root, withoutGit(repository.Baseline.Exclusions))
+		if err != nil || !snapshotEqualValue(current, repository.Baseline) {
+			return result, fmt.Errorf("exact-resume checkpoint workspace changed for repository %s", repository.ID)
+		}
+	}
 	resumeAt := store.Now()
 	remainingWall := createdAt + wallLimit - resumeAt
 	if remainingWall <= 0 {
@@ -363,6 +429,12 @@ func (r *Runner) PrepareExactResume(ctx context.Context, request ExactResumeRequ
 		}
 		if revision != request.ExpectedRevision {
 			return nil, fmt.Errorf("stale project revision: expected %d, current %d", request.ExpectedRevision, revision)
+		}
+		if err := tx.QueryRowContext(ctx, "SELECT state,writer_state FROM runs WHERE id=?", sourceRunID).Scan(&runState, &writerState); err != nil {
+			return nil, err
+		}
+		if writerState != "contained_stopped" || runState == "completed" {
+			return nil, errors.New("exact-resume writer safety changed before preparation")
 		}
 		var currentChoice string
 		if err := tx.QueryRowContext(ctx, "SELECT state FROM recovery_choices WHERE id=?", request.ChoiceID).Scan(&currentChoice); err != nil || currentChoice != "eligible" {
@@ -385,6 +457,10 @@ func (r *Runner) PrepareExactResume(ctx context.Context, request ExactResumeRequ
 		if _, err := tx.ExecContext(ctx, `INSERT INTO run_generations(id,run_id,ordinal,runtime_kind,runtime_resource_id,container_name,native_session_id,transport_generation,state,submission_state,qualification_request_json,checkout_plan_digest,expected_routes_json,created_at) SELECT ?,?, ?,?,?,?, ?,?,'prepared',?,?,checkout_plan_digest,?,? FROM run_generations WHERE id=?`, generationID, sourceRunID, ordinal, runtimeKind, runtimeResource, nullableString(container), nativeSession, transport, submissionState, qualificationJSON, routesJSON, store.Now(), sourceGenerationID); err != nil {
 			return nil, err
 		}
+		repositoriesJSON, _ := json.Marshal(persisted.Eligibility.ResumeRepositories)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO generation_recovery_snapshots(generation_id,checkpoint_id,repository_snapshot_json,digest,created_at) VALUES(?,?,?,?,?)`, generationID, checkpointID, string(repositoriesJSON), store.Digest(repositoriesJSON), store.Now()); err != nil {
+			return nil, err
+		}
 		if _, err := tx.ExecContext(ctx, "UPDATE runs SET state='prepared',writer_state='unconfirmed',wall_limit_ms=?,created_at=?,ended_at=NULL WHERE id=?", remainingWall, resumeAt, sourceRunID); err != nil {
 			return nil, err
 		}
@@ -404,6 +480,7 @@ func (r *Runner) PrepareExactResume(ctx context.Context, request ExactResumeRequ
 			return nil, err
 		}
 		result = source
+		result.Repositories = append([]core.RepositoryRecord(nil), persisted.Eligibility.ResumeRepositories...)
 		result.GenerationID, result.TransportGeneration, result.RuntimeResourceID, result.ContainerName = generationID, transport, runtimeResource, container
 		result.ExpectedRevision, result.WallLimitMS, result.ExactResume, result.ResumeNativeSession = revision+1, remainingWall, true, nativeSession
 		return result, nil

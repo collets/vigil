@@ -21,12 +21,12 @@ func TestProjectV6UpgradeAndRollback(t *testing.T) {
 	if _, err = db.SQL.Exec("INSERT INTO config_snapshots VALUES('existing','digest',1,'{}','{}',1)"); err != nil {
 		t.Fatal(err)
 	}
-	for _, object := range []string{"budget_exhaustions", "recovery_choice_checkpoints", "recovery_attempt_links"} {
+	for _, object := range []string{"generation_recovery_snapshots", "budget_exhaustions", "recovery_choice_checkpoints", "recovery_attempt_links"} {
 		if _, err = db.SQL.Exec("DROP TABLE " + object); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err = db.SQL.Exec("DELETE FROM schema_migrations WHERE version=7"); err != nil {
+	if _, err = db.SQL.Exec("DELETE FROM schema_migrations WHERE version IN(7,8)"); err != nil {
 		t.Fatal(err)
 	}
 	if err = db.Close(); err != nil {
@@ -72,7 +72,7 @@ func TestProjectV6UpgradeAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer upgraded.Close()
-	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 7 {
+	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 8 {
 		t.Fatal("v6 database was not upgraded", versions, err)
 	}
 	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM config_snapshots WHERE id='existing'").Scan(&existing); err != nil || existing != 1 {

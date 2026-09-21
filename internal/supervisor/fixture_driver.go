@@ -47,6 +47,14 @@ func (i SyntheticHistoryInspector) VerifyCheckpoint(ctx context.Context, checkpo
 	return i.Verifier.VerifyCheckpoint(ctx, checkpointID)
 }
 
+func (i SyntheticHistoryInspector) VerifyCheckpointCurrent(ctx context.Context, checkpointID string) error {
+	verifier, ok := i.Verifier.(CurrentCheckpointVerifier)
+	if !ok {
+		return errors.New("synthetic current-checkpoint verifier required")
+	}
+	return verifier.VerifyCheckpointCurrent(ctx, checkpointID)
+}
+
 func (i SyntheticHistoryInspector) InspectHistory(_ context.Context, prepared PreparedRun) (HistoryObservation, error) {
 	if prepared.RuntimeKind != "synthetic" || i.Observation.Qualification != "synthetic" {
 		return HistoryObservation{}, errors.New("synthetic history evidence cannot qualify a production run")
@@ -72,6 +80,14 @@ func (d *FixtureDriver) VerifyCheckpoint(ctx context.Context, checkpointID strin
 		return errors.New("fixture checkpoint verifier required")
 	}
 	return d.Verifier.VerifyCheckpoint(ctx, checkpointID)
+}
+
+func (d *FixtureDriver) VerifyCheckpointCurrent(ctx context.Context, checkpointID string) error {
+	verifier, ok := d.Verifier.(CurrentCheckpointVerifier)
+	if !ok {
+		return errors.New("fixture current-checkpoint verifier required")
+	}
+	return verifier.VerifyCheckpointCurrent(ctx, checkpointID)
 }
 
 func (d *FixtureDriver) Restore(observation Observation) {

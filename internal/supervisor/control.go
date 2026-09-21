@@ -88,8 +88,12 @@ func (r *Runner) stop(ctx context.Context, prepared PreparedRun, commandID, kind
 	if err := r.loadStopReceipt(ctx, controlID, &receipt); err != nil {
 		return receipt, err
 	}
+	r.cancelActiveExecution(prepared.GenerationID)
 	receipt.Repeated = found
 	if receipt.State == "observed" {
+		if err := r.awaitExecutionRetirement(ctx, prepared.GenerationID, terminateGrace); err != nil {
+			return receipt, err
+		}
 		return receipt, nil
 	}
 	if receipt.State == "executing" || receipt.State == "uncertain" {
@@ -103,6 +107,9 @@ func (r *Runner) stop(ctx context.Context, prepared PreparedRun, commandID, kind
 		observation, inspectErr := r.Driver.Inspect(ctx, prepared)
 		if inspectErr != nil || observation.WriterState != "contained_stopped" {
 			return receipt, errors.New("prior containment is recorded but current writer safety cannot be proven")
+		}
+		if retireErr := r.awaitExecutionRetirement(ctx, prepared.GenerationID, terminateGrace); retireErr != nil {
+			return receipt, retireErr
 		}
 		return r.finishStop(ctx, controlID, effectID, "unsupported", observation, nil, found)
 	}
@@ -132,7 +139,8 @@ func (r *Runner) stop(ctx context.Context, prepared PreparedRun, commandID, kind
 		for time.Now().Before(deadline) {
 			observation, inspectErr := r.Driver.Inspect(ctx, prepared)
 			if inspectErr == nil && observation.WriterState == "contained_stopped" {
-				return r.finishStop(ctx, controlID, effectID, interruptState, observation, nil, found)
+				retireErr := r.awaitExecutionRetirement(ctx, prepared.GenerationID, terminateGrace)
+				return r.finishStop(ctx, controlID, effectID, interruptState, observation, retireErr, found)
 			}
 			select {
 			case <-ctx.Done():
@@ -144,7 +152,50 @@ func (r *Runner) stop(ctx context.Context, prepared PreparedRun, commandID, kind
 	stopCtx, cancel := context.WithTimeout(context.Background(), terminateGrace)
 	observation, stopErr := r.Driver.Stop(stopCtx, prepared)
 	cancel()
+	if retireErr := r.awaitExecutionRetirement(context.Background(), prepared.GenerationID, terminateGrace); stopErr == nil {
+		stopErr = retireErr
+	}
 	return r.finishStop(context.Background(), controlID, effectID, interruptState, observation, stopErr, found)
+}
+
+func (r *Runner) cancelActiveExecution(generationID string) {
+	r.executionMu.Lock()
+	active, ok := r.activeExecutions[generationID]
+	r.executionMu.Unlock()
+	if ok {
+		active.cancel()
+	}
+}
+
+func (r *Runner) awaitExecutionRetirement(ctx context.Context, generationID string, limit time.Duration) error {
+	retireCtx, cancel := context.WithTimeout(ctx, maxDuration(limit, time.Millisecond))
+	defer cancel()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var executing int
+		if err := r.Engine.DB.SQL.QueryRowContext(retireCtx, `SELECT count(*) FROM execution_effects WHERE generation_id=? AND kind!='containment_stop' AND state='executing'`, generationID).Scan(&executing); err != nil {
+			return err
+		}
+		r.executionMu.Lock()
+		active, local := r.activeExecutions[generationID]
+		r.executionMu.Unlock()
+		if executing == 0 && !local {
+			return nil
+		}
+		if local {
+			select {
+			case <-active.done:
+				continue
+			default:
+			}
+		}
+		select {
+		case <-retireCtx.Done():
+			return errors.New("stopped writer but dispatcher retirement remains unconfirmed")
+		case <-ticker.C:
+		}
+	}
 }
 
 func maxDuration(a, b time.Duration) time.Duration {

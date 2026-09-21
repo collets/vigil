@@ -39,10 +39,13 @@ func prepareInterruptedRecovery(t *testing.T, fixture fixture) checkpoint.SaveRe
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixture.driver.Verifier = CheckpointVerifierFunc(func(ctx context.Context, checkpointID string) error {
-		_, verifyErr := manager.VerifySet(ctx, checkpointID)
-		return verifyErr
-	})
+	fixture.driver.Verifier = CheckpointVerifierPair{
+		Verify: func(ctx context.Context, checkpointID string) error {
+			_, verifyErr := manager.VerifySet(ctx, checkpointID)
+			return verifyErr
+		},
+		VerifyCurrent: manager.VerifyCheckpointCurrent,
+	}
 	return receipt
 }
 
@@ -137,7 +140,7 @@ func TestExactResumeUsesNewGenerationWithoutPromptReplay(t *testing.T) {
 	if err != nil || repeated.GenerationID != prepared.GenerationID {
 		t.Fatal("exact-resume preparation was not idempotent", repeated, err)
 	}
-	driver := &completedResumeDriver{FixtureDriver: &FixtureDriver{RepositoryID: fixture.driver.RepositoryID, Root: fixture.driver.Root, RelativePath: fixture.driver.RelativePath, Content: fixture.driver.Content}}
+	driver := &completedResumeDriver{FixtureDriver: &FixtureDriver{RepositoryID: fixture.driver.RepositoryID, Root: fixture.driver.Root, RelativePath: fixture.driver.RelativePath, Content: fixture.driver.Content, History: &history}}
 	runner = Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: driver}
 	if _, err := runner.Run(context.Background(), prepared, fixture.reservation, "replacement prompt"); err == nil || !strings.Contains(err.Error(), "refuses a replacement prompt") {
 		t.Fatal("exact resume accepted replacement instructions", err)
@@ -149,6 +152,59 @@ func TestExactResumeUsesNewGenerationWithoutPromptReplay(t *testing.T) {
 	var generations int
 	if err := fixture.engine.DB.SQL.QueryRow("SELECT count(*) FROM run_generations WHERE run_id=?", prepared.RunID).Scan(&generations); err != nil || generations != 2 {
 		t.Fatal("exact resume did not retain generation history", generations, err)
+	}
+}
+
+func TestExactResumeUsesCheckpointedPartialWorkspace(t *testing.T) {
+	fixture := setupFixture(t)
+	if err := os.WriteFile(filepath.Join(fixture.driver.Root, "src", "result.txt"), []byte("partial agent work\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	prepareInterruptedRecovery(t, fixture)
+	history := exactHistory(fixture)
+	fixture.driver.History = &history
+	runner := Runner{Engine: fixture.engine, Driver: fixture.driver}
+	choice, err := runner.ChooseRecovery(context.Background(), RecoveryChoiceRequest{CommandID: "choose-partial-exact", ExpectedRevision: projectRevision(t, fixture), RunID: fixture.prepared.RunID, Mode: "exact_resume"}, fixture.driver)
+	if err != nil || !choice.Eligibility.ExactResume {
+		t.Fatal(choice, err)
+	}
+	prepared, err := runner.PrepareExactResume(context.Background(), ExactResumeRequest{CommandID: "prepare-partial-exact", ExpectedRevision: projectRevision(t, fixture), ChoiceID: choice.ChoiceID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadPrepared(context.Background(), fixture.engine, prepared.RunID)
+	if err != nil || !snapshotEqualValue(loaded.Repositories, prepared.Repositories) {
+		t.Fatal("generation recovery baseline was not durable", err)
+	}
+	driver := &completedResumeDriver{FixtureDriver: &FixtureDriver{RepositoryID: fixture.driver.RepositoryID, Root: fixture.driver.Root, RelativePath: fixture.driver.RelativePath, Content: fixture.driver.Content, History: &history}}
+	runner = Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: driver}
+	if _, err := runner.Run(context.Background(), loaded, fixture.reservation, ""); err != nil {
+		t.Fatal("checkpointed partial workspace could not resume", err)
+	}
+}
+
+func TestExactResumeRevalidatesNativeHistoryAtDispatch(t *testing.T) {
+	fixture := setupFixture(t)
+	prepareInterruptedRecovery(t, fixture)
+	history := exactHistory(fixture)
+	fixture.driver.History = &history
+	runner := Runner{Engine: fixture.engine, Driver: fixture.driver}
+	choice, err := runner.ChooseRecovery(context.Background(), RecoveryChoiceRequest{CommandID: "choose-history-change", ExpectedRevision: projectRevision(t, fixture), RunID: fixture.prepared.RunID, Mode: "exact_resume"}, fixture.driver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := runner.PrepareExactResume(context.Background(), ExactResumeRequest{CommandID: "prepare-history-change", ExpectedRevision: projectRevision(t, fixture), ChoiceID: choice.ChoiceID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	history.State = "corrupt"
+	driver := &completedResumeDriver{FixtureDriver: &FixtureDriver{RepositoryID: fixture.driver.RepositoryID, Root: fixture.driver.Root, RelativePath: fixture.driver.RelativePath, Content: fixture.driver.Content, History: &history}}
+	runner = Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: driver}
+	if _, err := runner.Run(context.Background(), prepared, fixture.reservation, ""); err == nil || !strings.Contains(err.Error(), "history identity") {
+		t.Fatal("changed native history reached resume", err)
+	}
+	if driver.Calls["resume"] != 0 {
+		t.Fatal("resume started before history revalidation", driver.Calls)
 	}
 }
 
@@ -260,6 +316,15 @@ func TestRetryKindsAndBudgetExhaustionRemainDistinct(t *testing.T) {
 		}
 		if _, err := PrepareFollowup(context.Background(), fixture.engine, FollowupRequest{CommandID: "infra-again", ExpectedRevision: projectRevision(t, fixture), SourceRunID: fixture.prepared.RunID, Kind: "infrastructure", WallLimitMS: 60000}); err == nil {
 			t.Fatal("infrastructure retry allowance reset")
+		}
+	})
+	t.Run("infrastructure_requires_contained_source_writer", func(t *testing.T) {
+		fixture := setupFixture(t)
+		if _, err := fixture.engine.DB.SQL.Exec("UPDATE runs SET state='failed',writer_state='unconfirmed' WHERE id=?", fixture.prepared.RunID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := PrepareFollowup(context.Background(), fixture.engine, FollowupRequest{CommandID: "unsafe-infra", ExpectedRevision: projectRevision(t, fixture), SourceRunID: fixture.prepared.RunID, Kind: "infrastructure", WallLimitMS: 60000}); err == nil || !strings.Contains(err.Error(), "writer containment") {
+			t.Fatal("unresolved source writer created infrastructure authority", err)
 		}
 	})
 	t.Run("delivered_prompt_blocks_infrastructure_retry", func(t *testing.T) {

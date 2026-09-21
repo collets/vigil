@@ -57,6 +57,13 @@ func PrepareFollowup(ctx context.Context, engine *core.Engine, request FollowupR
 	if err := engine.DB.SQL.QueryRowContext(ctx, "SELECT state,repair_limit,infra_limit FROM tasks WHERE id=?", source.TaskID).Scan(&taskState, &repairLimit, &infraLimit); err != nil {
 		return result, err
 	}
+	var sourceState, sourceWriter string
+	if err := engine.DB.SQL.QueryRowContext(ctx, "SELECT state,writer_state FROM runs WHERE id=?", request.SourceRunID).Scan(&sourceState, &sourceWriter); err != nil {
+		return result, err
+	}
+	if sourceWriter != "contained_stopped" || (sourceState != "completed" && sourceState != "failed" && sourceState != "interrupted") {
+		return result, errors.New("follow-up requires a terminal source with independently proven writer containment")
+	}
 	var priorAttempts int
 	dbKind := request.Kind
 	if request.Kind == "fresh_context" {
@@ -125,6 +132,12 @@ func PrepareFollowup(ctx context.Context, engine *core.Engine, request FollowupR
 		}
 		if revision != request.ExpectedRevision {
 			return nil, fmt.Errorf("stale project revision: expected %d, current %d", request.ExpectedRevision, revision)
+		}
+		if err := tx.QueryRowContext(ctx, "SELECT state,writer_state FROM runs WHERE id=?", request.SourceRunID).Scan(&sourceState, &sourceWriter); err != nil {
+			return nil, err
+		}
+		if sourceWriter != "contained_stopped" || (sourceState != "completed" && sourceState != "failed" && sourceState != "interrupted") {
+			return nil, errors.New("source writer safety changed before follow-up preparation")
 		}
 		if request.Kind == "fresh_context" {
 			var state string

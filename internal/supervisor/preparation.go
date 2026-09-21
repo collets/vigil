@@ -337,11 +337,12 @@ func LoadPrepared(ctx context.Context, engine *core.Engine, runID string) (Prepa
 	}
 	var taskJSON, repositoriesJSON, qualificationJSON, routesJSON, recoveryMode, resumeNative string
 	var expectedRevision int
-	err := engine.DB.SQL.QueryRowContext(ctx, `SELECT r.id,g.id,g.transport_generation,g.runtime_resource_id,coalesce(g.container_name,''),g.runtime_kind,r.attempt_kind,r.plan_id,r.task_id,r.profile_id,r.profile_revision,cs.digest,coalesce(p.endpoint_id,''),coalesce(l.expected_project_revision,s.expected_project_revision),s.task_snapshot_json,s.repository_snapshot_json,g.qualification_request_json,g.expected_routes_json,r.active_limit_ms,r.wall_limit_ms,coalesce(l.mode,''),coalesce(g.native_session_id,'')
+	err := engine.DB.SQL.QueryRowContext(ctx, `SELECT r.id,g.id,g.transport_generation,g.runtime_resource_id,coalesce(g.container_name,''),g.runtime_kind,r.attempt_kind,r.plan_id,r.task_id,r.profile_id,r.profile_revision,cs.digest,coalesce(p.endpoint_id,''),coalesce(l.expected_project_revision,s.expected_project_revision),s.task_snapshot_json,coalesce(grs.repository_snapshot_json,s.repository_snapshot_json),g.qualification_request_json,g.expected_routes_json,r.active_limit_ms,r.wall_limit_ms,coalesce(l.mode,''),coalesce(g.native_session_id,'')
 		FROM runs r JOIN run_generations g ON g.run_id=r.id JOIN run_snapshots s ON s.run_id=r.id
 		JOIN profiles pr ON pr.id=r.profile_id AND pr.revision=r.profile_revision JOIN config_snapshots cs ON cs.id=pr.config_id
 		JOIN (SELECT id,json_extract(resolved_json,'$.endpoint_id') AS endpoint_id FROM config_snapshots) p ON p.id=cs.id
 		LEFT JOIN recovery_attempt_links l ON l.prepared_generation_id=g.id
+		LEFT JOIN generation_recovery_snapshots grs ON grs.generation_id=g.id
 		WHERE r.id=? ORDER BY g.ordinal DESC LIMIT 1`, runID).Scan(&result.RunID, &result.GenerationID, &result.TransportGeneration, &result.RuntimeResourceID, &result.ContainerName, &result.RuntimeKind, &result.AttemptKind, &result.PlanID, &result.TaskID, &result.ProfileID, &result.ProfileRevision, &result.ProfileDigest, &result.EndpointID, &expectedRevision, &taskJSON, &repositoriesJSON, &qualificationJSON, &routesJSON, &result.ActiveLimitMS, &result.WallLimitMS, &recoveryMode, &resumeNative)
 	if err != nil {
 		return result, err
