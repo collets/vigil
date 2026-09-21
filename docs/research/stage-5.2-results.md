@@ -1,6 +1,6 @@
 # Stage 5.2 repository and persisted-execution results
 
-Date: 2026-09-21. Implementation commits: `69de374`, `697b366`, `0e83d10`, `bef5dd4`, `cdb8f75`; the results and handoff updates are recorded in the following local documentation commit. Baseline was clean at `b167e10`, 16 commits ahead of `origin/main`. No repository-level `AGENTS.md` applied.
+Date: 2026-09-21. Implementation commits: `69de374`, `697b366`, `0e83d10`, `bef5dd4`, `cdb8f75`, plus macOS portability fix `88cd2be`; results and handoff updates are separate local documentation commits. Baseline was clean at `b167e10`, 16 commits ahead of `origin/main`. No repository-level `AGENTS.md` applied.
 
 ## Verdict
 
@@ -60,6 +60,22 @@ The command sequence was project initialization; versioned configuration/profile
 
 The fixture directory was removed after evidence was recorded. No real checkout was enrolled or modified.
 
+## Native macOS validation
+
+The exact committed source was transferred as a verified Git bundle to an isolated `/tmp` checkout on macOS 26.6.2 arm64 with Go 1.27.1. The first native `make check` failed all supervisor execution cases before submission: macOS canonicalized `/tmp` to `/private/tmp`, while the fixture driver compared its requested root to the enrolled canonical root as a literal string.
+
+Commit `88cd2be` fixes that fail-closed portability defect. The fixture driver now resolves the current filesystem/Git identity, matches the enrolled root, root-node identity and common-Git identity, and performs the deterministic write through the canonical root. A permanent symlink-alias regression reproduces the same identity mismatch without depending on macOS.
+
+On a fresh bundle at `88cd2be`:
+
+- native `make check` passed; `internal/supervisor` completed in 17.686 seconds;
+- native `make check-race` passed; `internal/supervisor` completed in 27.540 seconds;
+- native `make build` passed;
+- an isolated CLI repository enrolled and prepared branch `vigil/stage-5.2-mac`, then completed run `041fc811e2601bb30286c5fbfe13271a` with all nine effects observed, exact changed path `mac-repo:src/result.txt`, writer `contained_stopped`, task `checking` and `accepted: false`;
+- the endpoint ticket was released and no workspace claims or endpoint slots remained.
+
+No inference, provider, Docker qualification flag or credential was used. The temporary source, Go caches, state and fixture were permanently removed after making the Go module cache owner-writable; the normal Mac checkout remained clean at its prior commit.
+
 ## Crash and recovery matrix
 
 The table reports the permanent synthetic tests in `internal/supervisor`. Every crash case reopens the project database and reloads the prepared run. When the terminal result is known, reconcile persists it; otherwise a later explicit start continues only effects proven not to have happened.
@@ -101,8 +117,7 @@ Permanent tests also cover nested enrollment, branch collision/base drift, dirty
 - Focused `go test ./internal/supervisor ./internal/core ./internal/coordinator ./internal/store`; pass.
 - Synthetic crash matrix: eleven reopen points plus uncertain create/submission, persistence failure, output flood and budget cases; pass.
 - Disposable CLI execution described above; pass.
-
-The authorized Mac was reachable (`macOS 26.6.2`, arm64) and its existing Go 1.27.1 was found. Native source testing was not rerun because the environment egress guard rejected copying the private committed repository to the isolated Mac test directory. The empty agent-created directory was removed. This is a missing Stage 5.2 platform result, not a pass inferred from cross-compilation or prior Stage 5.1 evidence.
+- Native macOS 26.6.2 arm64 at `88cd2be`: `make check`, `make check-race`, `make build` and one disposable CLI execution; pass after the recorded `/tmp` canonicalization fix.
 
 No Docker/model/live-provider flag was enabled. No credential value was read or printed. No Codex subscription turn, llama.cpp turn, push, hosting request, purchase or publication occurred.
 
@@ -112,14 +127,14 @@ No Docker/model/live-provider flag was enabled. No credential value was read or 
 2. Produce trusted provider-idle evidence for every inference route, including auxiliary inference that could begin at native create/resume.
 3. Run this exact create/start/attach/native/submit/result crash matrix through each advertised WSL and Mac runtime/harness/profile combination, with effective mount inspection and owned-resource discovery.
 4. Establish one capacity authority for any Mac/WSL routes to the same Windows llama.cpp endpoint. Independent host-local authorities remain ineligible.
-5. Rerun the new repository/fingerprint/supervisor filesystem and process tests natively on macOS once authorized source transfer is available.
-6. Stage 5.3 must add full stop/resume/checkpoint/save/restore user semantics. Stage 5.4 must run checks/review and own acceptance. This slice deliberately stops at `checking`.
+5. Stage 5.3 must add full stop/resume/checkpoint/save/restore user semantics. Stage 5.4 must run checks/review and own acceptance. This slice deliberately stops at `checking`.
 
 Until all applicable gates pass and a new exact trusted qualification is recorded, production dispatch stays disabled. Synthetic success must not be entered as live qualification evidence.
 
 ## Security-sensitive Astra review scope
 
 - Git command isolation, raw index/tree parsing, SHA-1/SHA-256 blob comparison, nested exclusions and races between pre-transaction observation and enrollment commit.
+- Canonical-path and filesystem-identity handling, especially `/tmp` aliases, symlinked roots, replacement between inspection and effect, and the `88cd2be` fixture-driver fix.
 - Migration 3/4 constraints/triggers and populated upgrade/rollback behavior.
 - Multi-root reservation ordering, same-owner recovery and common-Git/ancestor overlap within one atomic claim set.
 - Global grant creation/revocation policy epochs and the project/coordinator uncertainty boundary.
