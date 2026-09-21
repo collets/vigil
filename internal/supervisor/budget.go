@@ -80,7 +80,7 @@ func (r *Runner) checkpointSegment(ctx context.Context, prepared PreparedRun) er
 		if charged < priorCharged {
 			charged = priorCharged
 		}
-		if ledgerCharged+ledgerUnknown+charged >= limit || charged >= prepared.ActiveLimitMS {
+		if ledgerCharged+ledgerUnknown+charged >= limit || ledgerCharged+ledgerUnknown+charged >= prepared.ActiveLimitMS {
 			return errors.New("active execution budget exhausted")
 		}
 		_, err := tx.ExecContext(ctx, "UPDATE active_segments SET monotonic_checkpoint_ns=?,wall_checkpoint_at=?,charged_ms=? WHERE id=?", nowMono, nowWall, charged, id)
@@ -89,18 +89,18 @@ func (r *Runner) checkpointSegment(ctx context.Context, prepared PreparedRun) er
 	})
 }
 
-func (r *Runner) remainingActive(ctx context.Context, prepared PreparedRun) (time.Duration, error) {
+func (r *Runner) activeBudgetStatus(ctx context.Context, prepared PreparedRun) (time.Duration, bool, error) {
 	var category string
 	var started, priorCharged, ledgerCharged, ledgerUnknown, limit int64
 	err := r.Engine.DB.SQL.QueryRowContext(ctx, `SELECT s.category,s.monotonic_started_ns,s.charged_ms,l.charged_ms,l.unknown_ms,l.active_limit_ms FROM active_segments s JOIN budget_ledgers l ON l.id=s.ledger_id WHERE s.run_id=? AND s.ended_at IS NULL`, prepared.RunID).Scan(&category, &started, &priorCharged, &ledgerCharged, &ledgerUnknown, &limit)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	current := int64(0)
 	if !excludedBudgetCategory(category) {
 		now := monotonicNow()
 		if now < started {
-			return 0, errors.New("monotonic budget clock regressed")
+			return 0, false, errors.New("monotonic budget clock regressed")
 		}
 		current = (now - started) / int64(time.Millisecond)
 		if current < priorCharged {
@@ -113,18 +113,26 @@ func (r *Runner) remainingActive(ctx context.Context, prepared PreparedRun) (tim
 	}
 	remaining := effective - ledgerCharged - ledgerUnknown - current
 	if remaining <= 0 {
-		return 0, errors.New("active execution budget exhausted")
+		return 0, false, errors.New("active execution budget exhausted")
 	}
-	return time.Duration(remaining) * time.Millisecond, nil
+	return time.Duration(remaining) * time.Millisecond, excludedBudgetCategory(category), nil
+}
+
+func (r *Runner) remainingActive(ctx context.Context, prepared PreparedRun) (time.Duration, error) {
+	remaining, _, err := r.activeBudgetStatus(ctx, prepared)
+	return remaining, err
 }
 
 func (r *Runner) activeCallContext(ctx context.Context, prepared PreparedRun) (context.Context, context.CancelFunc, error) {
 	if err := r.checkpointSegment(ctx, prepared); err != nil {
 		return nil, nil, err
 	}
-	remaining, err := r.remainingActive(ctx, prepared)
+	remaining, excluded, err := r.activeBudgetStatus(ctx, prepared)
 	if err != nil {
 		return nil, nil, err
+	}
+	if excluded {
+		return nil, nil, errors.New("active driver call cannot start during an excluded wait")
 	}
 	callCtx, cancel := context.WithTimeout(ctx, remaining)
 	return callCtx, cancel, nil
@@ -202,7 +210,7 @@ func (r *Runner) EndHumanWait(ctx context.Context, prepared PreparedRun) error {
 }
 
 func (r *Runner) transitionSegment(ctx context.Context, prepared PreparedRun, from, to string) error {
-	return r.Engine.DB.Write(ctx, func(tx *store.Tx) error {
+	err := r.Engine.DB.Write(ctx, func(tx *store.Tx) error {
 		var id, ledger, category string
 		var started, checkpoint, priorCharged, ledgerCharged, ledgerUnknown, limit int64
 		if err := tx.QueryRowContext(ctx, `SELECT s.id,s.ledger_id,s.category,s.monotonic_started_ns,s.monotonic_checkpoint_ns,s.charged_ms,l.charged_ms,l.unknown_ms,l.active_limit_ms FROM active_segments s JOIN budget_ledgers l ON l.id=s.ledger_id WHERE s.run_id=? AND s.ended_at IS NULL`, prepared.RunID).Scan(&id, &ledger, &category, &started, &checkpoint, &priorCharged, &ledgerCharged, &ledgerUnknown, &limit); err != nil {
@@ -236,4 +244,60 @@ func (r *Runner) transitionSegment(ctx context.Context, prepared PreparedRun, fr
 		_, err := tx.ExecContext(ctx, `INSERT INTO active_segments(id,run_id,ledger_id,category,monotonic_started_ns,monotonic_checkpoint_ns,wall_started_at,wall_checkpoint_at) VALUES(?,?,?,?,?,?,?,?)`, store.ID(), prepared.RunID, ledger, to, nowMono, nowMono, nowWall, nowWall)
 		return err
 	})
+	if err == nil {
+		r.signalBudgetChange()
+	}
+	return err
+}
+
+func (r *Runner) budgetChangeChannel() <-chan struct{} {
+	r.budgetMu.Lock()
+	defer r.budgetMu.Unlock()
+	if r.budgetChanged == nil {
+		r.budgetChanged = make(chan struct{})
+	}
+	return r.budgetChanged
+}
+
+func (r *Runner) signalBudgetChange() {
+	r.budgetMu.Lock()
+	defer r.budgetMu.Unlock()
+	if r.budgetChanged == nil {
+		r.budgetChanged = make(chan struct{})
+		return
+	}
+	close(r.budgetChanged)
+	r.budgetChanged = make(chan struct{})
+}
+
+// enforceCompletionBudget runs inside the outcome transaction. It uses the
+// persisted ledger/run limits and includes live active time since the last
+// checkpoint, so neither reconciliation nor late persistence can turn an
+// exhausted attempt into successful task progression.
+func (r *Runner) enforceCompletionBudget(ctx context.Context, tx *store.Tx, prepared PreparedRun) error {
+	var charged, unknown, ledgerLimit, runLimit int64
+	if err := tx.QueryRowContext(ctx, `SELECT l.charged_ms,l.unknown_ms,l.active_limit_ms,r.active_limit_ms FROM budget_ledgers l JOIN runs r ON r.task_id=l.task_id WHERE l.scope='task' AND r.id=? AND r.task_id=?`, prepared.RunID, prepared.TaskID).Scan(&charged, &unknown, &ledgerLimit, &runLimit); err != nil {
+		return err
+	}
+	current := int64(0)
+	var category string
+	var started, priorCharged int64
+	err := tx.QueryRowContext(ctx, "SELECT category,monotonic_started_ns,charged_ms FROM active_segments WHERE run_id=? AND ended_at IS NULL", prepared.RunID).Scan(&category, &started, &priorCharged)
+	if err == nil && !excludedBudgetCategory(category) {
+		now := monotonicNow()
+		if now < started {
+			return errors.New("monotonic budget clock regressed")
+		}
+		current = (now - started) / int64(time.Millisecond)
+		if current < priorCharged {
+			current = priorCharged
+		}
+	} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	total := charged + unknown + current
+	if total >= ledgerLimit || total >= runLimit {
+		return errors.New("active execution budget exhausted before outcome commit")
+	}
+	return nil
 }

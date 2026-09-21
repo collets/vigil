@@ -47,7 +47,15 @@ func git(t *testing.T, args ...string) {
 }
 
 func setupFixture(t *testing.T) fixture {
+	return setupFixtureWithLimits(t, 30000, 60000)
+}
+
+func setupFixtureWithLimits(t *testing.T, activeLimitMS, wallLimitMS int64) fixture {
 	t.Helper()
+	checkTimeoutMS := activeLimitMS
+	if checkTimeoutMS > 1000 {
+		checkTimeoutMS = 1000
+	}
 	ctx := context.Background()
 	base := t.TempDir()
 	root := filepath.Join(base, "work")
@@ -78,9 +86,9 @@ func setupFixture(t *testing.T) fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { engine.DB.Close(); manager.Close() })
-	config := policy.Config{ModelPolicy: "local_only", RequiredChecks: []string{"test"}, CheckDefinitions: []policy.CheckDefinition{{ID: "test", Argv: []string{"true"}, Cwd: ".", TimeoutMS: 1000}}, TaskLimitMS: 60000, AttemptLimitMS: 30000, RepairLimit: 1, SupervisorProfile: "local", ApprovalMode: "supervised"}
+	config := policy.Config{ModelPolicy: "local_only", RequiredChecks: []string{"test"}, CheckDefinitions: []policy.CheckDefinition{{ID: "test", Argv: []string{"true"}, Cwd: ".", TimeoutMS: checkTimeoutMS}}, TaskLimitMS: wallLimitMS, AttemptLimitMS: activeLimitMS, RepairLimit: 1, SupervisorProfile: "local", ApprovalMode: "supervised"}
 	profile := policy.Profile{ID: "local", Harness: "hermes", Version: "fixture", Model: "fixture", Provider: "custom", CredentialRef: "env:FIXTURE_KEY", Roles: []string{"implementation", "review", "supervisor"}, EndpointID: "fixture-endpoint", LocalInference: true, AuxiliaryLocal: true, DelegationDisabled: true}
-	task := policy.Task{ID: "task", Objective: "Write a deterministic fixture result", Criteria: []policy.Criterion{{ID: "c1", Text: "result exists"}}, Scope: []string{"src/**"}, Implementation: "local", Reviewer: "local", Checks: []string{"test"}, Difficulty: "small", Rationale: "fixture", ActiveLimitMS: 30000, RepairLimit: 1}
+	task := policy.Task{ID: "task", Objective: "Write a deterministic fixture result", Criteria: []policy.Criterion{{ID: "c1", Text: "result exists"}}, Scope: []string{"src/**"}, Implementation: "local", Reviewer: "local", Checks: []string{"test"}, Difficulty: "small", Rationale: "fixture", ActiveLimitMS: activeLimitMS, RepairLimit: 1}
 	command(t, engine, "project.configure", config)
 	command(t, engine, "profile.put", profile)
 	command(t, engine, "plan.put", core.Plan{ID: "plan", Title: "Fixture", Specification: "Create one deterministic file", Approved: true, Tasks: []policy.Task{task}})
@@ -95,7 +103,7 @@ func setupFixture(t *testing.T) fixture {
 	if err := engine.DB.SQL.QueryRow("SELECT revision FROM project").Scan(&revision); err != nil {
 		t.Fatal(err)
 	}
-	prepared, err := Prepare(ctx, engine, PrepareRequest{CommandID: "prepare-run", ExpectedProjectRevision: revision, TaskID: "task", RuntimeKind: "synthetic", WallLimitMS: 60000})
+	prepared, err := Prepare(ctx, engine, PrepareRequest{CommandID: "prepare-run", ExpectedProjectRevision: revision, TaskID: "task", RuntimeKind: "synthetic", WallLimitMS: wallLimitMS})
 	if err != nil {
 		t.Fatal(err)
 	}

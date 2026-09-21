@@ -169,19 +169,49 @@ func TestFixtureWriteRejectsSymlinkAndReplacesHardlink(t *testing.T) {
 	})
 }
 
-type delayedSubmitDriver struct{ *FixtureDriver }
+type delayedSubmitDriver struct {
+	*FixtureDriver
+	delay time.Duration
+}
 
 func (d *delayedSubmitDriver) Submit(_ context.Context, prepared PreparedRun, prompt string) (string, string, error) {
-	time.Sleep(75 * time.Millisecond)
+	time.Sleep(d.delay)
 	return d.FixtureDriver.Submit(context.Background(), prepared, prompt)
 }
 
 func TestActiveBudgetBoundsSubmissionAndCompletion(t *testing.T) {
-	fixture := setupFixture(t)
-	fixture.prepared.ActiveLimitMS = 50
-	runner := Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: &delayedSubmitDriver{fixture.driver}}
+	fixture := setupFixtureWithLimits(t, 1000, 5000)
+	runner := Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: &delayedSubmitDriver{FixtureDriver: fixture.driver, delay: 1200 * time.Millisecond}}
 	if result, err := runner.Run(context.Background(), fixture.prepared, fixture.reservation, "write result"); err == nil {
 		t.Fatal("execution completed beyond active allowance", result)
+	}
+	if fixture.driver.Calls["submit"] != 1 {
+		t.Fatal("slow-submission regression did not reach the driver", fixture.driver.Calls)
+	}
+	if _, err := runner.Reconcile(context.Background(), fixture.prepared); err == nil {
+		t.Fatal("reconciliation accepted an over-budget terminal result")
+	}
+	view, err := runner.Inspect(context.Background(), fixture.prepared)
+	if err != nil || view.RunState == "completed" || view.TaskState == "checking" {
+		t.Fatal(view, err)
+	}
+}
+
+func TestOutcomeCommitRechecksPersistedBudget(t *testing.T) {
+	fixture := setupFixtureWithLimits(t, 1000, 5000)
+	hookReached := false
+	runner := Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: fixture.driver, Fault: func(point string) error {
+		if point == "before_outcome_commit" {
+			hookReached = true
+			time.Sleep(1200 * time.Millisecond)
+		}
+		return nil
+	}}
+	if result, err := runner.Run(context.Background(), fixture.prepared, fixture.reservation, "write result"); err == nil {
+		t.Fatal("late outcome committed beyond active allowance", result)
+	}
+	if !hookReached {
+		t.Fatal("late-outcome regression did not reach the outcome boundary")
 	}
 	view, err := runner.Inspect(context.Background(), fixture.prepared)
 	if err != nil || view.RunState == "completed" || view.TaskState == "checking" {
@@ -231,6 +261,101 @@ func TestHumanWaitCheckpointRemainsExcluded(t *testing.T) {
 	if err := runner.checkpointSegment(context.Background(), fixture.prepared); err != nil {
 		t.Fatal("proven human wait exhausted active budget", err)
 	}
+}
+
+type controlledAwaitDriver struct {
+	*FixtureDriver
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (d *controlledAwaitDriver) Await(ctx context.Context, prepared PreparedRun) (Observation, error) {
+	close(d.entered)
+	select {
+	case <-d.release:
+		return d.FixtureDriver.Inspect(ctx, prepared)
+	case <-ctx.Done():
+		return Observation{}, ctx.Err()
+	}
+}
+
+func TestAwaitSuspendsAndResumesActiveDeadlineForProvenWait(t *testing.T) {
+	t.Run("already_waiting_uses_wall_context", func(t *testing.T) {
+		fixture := setupFixtureWithLimits(t, 100, 1000)
+		driver := &controlledAwaitDriver{FixtureDriver: fixture.driver, entered: make(chan struct{}), release: make(chan struct{})}
+		runner := Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: driver}
+		if err := runner.startSegment(context.Background(), fixture.prepared); err != nil {
+			t.Fatal(err)
+		}
+		if err := runner.BeginHumanWait(context.Background(), fixture.prepared, true); err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+		defer cancel()
+		began := time.Now()
+		_, err := runner.awaitWithLease(ctx, fixture.prepared)
+		if ctx.Err() == nil || time.Since(began) < 250*time.Millisecond {
+			t.Fatal("proven wait was bounded by active rather than wall context", time.Since(began), err)
+		}
+	})
+
+	t.Run("wait_suspends_deadline", func(t *testing.T) {
+		fixture := setupFixtureWithLimits(t, 150, 2000)
+		driver := &controlledAwaitDriver{FixtureDriver: fixture.driver, entered: make(chan struct{}), release: make(chan struct{})}
+		runner := Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: driver}
+		if err := runner.startSegment(context.Background(), fixture.prepared); err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan error, 1)
+		go func() { _, err := runner.awaitWithLease(context.Background(), fixture.prepared); done <- err }()
+		<-driver.entered
+		time.Sleep(25 * time.Millisecond)
+		if err := runner.BeginHumanWait(context.Background(), fixture.prepared, true); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(225 * time.Millisecond)
+		select {
+		case err := <-done:
+			t.Fatal("await ended during excluded wait", err)
+		default:
+		}
+		if err := runner.EndHumanWait(context.Background(), fixture.prepared); err != nil {
+			t.Fatal(err)
+		}
+		close(driver.release)
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("resume_restores_deadline", func(t *testing.T) {
+		fixture := setupFixtureWithLimits(t, 150, 2000)
+		driver := &controlledAwaitDriver{FixtureDriver: fixture.driver, entered: make(chan struct{}), release: make(chan struct{})}
+		runner := Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: driver}
+		if err := runner.startSegment(context.Background(), fixture.prepared); err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan error, 1)
+		go func() { _, err := runner.awaitWithLease(context.Background(), fixture.prepared); done <- err }()
+		<-driver.entered
+		time.Sleep(25 * time.Millisecond)
+		if err := runner.BeginHumanWait(context.Background(), fixture.prepared, true); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(225 * time.Millisecond)
+		if err := runner.EndHumanWait(context.Background(), fixture.prepared); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case err := <-done:
+			if err == nil {
+				t.Fatal("await succeeded without terminal observation")
+			}
+		case <-time.After(500 * time.Millisecond):
+			close(driver.release)
+			t.Fatal("active deadline was not restored after proven wait")
+		}
+	})
 }
 
 func TestProductionQualificationBindsPreparedExecution(t *testing.T) {

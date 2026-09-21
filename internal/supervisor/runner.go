@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"vigil/internal/artifacts"
@@ -28,6 +29,8 @@ type Runner struct {
 	StartCommandID     string
 	ReconcileCommandID string
 	Fault              func(string) error
+	budgetMu           sync.Mutex
+	budgetChanged      chan struct{}
 }
 
 var productionRecoveryClasses = []string{
@@ -731,10 +734,10 @@ func (r *Runner) setSubmission(ctx context.Context, prepared PreparedRun, state,
 		if state == "proven_not_delivered" {
 			runState = "failed"
 		}
-		if _, err := tx.ExecContext(ctx, "UPDATE run_generations SET submission_state=?,native_turn_id=?,state=CASE WHEN state='terminal' THEN state ELSE ? END WHERE id=?", state, nullableString(nativeTurn), map[bool]string{true: "active", false: "unknown"}[state == "delivered"], prepared.GenerationID); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE run_generations SET submission_state=?,native_turn_id=?,state=CASE WHEN state IN('terminal','contained') THEN state ELSE ? END WHERE id=?", state, nullableString(nativeTurn), map[bool]string{true: "active", false: "unknown"}[state == "delivered"], prepared.GenerationID); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, "UPDATE runs SET state=CASE WHEN state='completed' THEN state ELSE ? END WHERE id=?", runState, prepared.RunID)
+		_, err := tx.ExecContext(ctx, "UPDATE runs SET state=CASE WHEN state IN('completed','failed','interrupted') THEN state ELSE ? END WHERE id=?", runState, prepared.RunID)
 		return err
 	})
 }
@@ -745,14 +748,45 @@ func (r *Runner) awaitWithLease(ctx context.Context, prepared PreparedRun) (Obse
 		err         error
 	}
 	done := make(chan response, 1)
-	activeCtx, activeCancel, err := r.activeCallContext(ctx, prepared)
-	if err != nil {
+	if err := r.checkpointSegment(ctx, prepared); err != nil {
 		return Observation{}, err
 	}
-	defer activeCancel()
-	awaitCtx, cancel := context.WithCancel(activeCtx)
+	awaitCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() { observation, err := r.Driver.Await(awaitCtx, prepared); done <- response{observation, err} }()
+	var budgetTimer *time.Timer
+	var budgetC <-chan time.Time
+	stopBudgetTimer := func() {
+		if budgetTimer != nil && !budgetTimer.Stop() {
+			select {
+			case <-budgetTimer.C:
+			default:
+			}
+		}
+		budgetC = nil
+	}
+	defer stopBudgetTimer()
+	scheduleBudget := func() error {
+		remaining, excluded, err := r.activeBudgetStatus(ctx, prepared)
+		if err != nil {
+			return err
+		}
+		stopBudgetTimer()
+		if excluded {
+			return nil
+		}
+		if budgetTimer == nil {
+			budgetTimer = time.NewTimer(remaining)
+		} else {
+			budgetTimer.Reset(remaining)
+		}
+		budgetC = budgetTimer.C
+		return nil
+	}
+	if err := scheduleBudget(); err != nil {
+		return Observation{}, err
+	}
+	budgetChanged := r.budgetChangeChannel()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
@@ -764,7 +798,11 @@ func (r *Runner) awaitWithLease(ctx context.Context, prepared PreparedRun) (Obse
 				cancel()
 				return Observation{}, err
 			}
-			if err := r.Driver.RenewLease(ctx, prepared); err != nil {
+			if err := scheduleBudget(); err != nil {
+				cancel()
+				return Observation{}, err
+			}
+			if err := r.Driver.RenewLease(awaitCtx, prepared); err != nil {
 				cancel()
 				return Observation{}, err
 			}
@@ -772,12 +810,30 @@ func (r *Runner) awaitWithLease(ctx context.Context, prepared PreparedRun) (Obse
 				cancel()
 				return Observation{}, err
 			}
-		case <-activeCtx.Done():
-			cancel()
-			if err := r.checkpointSegment(context.Background(), prepared); err != nil {
+		case <-budgetChanged:
+			if err := r.checkpointSegment(ctx, prepared); err != nil {
+				cancel()
 				return Observation{}, err
 			}
-			return Observation{}, activeCtx.Err()
+			if err := scheduleBudget(); err != nil {
+				cancel()
+				return Observation{}, err
+			}
+			budgetChanged = r.budgetChangeChannel()
+		case <-budgetC:
+			budgetC = nil
+			if err := r.checkpointSegment(context.Background(), prepared); err != nil {
+				cancel()
+				return Observation{}, err
+			}
+			if err := scheduleBudget(); err != nil {
+				cancel()
+				return Observation{}, err
+			}
+		case <-ctx.Done():
+			cancel()
+			_ = r.checkpointSegment(context.Background(), prepared)
+			return Observation{}, ctx.Err()
 		}
 	}
 }
@@ -910,10 +966,16 @@ func (r *Runner) persistResult(ctx context.Context, prepared PreparedRun, observ
 	if err := r.checkpoint("before_outcome_commit"); err != nil {
 		return result, err
 	}
+	if err := r.checkpointSegment(ctx, prepared); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return result, err
+	}
 	fingerprintsJSON, _ := json.Marshal(fingerprints)
 	changedJSON, _ := json.Marshal(result.ChangedPaths)
 	canonical, _ := json.Marshal(result)
 	err = r.Engine.DB.Write(ctx, func(tx *store.Tx) error {
+		if err := r.enforceCompletionBudget(ctx, tx, prepared); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO execution_results(run_id,generation_id,schema_version,status,summary,changed_paths_json,repository_fingerprints_json,artifact_id,result_digest,validated_at) VALUES(?,?,1,?,?,?,?,?,?,?)`, prepared.RunID, prepared.GenerationID, result.Status, result.Summary, string(changedJSON), string(fingerprintsJSON), artifact.ID, store.Digest(canonical), store.Now()); err != nil {
 			return err
 		}
