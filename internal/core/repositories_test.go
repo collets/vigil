@@ -96,3 +96,53 @@ func TestRepositoryEnrollmentPreservesDirtyWorkAndNestedBoundary(t *testing.T) {
 		t.Fatal("unavailable save accepted")
 	}
 }
+
+func TestRepositoryBranchRecoveryUsesJournaledRevision(t *testing.T) {
+	_, e, p := setup(t)
+	initRepository(t, p.Root)
+	apply(t, e, "project.configure", config())
+	apply(t, e, "plan.put", plan())
+	input := RepositoryEnrollment{ID: "primary", PlanID: "plan", Root: p.Root, BaseRef: "main", PlanBranch: "vigil/original", DirtyChoice: "clean"}
+	apply(t, e, "repository.enroll", input)
+	var revision int
+	if err := e.DB.SQL.QueryRow("SELECT revision FROM project").Scan(&revision); err != nil {
+		t.Fatal(err)
+	}
+	op, err := e.prepareRepository(context.Background(), "revision-bound-prepare", "primary", revision, func(string) error {
+		return errors.New("crash after intent")
+	})
+	if err == nil {
+		t.Fatal("expected injected crash")
+	}
+	if b, err := exec.Command("git", "-C", p.Root, "switch", "-c", "intervening").CombinedOutput(); err != nil {
+		t.Fatal(err, string(b))
+	}
+	input.PlanBranch = "vigil/replacement"
+	apply(t, e, "repository.enroll", input)
+	resumed, err := e.PrepareRepository(context.Background(), "revision-bound-prepare", "primary", revision)
+	if err != nil || resumed.ObservedHeadRef != op.BranchRef || resumed.ObservedHeadRef != "refs/heads/vigil/original" {
+		t.Fatal("branch recovery substituted a newer enrollment", resumed, err)
+	}
+	if b, err := exec.Command("git", "-C", p.Root, "show-ref", "--verify", "--quiet", "refs/heads/vigil/replacement").CombinedOutput(); err == nil {
+		t.Fatal("recovery created replacement branch", string(b))
+	}
+}
+
+func TestRepositoryUnchangedReenrollmentGetsDistinctObservation(t *testing.T) {
+	_, e, p := setup(t)
+	initRepository(t, p.Root)
+	apply(t, e, "project.configure", config())
+	apply(t, e, "plan.put", plan())
+	input := RepositoryEnrollment{ID: "primary", PlanID: "plan", Root: p.Root, BaseRef: "main", PlanBranch: "vigil/original", DirtyChoice: "clean"}
+	apply(t, e, "repository.enroll", input)
+	first, err := e.Repository(context.Background(), "primary")
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.PlanBranch = "vigil/revised"
+	apply(t, e, "repository.enroll", input)
+	second, err := e.Repository(context.Background(), "primary")
+	if err != nil || second.Revision != 2 || second.FingerprintID == first.FingerprintID || second.Baseline.ContentDigest != first.Baseline.ContentDigest {
+		t.Fatal(first, second, err)
+	}
+}

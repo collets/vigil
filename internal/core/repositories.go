@@ -187,7 +187,10 @@ func (e *Engine) persistRepositoryEnrollment(ctx context.Context, tx *store.Tx, 
 	includedJSON, _ := json.Marshal(included)
 	nestedJSON, _ := json.Marshal(nested)
 	fingerprintJSON, _ := json.Marshal(observation.Baseline)
-	fingerprintID := store.Digest(fingerprintJSON)
+	// A fingerprint row is an immutable observation owned by one repository
+	// revision. Identical content may legitimately be enrolled under a new
+	// branch/policy revision, so its row identity cannot be content-only.
+	fingerprintID := store.Digest([]byte(input.ID + "\x00" + fmt.Sprint(revision) + "\x00" + string(fingerprintJSON)))
 	_, err = tx.ExecContext(ctx, `INSERT INTO repositories(id,root,common_git_identity,base_ref,base_oid,identity_json,inclusion)
 		VALUES(?,?,?,?,?,?,'participating')
 		ON CONFLICT(id) DO UPDATE SET common_git_identity=excluded.common_git_identity,base_ref=excluded.base_ref,base_oid=excluded.base_oid,identity_json=excluded.identity_json,inclusion='participating'`,
@@ -259,14 +262,26 @@ func (e *Engine) applyRepositoryEnrollment(ctx context.Context, actor Authority,
 }
 
 func (e *Engine) Repository(ctx context.Context, id string) (RepositoryRecord, error) {
+	return e.repositoryRevision(ctx, id, 0)
+}
+
+func (e *Engine) repositoryRevision(ctx context.Context, id string, revision int) (RepositoryRecord, error) {
 	var result RepositoryRecord
 	var identityJSON, includedJSON, nestedJSON, dirtyJSON, exclusionsJSON string
 	var dirty int
-	err := e.DB.SQL.QueryRowContext(ctx, `SELECT r.id,rr.revision,rr.plan_id,r.root,rr.root_identity_json,rr.base_ref,rr.base_oid,rr.plan_branch,coalesce(rr.remote_name,''),coalesce(rr.remote_identity,''),rr.dirty_choice,rr.included_paths_json,rr.nested_boundaries_json,rr.fingerprint_id,
+	query := `SELECT r.id,rr.revision,rr.plan_id,r.root,rr.root_identity_json,rr.base_ref,rr.base_oid,rr.plan_branch,coalesce(rr.remote_name,''),coalesce(rr.remote_identity,''),rr.dirty_choice,rr.included_paths_json,rr.nested_boundaries_json,rr.fingerprint_id,
 		f.head_oid,coalesce(f.head_ref,''),f.index_digest,f.content_digest,f.dirty,f.dirty_paths_json,f.exclusions_json
 		FROM repositories r JOIN repository_revisions rr ON rr.repository_id=r.id
 		JOIN repository_fingerprints f ON f.id=rr.fingerprint_id
-		WHERE r.id=? ORDER BY rr.revision DESC LIMIT 1`, id).Scan(&result.ID, &result.Revision, &result.PlanID, &result.Root, &identityJSON, &result.BaseRef, &result.BaseOID, &result.PlanBranch, &result.RemoteName, &result.RemoteIdentity, &result.DirtyChoice, &includedJSON, &nestedJSON, &result.FingerprintID, &result.Baseline.HeadOID, &result.Baseline.HeadRef, &result.Baseline.IndexDigest, &result.Baseline.ContentDigest, &dirty, &dirtyJSON, &exclusionsJSON)
+		WHERE r.id=?`
+	args := []any{id}
+	if revision > 0 {
+		query += " AND rr.revision=?"
+		args = append(args, revision)
+	} else {
+		query += " ORDER BY rr.revision DESC LIMIT 1"
+	}
+	err := e.DB.SQL.QueryRowContext(ctx, query, args...).Scan(&result.ID, &result.Revision, &result.PlanID, &result.Root, &identityJSON, &result.BaseRef, &result.BaseOID, &result.PlanBranch, &result.RemoteName, &result.RemoteIdentity, &result.DirtyChoice, &includedJSON, &nestedJSON, &result.FingerprintID, &result.Baseline.HeadOID, &result.Baseline.HeadRef, &result.Baseline.IndexDigest, &result.Baseline.ContentDigest, &dirty, &dirtyJSON, &exclusionsJSON)
 	if err != nil {
 		return result, err
 	}
@@ -302,15 +317,26 @@ func (e *Engine) prepareRepository(ctx context.Context, commandID, repositoryID 
 	operationID := store.Digest([]byte("repository.prepare\x00" + commandID))
 	args, _ := json.Marshal(map[string]any{"repository_id": repositoryID, "expected_revision": expectedRevision})
 	command := store.Command{ID: commandID, Actor: string(Human), Kind: "repository.prepare", Args: args}
+	receiptFound := false
 	if _, found, err := e.DB.Receipt(ctx, command); err != nil {
 		return result, err
 	} else if found {
+		receiptFound = true
 		result, err = e.BranchOperation(ctx, operationID)
 		if err != nil || result.State == "observed" || result.State == "reconciled" {
 			return result, err
 		}
 	}
-	repository, err := e.Repository(ctx, repositoryID)
+	var repository RepositoryRecord
+	var err error
+	if receiptFound {
+		if result.RepositoryID != repositoryID {
+			return result, store.ErrConflict
+		}
+		repository, err = e.repositoryRevision(ctx, result.RepositoryID, result.RepositoryRevision)
+	} else {
+		repository, err = e.Repository(ctx, repositoryID)
+	}
 	if err != nil {
 		return result, err
 	}
