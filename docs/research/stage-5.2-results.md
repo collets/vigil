@@ -1,10 +1,10 @@
 # Stage 5.2 repository and persisted-execution results
 
-Date: 2026-09-21. Implementation commits: `69de374`, `697b366`, `0e83d10`, `bef5dd4`, `cdb8f75`, plus macOS portability fix `88cd2be`; results and handoff updates are separate local documentation commits. Baseline was clean at `b167e10`, 16 commits ahead of `origin/main`. No repository-level `AGENTS.md` applied.
+Date: 2026-09-21. Initial implementation commits: `69de374`, `697b366`, `0e83d10`, `bef5dd4`, `cdb8f75`, plus macOS portability fix `88cd2be`. Astra review remediations are `0d02a9f` (repository revisions) and `b23ee5e` (execution fencing, confinement, budgets and qualification binding); results and handoff updates are separate local documentation commits. Baseline was clean at `b167e10`. No repository-level `AGENTS.md` applied.
 
 ## Verdict
 
-Checkpoints A–D are implemented and verified offline. A marked disposable repository completed one persisted synthetic execution through explicit repository enrollment, branch preparation, resource ownership, runtime/native/submission journals, strict result validation and the `checking` transition. It did not create acceptance, run quality checks, publish, push or contact a model provider.
+Checkpoints A–D and the corrections for all six P1 and three P2 findings in the 2026-09-21 Astra review are implemented and verified offline. Stage 5.2 is still **not accepted** until Astra independently re-reviews those corrections. A marked disposable repository completed one persisted synthetic execution through explicit repository enrollment, branch preparation, resource ownership, runtime/native/submission journals, strict result validation and the `checking` transition. It did not create acceptance, run quality checks, publish, push or contact a model provider.
 
 This is not live production qualification. Production dispatch still fails closed unless an exact Stage 5.1 qualification record contains `boundary_execution`, live `provider_idle`, `production_launch_recovery`, every Stage 5.2 recovery class and retained evidence for the exact runtime/image/profile/topology. No currently recorded combination meets that gate. The safe contained Codex ChatGPT route and independent provider-idle proof remain missing; the joint crash matrix has passed only with the synthetic fixture driver.
 
@@ -34,6 +34,16 @@ This is not live production qualification. Production dispatch still fails close
 - Normalized events are bounded and generation/sequence keyed. Conflicting duplicates fail. Usage remains absent when unavailable; observed/estimated values require provenance and currency when cost is present.
 - Result JSON is closed-schema, must report `completed`, and must exactly match actual repository dirty paths inside task scope. Completion also requires delivered submission and `contained_stopped` writer proof. The transition is only `running → checking`; acceptance remains Stage 5.4.
 - Active time is process-monotonic with persisted checkpoints. Queue time has no segment. Human wait is excluded only after explicit native-wait proof. Open crash segments consume a conservative wall-clock bound; an unproven gap is recorded as unknown and still reduces remaining allowance.
+
+### Astra review remediations
+
+- Interrupted effects enter durable `executing` before their external call. Recovery requires trusted inspection and explicit non-occurrence before retry; failed inspection becomes/remains uncertain. A durable delivered generation short-circuits submission even if current inspection is unavailable.
+- Dispatch requires the live coordinator owner and the exact persisted reservation, claims, roots, fencing generations, endpoint ticket and slot. The owner capability is held exclusively throughout dispatch so close/release/replacement cannot race effect authorization.
+- Branch recovery loads the exact repository revision named by its journal. Fingerprint observation IDs include repository revision, allowing unchanged content to be enrolled under a new policy revision.
+- Non-synthetic preparation binds qualification to the selected immutable implementation profile. Start rechecks every persisted run identity/limit/snapshot, actual checkout roots/layout/mount digest, endpoint and host capacity authority, then requires an independently derived driver input/route binding before calling `Engine.ExecutionEligibility`. No production driver currently implements that contract, so production dispatch remains fail-closed.
+- Synthetic writes validate scope/protected/excluded paths before submission and use descriptor-relative no-follow traversal plus atomic replacement. Target symlinks are rejected; replacing a hardlinked target does not truncate the outside inode.
+- Remaining active allowance supplies deadlines to create/start/attach/native-create/submit/lease/await calls and is checked before result persistence. Proven human/resource waits are excluded consistently and wait transitions are atomic.
+- Containment intent reaches durable `executing` before `Stop`. An explicitly reported bounded emergency stop remains the safety policy if storage is unavailable.
 
 ## Disposable CLI execution
 
@@ -76,6 +86,8 @@ On a fresh bundle at `88cd2be`:
 
 No inference, provider, Docker qualification flag or credential was used. The temporary source, Go caches, state and fixture were permanently removed after making the Go module cache owner-writable; the normal Mac checkout remained clean at its prior commit.
 
+The remediation commit `b23ee5e` was independently bundled with SHA-256 `80c37f4fb71b5f4bce4b20241b34d7fd69ed0e6bed6451ea16eec128148a6` and tested in a new isolated checkout on the same macOS 26.6.2 arm64 host with Go 1.27.1. Native `make check` passed (`internal/supervisor` 25.089 seconds), `make check-race` passed (`internal/supervisor` 38.247 seconds), and `make build` passed. Explicit native reruns of filesystem symlink/hardlink confinement, reservation-close serialization and active-submit-budget enforcement all passed. The temporary checkout and bundle were removed; the normal Mac checkout was not accessed or changed.
+
 ## Crash and recovery matrix
 
 The table reports the permanent synthetic tests in `internal/supervisor`. Every crash case reopens the project database and reloads the prepared run. When the terminal result is known, reconcile persists it; otherwise a later explicit start continues only effects proven not to have happened.
@@ -86,12 +98,14 @@ The table reports the permanent synthetic tests in `internal/supervisor`. Every 
 | After workspace claim | Same owner resumes journal; all roots remain owned | No duplicate claim/fence |
 | After endpoint enqueue/slot | Same ticket/generation resumes | No duplicate queue ticket or slot |
 | After runtime create response | Stable resource exists; create becomes `reconciled` | Create count remains 1 |
+| Interrupted create plus failed inspection | Durable `executing` becomes uncertain; retry is refused | Create count remains 1 |
 | Ambiguous runtime create error | Effect stays `uncertain`; inspect finds owned resource and reconciles | No blind recreation |
 | After runtime start | Inspect proves started; start becomes `reconciled` | Start count remains 1 |
 | After attach | Inspect proves attached | Attach count remains 1 |
 | After native create | Durable native session identity is recovered | Native create count remains 1 |
 | Before prompt write | Inspection proves `not_attempted`; only a later explicit start may submit | No automatic submission |
 | After prompt write / before acknowledgement | Delivered observation reconciles write and acknowledgement | Prompt count remains 1 |
+| Delivered generation plus failed inspection on restart | Durable generation delivery reconciles write/ack without driver submission | Prompt count remains 1 |
 | Ambiguous native submission | `submission_state=uncertain`, run `unknown`; allowed commands are inspect/reconcile/stop | Start and reconcile never call submit |
 | After terminal observation | Terminal/result recovered from the same generation | No prompt replay |
 | Before result persistence | Terminal result validates and persists on reconcile | No prompt replay |
@@ -101,6 +115,13 @@ The table reports the permanent synthetic tests in `internal/supervisor`. Every 
 | Normalized-event database failure | Dispatch stops; bounded containment runs; no result/checking transition | No continued dispatch |
 | Output flood (>1000 events) | Batch rejected; writer contained; task remains unaccepted | No unbounded persistence |
 | Open active segment after crash | Conservative elapsed bound moves to charged/unknown ledger | Remaining allowance never increases |
+| Submission exceeds remaining active allowance | Deadline/checkpoint prevents completion and invokes containment | No completed result/checking transition |
+| Proven human-wait checkpoint beyond active allowance | Category remains excluded; returning to active resumes cumulative accounting | No false budget exhaustion |
+| Owner closes or resources quarantine | Exact live owner/claim/ticket/slot validation rejects dispatch; close cannot race an active hold | Driver submission is not called |
+| Containment after phase failure | `containment_stop` is durable and `executing` inside `Stop` | No unjournaled normal stop |
+| Symlink/hardlink fixture target | Protected/symlink target is rejected; hardlink pathname is atomically replaced | Outside inode bytes remain unchanged |
+| Superseded enrollment during branch recovery | Original journal loads its exact repository revision and branch | New enrollment is never substituted |
+| Unchanged repository re-enrollment | Revision-scoped observation identity records the new enrollment | No fingerprint primary-key collision |
 | Revocation before global effect start | Coordinator transaction rejects start | No authorization row/effect |
 | Revocation after shared start | Existing exact authorization remains in-flight; new effects are denied | Same identity only reconciles |
 | Missing/corrupt qualification artifact | Stage 5.1 eligibility returns unsupported | Production driver is not called |
@@ -110,14 +131,14 @@ Permanent tests also cover nested enrollment, branch collision/base drift, dirty
 ## Validation
 
 - Starting baseline: `make check`; pass before changes.
-- Final Linux `make check`; pass, including `internal/supervisor` in 5.096 seconds for the uncached package run.
-- Final `make check-race`; pass after adding `internal/supervisor` to race coverage; supervisor completed in 11.656 seconds.
+- Final Linux `make check`; pass, including the permanent Astra regression tests.
+- Final Linux `make check-race`; pass with `internal/supervisor` in race coverage.
 - `make build`; pass.
 - `make cross-build`; pass for Linux/macOS amd64/arm64.
-- Focused `go test ./internal/supervisor ./internal/core ./internal/coordinator ./internal/store`; pass.
+- Focused `go test ./internal/supervisor ./internal/core ./internal/coordinator ./internal/cli`; pass.
 - Synthetic crash matrix: eleven reopen points plus uncertain create/submission, persistence failure, output flood and budget cases; pass.
 - Disposable CLI execution described above; pass.
-- Native macOS 26.6.2 arm64 at `88cd2be`: `make check`, `make check-race`, `make build` and one disposable CLI execution; pass after the recorded `/tmp` canonicalization fix.
+- Native macOS 26.6.2 arm64 at `b23ee5e`: `make check`, `make check-race`, `make build` and explicit confinement/reservation/budget regression reruns; pass. The earlier disposable CLI execution at `88cd2be` also passed.
 
 No Docker/model/live-provider flag was enabled. No credential value was read or printed. No Codex subscription turn, llama.cpp turn, push, hosting request, purchase or publication occurred.
 
@@ -132,6 +153,8 @@ No Docker/model/live-provider flag was enabled. No credential value was read or 
 Until all applicable gates pass and a new exact trusted qualification is recorded, production dispatch stays disabled. Synthetic success must not be entered as live qualification evidence.
 
 ## Security-sensitive Astra review scope
+
+The original review report and inert reproduction sources are retained at [stage-5.2-astra-review.md](stage-5.2-astra-review.md) and [stage-5.2-review](stage-5.2-review/). Re-review should verify the R1–R9 resolution mapping above, particularly crash windows between native delivery and durable acknowledgement, exclusive reservation authority during effects, descriptor-relative filesystem races, active deadlines for context-insensitive drivers, and the new fail-closed production driver binding contract.
 
 - Git command isolation, raw index/tree parsing, SHA-1/SHA-256 blob comparison, nested exclusions and races between pre-transaction observation and enrollment commit.
 - Canonical-path and filesystem-identity handling, especially `/tmp` aliases, symlinked roots, replacement between inspection and effect, and the `88cd2be` fixture-driver fix.

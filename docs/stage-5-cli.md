@@ -154,7 +154,7 @@ Then start explicitly with the returned run ID:
   --prompt 'Create the deterministic fixture result.'
 ```
 
-The start command owns every participating root before endpoint capacity, journals each effect, validates actual changed paths and releases fixture resources only after contained-stop proof. It returns `accepted: false`; successful completion leaves the task in `checking`.
+The start command re-reads the exact durable reservation, owns every participating root before endpoint capacity, and holds the live owner capability through dispatch so quarantine/release cannot race effect start. It journals `executing` before each external phase and retries only after trusted proof that an interrupted effect did not occur. Fixture targets are checked against task scope, protected paths and enrollment exclusions before submission; descriptor-relative no-follow traversal rejects symlink escape and atomic replacement preserves an outside hardlink inode. It validates actual changed paths and releases fixture resources only after contained-stop proof. It returns `accepted: false`; successful completion leaves the task in `checking`.
 
 Inspection is read-only. Reconciliation requires its own receipt and cannot submit a prompt:
 
@@ -165,7 +165,7 @@ Inspection is read-only. Reconciliation requires its own receipt and cannot subm
   --repository primary --path src/result.txt
 ```
 
-An uncertain submission exposes only inspect/reconcile/stop as allowed next commands. Neither start nor reconcile automatically replays it. These fixture commands are not model dispatch and never fall back to `spike`. Production runtime drivers must supply an exact supported Stage 5.1 eligibility record and the complete recovery-class set; none is enabled by these examples.
+An uncertain submission exposes only inspect/reconcile/stop as allowed next commands. A durably delivered generation is also never resubmitted, even when current driver inspection is unavailable. These fixture commands are not model dispatch and never fall back to `spike`. Production runtime drivers must independently report the exact runtime inputs and route set they will use; Vigil binds those to the persisted profile, endpoint, checkout roots/layout/mount digest and Stage 5.1 evidence before invoking core eligibility. No production driver currently satisfies/enables that contract.
 
 ## Permissions and artifacts
 

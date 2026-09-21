@@ -1,0 +1,47 @@
+package core
+
+import (
+	"context"
+	"errors"
+	"os/exec"
+	"testing"
+)
+
+func TestReviewBranchIntentRevision(t *testing.T) {
+	_, e, p := setup(t)
+	initRepository(t, p.Root)
+	apply(t, e, "project.configure", config())
+	apply(t, e, "plan.put", plan())
+	input := RepositoryEnrollment{ID: "primary", PlanID: "plan", Root: p.Root, BaseRef: "main", PlanBranch: "vigil/original", DirtyChoice: "clean"}
+	apply(t, e, "repository.enroll", input)
+	var revision int
+	if err := e.DB.SQL.QueryRow("SELECT revision FROM project").Scan(&revision); err != nil {
+		t.Fatal(err)
+	}
+	op, err := e.prepareRepository(context.Background(), "review-prepare", "primary", revision, func(s string) error { return errors.New("crash after intent") })
+	if err == nil {
+		t.Fatal("expected crash")
+	}
+	if b, err := exec.Command("git", "-C", p.Root, "switch", "-c", "intervening").CombinedOutput(); err != nil {
+		t.Fatal(err, string(b))
+	}
+	input.PlanBranch = "vigil/replacement"
+	apply(t, e, "repository.enroll", input)
+	resumed, err := e.PrepareRepository(context.Background(), "review-prepare", "primary", revision)
+	if err == nil && resumed.ObservedHeadRef != op.BranchRef {
+		t.Fatalf("old intent for %s observed %s after replay: %+v", op.BranchRef, resumed.ObservedHeadRef, resumed)
+	}
+}
+func TestReviewUnchangedReenrollment(t *testing.T) {
+	_, e, p := setup(t)
+	initRepository(t, p.Root)
+	apply(t, e, "project.configure", config())
+	apply(t, e, "plan.put", plan())
+	input := RepositoryEnrollment{ID: "primary", PlanID: "plan", Root: p.Root, BaseRef: "main", PlanBranch: "vigil/original", DirtyChoice: "clean"}
+	apply(t, e, "repository.enroll", input)
+	input.PlanBranch = "vigil/revised"
+	_, err := e.Apply(context.Background(), Human, envelope(t, e, "repository.enroll", input))
+	if err != nil {
+		t.Fatalf("unchanged repository cannot be enrolled as new policy revision: %v", err)
+	}
+}
