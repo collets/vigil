@@ -11,6 +11,7 @@ import (
 	"vigil/internal/artifacts"
 	"vigil/internal/core"
 	"vigil/internal/store"
+	"vigil/internal/workspace"
 )
 
 type Manager struct {
@@ -72,38 +73,64 @@ func (m *Manager) writerSafe(ctx context.Context, runID string) error {
 	return nil
 }
 
-func (m *Manager) validateSpecs(ctx context.Context, runID string, specs []RepositorySpec) error {
+func (m *Manager) normalizeSpecs(ctx context.Context, runID string, specs []RepositorySpec) ([]RepositorySpec, error) {
 	if len(specs) == 0 || len(specs) > 100 {
-		return errors.New("bounded participating repository set required")
+		return nil, errors.New("bounded participating repository set required")
 	}
-	rows, err := m.Engine.DB.SQL.QueryContext(ctx, `SELECT json_extract(value,'$.id'),json_extract(value,'$.root'),json_extract(value,'$.identity.key'),json_extract(value,'$.identity.common_git') FROM run_snapshots,json_each(repository_snapshot_json) WHERE run_id=?`, runID)
-	if err != nil {
-		return err
+	var repositoriesJSON, taskJSON string
+	if err := m.Engine.DB.SQL.QueryRowContext(ctx, "SELECT repository_snapshot_json,task_snapshot_json FROM run_snapshots WHERE run_id=?", runID).Scan(&repositoriesJSON, &taskJSON); err != nil {
+		return nil, err
 	}
-	defer rows.Close()
-	known := map[string][3]string{}
-	for rows.Next() {
-		var id, root, key, common string
-		if err := rows.Scan(&id, &root, &key, &common); err != nil {
-			return err
-		}
-		known[id] = [3]string{root, key, common}
+	var repositories []core.RepositoryRecord
+	var task struct {
+		Scope []string `json:"scope"`
 	}
-	if err := rows.Err(); err != nil {
-		return err
+	if err := json.Unmarshal([]byte(repositoriesJSON), &repositories); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(taskJSON), &task); err != nil {
+		return nil, err
+	}
+	known := map[string]core.RepositoryRecord{}
+	for _, repository := range repositories {
+		known[repository.ID] = repository
 	}
 	if len(known) != len(specs) {
-		return errors.New("checkpoint must include every participating repository exactly once")
+		return nil, errors.New("checkpoint must include every participating repository exactly once")
 	}
 	seen := map[string]bool{}
-	for _, spec := range specs {
+	normalized := append([]RepositorySpec(nil), specs...)
+	for n, spec := range normalized {
 		want, ok := known[spec.ID]
-		if !ok || seen[spec.ID] || spec.Root != want[0] || spec.Identity.Key != want[1] || spec.Identity.CommonGit != want[2] {
-			return errors.New("checkpoint repository differs from immutable run participation")
+		if !ok || seen[spec.ID] {
+			return nil, errors.New("checkpoint repository differs from immutable run participation")
+		}
+		observed, err := workspace.Inspect(ctx, spec.Root)
+		if err != nil {
+			return nil, err
+		}
+		if observed.Key != spec.Identity.Key || observed.CommonGit != spec.Identity.CommonGit || observed.Key != want.Identity.Key || observed.CommonGit != want.Identity.CommonGit || observed.Root != want.Root {
+			return nil, errors.New("checkpoint repository differs from immutable run participation")
+		}
+		if !snapshotEqual(spec.Exclusions, want.Baseline.Exclusions) || !snapshotEqual(spec.UntrackedScope, task.Scope) {
+			return nil, errors.New("checkpoint preservation scope differs from immutable run scope")
 		}
 		seen[spec.ID] = true
+		normalized[n].Root = want.Root
+		normalized[n].Identity = want.Identity
+		normalized[n].Exclusions = append([]string(nil), want.Baseline.Exclusions...)
+		normalized[n].UntrackedScope = append([]string(nil), task.Scope...)
 	}
-	return nil
+	return normalized, nil
+}
+
+func snapshotEqual(left, right any) bool {
+	a, err := json.Marshal(left)
+	if err != nil {
+		return false
+	}
+	b, err := json.Marshal(right)
+	return err == nil && bytes.Equal(a, b)
 }
 
 func (m *Manager) Save(ctx context.Context, request SaveRequest) (SaveReceipt, error) {
@@ -111,12 +138,11 @@ func (m *Manager) Save(ctx context.Context, request SaveRequest) (SaveReceipt, e
 	if m == nil || m.Engine == nil || m.Store == nil || !store.SafeID(request.CommandID) || !store.SafeID(request.RunID) || request.ExpectedRevision < 1 {
 		return receipt, errors.New("valid save command, run and project revision required")
 	}
-	if err := m.writerSafe(ctx, request.RunID); err != nil {
+	normalized, err := m.normalizeSpecs(ctx, request.RunID, request.Repositories)
+	if err != nil {
 		return receipt, err
 	}
-	if err := m.validateSpecs(ctx, request.RunID, request.Repositories); err != nil {
-		return receipt, err
-	}
+	request.Repositories = normalized
 	args, err := json.Marshal(request)
 	if err != nil || len(args) > store.MaxDocument {
 		return receipt, errors.New("checkpoint save definition exceeds command limit")
@@ -127,6 +153,9 @@ func (m *Manager) Save(ctx context.Context, request SaveRequest) (SaveReceipt, e
 		return receipt, err
 	}
 	if !repeated {
+		if err := m.writerSafe(ctx, request.RunID); err != nil {
+			return receipt, err
+		}
 		commandReceipt, err = m.Engine.DB.Command(ctx, command, func(tx *store.Tx) (any, error) {
 			var revision int
 			if err := tx.QueryRowContext(ctx, "SELECT revision FROM project WHERE id=?", m.Engine.ProjectID).Scan(&revision); err != nil {

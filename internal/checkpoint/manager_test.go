@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"vigil/internal/core"
@@ -136,7 +137,11 @@ func TestSaveAndClearRoundTripWithPerPathRecovery(t *testing.T) {
 	if baseline.State != "verified" || captured.State != "verified" {
 		t.Fatal(baseline, captured)
 	}
-	again, err := fixture.recovery.Save(context.Background(), SaveRequest{CommandID: "save-captured", ExpectedRevision: revision(t, fixture.engine) - 1, RunID: fixture.prepared.RunID, Repositories: []RepositorySpec{{ID: fixture.prepared.Repositories[0].ID, Root: fixture.root, Identity: fixture.prepared.Repositories[0].Identity, Exclusions: fixture.prepared.Repositories[0].Baseline.Exclusions, UntrackedScope: fixture.prepared.Task.Scope}}})
+	alias := filepath.Join(filepath.Dir(fixture.root), "work-alias")
+	if err := os.Symlink(fixture.root, alias); err != nil {
+		t.Fatal(err)
+	}
+	again, err := fixture.recovery.Save(context.Background(), SaveRequest{CommandID: "save-captured", ExpectedRevision: revision(t, fixture.engine) - 1, RunID: fixture.prepared.RunID, Repositories: []RepositorySpec{{ID: fixture.prepared.Repositories[0].ID, Root: alias, Identity: fixture.prepared.Repositories[0].Identity, Exclusions: fixture.prepared.Repositories[0].Baseline.Exclusions, UntrackedScope: fixture.prepared.Task.Scope}}})
 	if err != nil || !again.Repeated || again.CheckpointID != captured.CheckpointID {
 		t.Fatal(again, err)
 	}
@@ -180,6 +185,19 @@ func TestSaveAndClearRoundTripWithPerPathRecovery(t *testing.T) {
 	var progress, applied int
 	if err := fixture.engine.DB.SQL.QueryRow("SELECT count(*),sum(state='applied') FROM checkpoint_path_progress WHERE operation_id=?", receipt.OperationID).Scan(&progress, &applied); err != nil || progress == 0 || progress != applied {
 		t.Fatal("per-path journal incomplete", progress, applied, err)
+	}
+}
+
+func TestSaveRejectsPreservationScopeSubstitution(t *testing.T) {
+	fixture := recoverySetup(t)
+	repository := fixture.prepared.Repositories[0]
+	_, err := fixture.recovery.Save(context.Background(), SaveRequest{CommandID: "bad-scope", ExpectedRevision: revision(t, fixture.engine), RunID: fixture.prepared.RunID, Repositories: []RepositorySpec{{ID: repository.ID, Root: repository.Root, Identity: repository.Identity, Exclusions: repository.Baseline.Exclusions, UntrackedScope: []string{"secret/**"}}}})
+	if err == nil || !strings.Contains(err.Error(), "preservation scope") {
+		t.Fatal("substituted preservation scope reached capture", err)
+	}
+	var checkpoints int
+	if err := fixture.engine.DB.SQL.QueryRow("SELECT count(*) FROM checkpoint_sets").Scan(&checkpoints); err != nil || checkpoints != 0 {
+		t.Fatal("invalid scope persisted checkpoint intent", checkpoints, err)
 	}
 }
 
