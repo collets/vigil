@@ -202,12 +202,19 @@ func withoutGit(exclusions []string) []string {
 
 func Prepare(ctx context.Context, engine *core.Engine, request PrepareRequest) (PreparedRun, error) {
 	var result PreparedRun
+	args, _ := json.Marshal(request)
+	command := store.Command{ID: request.CommandID, Actor: string(core.Human), Kind: "execution.prepare", Args: args}
+	if receipt, found, err := engine.DB.Receipt(ctx, command); err != nil || found {
+		if err == nil {
+			err = json.Unmarshal(receipt, &result)
+		}
+		return result, err
+	}
 	observed, err := observePreparation(ctx, engine, request)
 	if err != nil {
 		return result, err
 	}
-	args, _ := json.Marshal(request)
-	receipt, err := engine.DB.Command(ctx, store.Command{ID: request.CommandID, Actor: string(core.Human), Kind: "execution.prepare", Args: args}, func(tx *store.Tx) (any, error) {
+	receipt, err := engine.DB.Command(ctx, command, func(tx *store.Tx) (any, error) {
 		var revision int
 		if err := tx.QueryRowContext(ctx, "SELECT revision FROM project WHERE id=?", engine.ProjectID).Scan(&revision); err != nil {
 			return nil, err

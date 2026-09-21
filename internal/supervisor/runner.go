@@ -631,7 +631,7 @@ func (r *Runner) persistResult(ctx context.Context, prepared PreparedRun, observ
 	if err != nil {
 		return result, err
 	}
-	artifact, err := repository.Put(ctx, "run-result:"+prepared.RunID, "execution-result", "unfinished", bytes.NewReader(observation.Result))
+	artifact, err := repository.PutCore(ctx, "run-result:"+prepared.RunID, "execution-result", "unfinished", bytes.NewReader(observation.Result))
 	if err != nil {
 		return result, err
 	}

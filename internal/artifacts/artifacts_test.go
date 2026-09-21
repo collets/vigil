@@ -40,6 +40,13 @@ func TestPublicationCrashAndCorruption(t *testing.T) {
 	if err := r.Verify(ctx, a.ID, a.Digest, "other"); err == nil {
 		t.Fatal("accepted wrong artifact kind")
 	}
+	if _, err := r.PutCore(ctx, "core-result", "execution-result", "unfinished", strings.NewReader("result")); err != nil {
+		t.Fatal(err)
+	}
+	var actor string
+	if err := db.SQL.QueryRow("SELECT actor FROM command_receipts WHERE id='core-result'").Scan(&actor); err != nil || actor != "core" {
+		t.Fatal("trusted publication misattributed", actor, err)
+	}
 	transcript, err := r.Put(ctx, "transcript", "check", "transcript", strings.NewReader("transcript evidence"))
 	if err != nil {
 		t.Fatal(err)

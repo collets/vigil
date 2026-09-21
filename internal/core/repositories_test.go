@@ -50,6 +50,17 @@ func TestRepositoryEnrollmentBranchCrashReconciliation(t *testing.T) {
 	if err != nil || operation.State != "observed" || operation.ObservedHeadRef != "refs/heads/vigil/fixture" {
 		t.Fatal(operation, err)
 	}
+	if err := os.WriteFile(filepath.Join(p.Root, "after-prepare.txt"), []byte("preserve replay work\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	operation, err = e.PrepareRepository(context.Background(), "prepare", "primary", revision)
+	if err != nil || operation.State != "observed" {
+		t.Fatal(operation, err)
+	}
+	b, err := os.ReadFile(filepath.Join(p.Root, "after-prepare.txt"))
+	if err != nil || string(b) != "preserve replay work\n" {
+		t.Fatal("idempotent replay changed later checkout work", err)
+	}
 	var count int
 	if err := e.DB.SQL.QueryRow("SELECT count(*) FROM repository_branch_operations").Scan(&count); err != nil || count != 1 {
 		t.Fatal(count, err)

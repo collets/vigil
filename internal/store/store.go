@@ -253,16 +253,51 @@ type Command struct {
 	Args  json.RawMessage `json:"args"`
 }
 
-func (s *DB) Command(ctx context.Context, cmd Command, fn func(*Tx) (any, error)) (json.RawMessage, error) {
-	if s.Kind != "project" || cmd.ID == "" || len(cmd.ID) > 128 || cmd.Kind == "" || len(cmd.Kind) > 128 || cmd.Actor == "" || len(cmd.Actor) > 128 {
-		return nil, errors.New("invalid command envelope")
+func commandDigest(cmd Command) (string, error) {
+	if cmd.ID == "" || len(cmd.ID) > 128 || cmd.Kind == "" || len(cmd.Kind) > 128 || cmd.Actor == "" || len(cmd.Actor) > 128 {
+		return "", errors.New("invalid command envelope")
 	}
 	args, err := Canonical(cmd.Args)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	envelope, _ := json.Marshal([]string{cmd.Kind, cmd.Actor, string(args)})
-	digest := Digest(envelope)
+	return Digest(envelope), nil
+}
+
+// Receipt returns an already committed exact command before callers repeat
+// expensive observations or effect preparation. A reused ID with different
+// authority/arguments is still a conflict.
+func (s *DB) Receipt(ctx context.Context, cmd Command) (json.RawMessage, bool, error) {
+	if s.Kind != "project" {
+		return nil, false, errors.New("command receipts require a project database")
+	}
+	digest, err := commandDigest(cmd)
+	if err != nil {
+		return nil, false, err
+	}
+	var prior, actor, value string
+	err = s.SQL.QueryRowContext(ctx, "SELECT args_digest,actor,result_json FROM command_receipts WHERE id=?", cmd.ID).Scan(&prior, &actor, &value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if prior != digest || actor != cmd.Actor {
+		return nil, false, ErrConflict
+	}
+	return json.RawMessage(value), true, nil
+}
+
+func (s *DB) Command(ctx context.Context, cmd Command, fn func(*Tx) (any, error)) (json.RawMessage, error) {
+	if s.Kind != "project" {
+		return nil, errors.New("invalid command envelope")
+	}
+	digest, err := commandDigest(cmd)
+	if err != nil {
+		return nil, err
+	}
 	var result json.RawMessage
 	err = s.Write(ctx, func(tx *Tx) error {
 		var prior, actor, value string

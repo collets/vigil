@@ -223,6 +223,14 @@ func (e *Engine) applyRepositoryEnrollment(ctx context.Context, actor Authority,
 	if actor != Human {
 		return nil, errors.New("repository enrollment requires human authority")
 	}
+	args, err := json.Marshal(cmd)
+	if err != nil {
+		return nil, err
+	}
+	command := store.Command{ID: cmd.CommandID, Actor: string(actor), Kind: cmd.Kind, Args: args}
+	if receipt, found, err := e.DB.Receipt(ctx, command); err != nil || found {
+		return receipt, err
+	}
 	var input RepositoryEnrollment
 	if err := store.Decode(cmd.Payload, &input); err != nil {
 		return nil, err
@@ -231,11 +239,7 @@ func (e *Engine) applyRepositoryEnrollment(ctx context.Context, actor Authority,
 	if err != nil {
 		return nil, err
 	}
-	args, err := json.Marshal(cmd)
-	if err != nil {
-		return nil, err
-	}
-	return e.DB.Command(ctx, store.Command{ID: cmd.CommandID, Actor: string(actor), Kind: cmd.Kind, Args: args}, func(tx *store.Tx) (any, error) {
+	return e.DB.Command(ctx, command, func(tx *store.Tx) (any, error) {
 		var revision int
 		if err := tx.QueryRowContext(ctx, "SELECT revision FROM project WHERE id=?", e.ProjectID).Scan(&revision); err != nil {
 			return nil, err
@@ -295,6 +299,17 @@ func (e *Engine) prepareRepository(ctx context.Context, commandID, repositoryID 
 	if !store.SafeID(commandID) || !store.SafeID(repositoryID) || expectedRevision < 1 {
 		return result, errors.New("command, repository and expected project revision required")
 	}
+	operationID := store.Digest([]byte("repository.prepare\x00" + commandID))
+	args, _ := json.Marshal(map[string]any{"repository_id": repositoryID, "expected_revision": expectedRevision})
+	command := store.Command{ID: commandID, Actor: string(Human), Kind: "repository.prepare", Args: args}
+	if _, found, err := e.DB.Receipt(ctx, command); err != nil {
+		return result, err
+	} else if found {
+		result, err = e.BranchOperation(ctx, operationID)
+		if err != nil || result.State == "observed" || result.State == "reconciled" {
+			return result, err
+		}
+	}
 	repository, err := e.Repository(ctx, repositoryID)
 	if err != nil {
 		return result, err
@@ -302,9 +317,7 @@ func (e *Engine) prepareRepository(ctx context.Context, commandID, repositoryID 
 	if repository.DirtyChoice != "clean" || repository.Baseline.Dirty {
 		return result, errors.New("branch preparation requires a clean enrolled baseline; included/postponed work remains deferred")
 	}
-	operationID := store.Digest([]byte("repository.prepare\x00" + commandID))
-	args, _ := json.Marshal(map[string]any{"repository_id": repositoryID, "repository_revision": repository.Revision, "expected_revision": expectedRevision})
-	_, err = e.DB.Command(ctx, store.Command{ID: commandID, Actor: string(Human), Kind: "repository.prepare", Args: args}, func(tx *store.Tx) (any, error) {
+	_, err = e.DB.Command(ctx, command, func(tx *store.Tx) (any, error) {
 		var revision, epoch int
 		if err := tx.QueryRowContext(ctx, "SELECT revision,policy_epoch FROM project WHERE id=?", e.ProjectID).Scan(&revision, &epoch); err != nil {
 			return nil, err

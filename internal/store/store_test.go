@@ -109,7 +109,13 @@ func TestDurableCommandsAndMigrations(t *testing.T) {
 	if err != nil || string(first) != string(second) || calls != 1 {
 		t.Fatalf("replay %s %v calls=%d", second, err, calls)
 	}
+	if receipt, found, err := db.Receipt(ctx, command); err != nil || !found || string(receipt) != string(first) {
+		t.Fatal("receipt lookup", string(receipt), found, err)
+	}
 	command.Actor = "model"
+	if _, _, err = db.Receipt(ctx, command); !errors.Is(err, ErrConflict) {
+		t.Fatalf("receipt authority reuse: %v", err)
+	}
 	if _, err = db.Command(ctx, command, apply); !errors.Is(err, ErrConflict) {
 		t.Fatalf("authority reuse: %v", err)
 	}

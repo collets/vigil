@@ -48,6 +48,19 @@ func syncDir(path string) error {
 }
 
 func (r *Repository) Put(ctx context.Context, commandID, kind, retention string, reader io.Reader) (Artifact, error) {
+	return r.put(ctx, commandID, "human", kind, retention, reader)
+}
+
+// PutCore publishes trusted application-generated evidence without falsely
+// attributing the command receipt to a human actor.
+func (r *Repository) PutCore(ctx context.Context, commandID, kind, retention string, reader io.Reader) (Artifact, error) {
+	return r.put(ctx, commandID, "core", kind, retention, reader)
+}
+
+func (r *Repository) put(ctx context.Context, commandID, actor, kind, retention string, reader io.Reader) (Artifact, error) {
+	if actor != "human" && actor != "core" {
+		return Artifact{}, errors.New("invalid artifact authority")
+	}
 	if kind == "" || len(kind) > 128 || (retention != "durable" && retention != "transcript" && retention != "unfinished") {
 		return Artifact{}, errors.New("invalid artifact definition")
 	}
@@ -89,7 +102,7 @@ func (r *Repository) Put(ctx context.Context, commandID, kind, retention string,
 		return Artifact{}, err
 	}
 	args, _ := json.Marshal(map[string]any{"kind": kind, "retention": retention, "digest": digest, "bytes": len(b)})
-	result, err := r.DB.Command(ctx, store.Command{ID: commandID, Actor: "human", Kind: "artifact.publish", Args: args}, func(tx *store.Tx) (any, error) {
+	result, err := r.DB.Command(ctx, store.Command{ID: commandID, Actor: actor, Kind: "artifact.publish", Args: args}, func(tx *store.Tx) (any, error) {
 		a := Artifact{ID: store.ID(), Digest: digest, Bytes: int64(len(b)), Kind: kind}
 		_, err := tx.ExecContext(ctx, "INSERT INTO artifacts(id,kind,digest,relative_path,byte_count,state,retention,created_at) VALUES(?,?,?,?,?,'available',?,?)", a.ID, kind, digest, "blobs/"+digest, a.Bytes, retention, store.Now())
 		return a, err
