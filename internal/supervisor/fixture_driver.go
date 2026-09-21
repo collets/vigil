@@ -256,6 +256,13 @@ func (d *FixtureDriver) RenewLease(ctx context.Context, prepared PreparedRun) er
 	_, err := d.validate(ctx, prepared)
 	return err
 }
+func (d *FixtureDriver) Interrupt(ctx context.Context, prepared PreparedRun) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.count("interrupt")
+	_, err := d.validate(ctx, prepared)
+	return err
+}
 func (d *FixtureDriver) Stop(ctx context.Context, prepared PreparedRun) (Observation, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()

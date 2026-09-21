@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 	"vigil/internal/artifacts"
@@ -90,6 +91,32 @@ func projectCommand(stateDir *string) *cobra.Command {
 			return printJSON(cmd, r)
 		})
 	}})
+	for _, action := range []string{"pause", "continue"} {
+		action := action
+		var controlCommand string
+		var controlRevision int
+		control := &cobra.Command{Use: action + " PROJECT_ID", Short: map[string]string{"pause": "Durably prohibit future dispatch", "continue": "Explicitly recheck and re-enable dispatch"}[action], Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+			if controlCommand == "" || controlRevision < 1 {
+				return errors.New("--command-id and --expected-revision required")
+			}
+			return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+				var result core.DispatchControl
+				var err error
+				if action == "pause" {
+					result, err = e.Pause(cmd.Context(), controlCommand, controlRevision)
+				} else {
+					result, err = e.Continue(cmd.Context(), controlCommand, controlRevision)
+				}
+				if err != nil {
+					return err
+				}
+				return printJSON(cmd, result)
+			})
+		}}
+		control.Flags().StringVar(&controlCommand, "command-id", "", "Unique replay-safe control command")
+		control.Flags().IntVar(&controlRevision, "expected-revision", 0, "Expected project revision")
+		root.AddCommand(control)
+	}
 	root.AddCommand(&cobra.Command{Use: "reservation PROJECT_ID OPERATION_ID", Short: "Inspect a persisted core resource reservation without acquiring or releasing anything", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
 		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
 			r, err := e.Reservation(cmd.Context(), args[1])
@@ -230,6 +257,48 @@ func projectCommand(stateDir *string) *cobra.Command {
 		})
 	}}
 	root.AddCommand(executionInspect)
+	var stopCommand, stopRepository, stopPath string
+	var stopInterruptMS, stopTerminateMS int64
+	executionStop := &cobra.Command{Use: "execution-stop PROJECT_ID RUN_ID", Short: "Durably stop a disposable execution and retire its requests", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		if !syntheticFixture {
+			return errors.New("--synthetic-fixture required; production stop needs its qualified runtime driver")
+		}
+		if stopCommand == "" || stopRepository == "" || stopPath == "" {
+			return errors.New("--command-id, --repository and --path required")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			prepared, err := supervisor.LoadPrepared(cmd.Context(), e, args[1])
+			if err != nil {
+				return err
+			}
+			if prepared.RuntimeKind != "synthetic" {
+				return errors.New("synthetic stop cannot control a production runtime")
+			}
+			var repositoryRoot string
+			for _, repository := range prepared.Repositories {
+				if repository.ID == stopRepository {
+					repositoryRoot = repository.Root
+				}
+			}
+			if repositoryRoot == "" {
+				return errors.New("repository is not part of the run")
+			}
+			driver := &supervisor.FixtureDriver{RepositoryID: stopRepository, Root: repositoryRoot, RelativePath: stopPath}
+			runner := supervisor.Runner{Engine: e, Driver: driver}
+			receipt, err := runner.Stop(cmd.Context(), prepared, stopCommand, time.Duration(stopInterruptMS)*time.Millisecond, time.Duration(stopTerminateMS)*time.Millisecond)
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, receipt)
+		})
+	}}
+	executionStop.Flags().BoolVar(&syntheticFixture, "synthetic-fixture", false, "Use only the deterministic disposable-fixture controller")
+	executionStop.Flags().StringVar(&stopCommand, "command-id", "", "Unique replay-safe stop command")
+	executionStop.Flags().StringVar(&stopRepository, "repository", "", "Enrolled repository ID")
+	executionStop.Flags().StringVar(&stopPath, "path", "", "Repository-relative fixture path")
+	executionStop.Flags().Int64Var(&stopInterruptMS, "interrupt-grace-ms", 100, "Bounded native interrupt grace")
+	executionStop.Flags().Int64Var(&stopTerminateMS, "terminate-grace-ms", 5000, "Bounded boundary termination grace")
+	root.AddCommand(executionStop)
 	var reconcileRepository, reconcilePath, reconcileCommand string
 	executionReconcile := &cobra.Command{Use: "execution-reconcile PROJECT_ID RUN_ID", Short: "Reconcile a disposable synthetic execution without replaying submission", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
 		if !syntheticFixture {

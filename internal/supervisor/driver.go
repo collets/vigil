@@ -51,6 +51,12 @@ type Driver interface {
 	Stop(context.Context, PreparedRun) (Observation, error)
 }
 
+// InterruptDriver is implemented when the native transport has a qualified,
+// one-shot interrupt distinct from terminating the owned boundary.
+type InterruptDriver interface {
+	Interrupt(context.Context, PreparedRun) error
+}
+
 // ProductionBindingProvider is required for every non-synthetic driver. It
 // reports the security-relevant inputs and inference routes the driver will
 // actually use, rather than accepting the caller's qualification request as a
