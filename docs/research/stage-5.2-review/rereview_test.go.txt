@@ -1,0 +1,80 @@
+package supervisor
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+)
+
+type rereviewWaitingDriver struct{ *FixtureDriver }
+
+func (d *rereviewWaitingDriver) Await(ctx context.Context, p PreparedRun) (Observation, error) {
+	<-ctx.Done()
+	return Observation{}, ctx.Err()
+}
+func TestRereviewHumanWaitAwaitDeadline(t *testing.T) {
+	f := setupFixture(t)
+	f.prepared.ActiveLimitMS = 100
+	r := Runner{Engine: f.engine, Owner: f.owner, Driver: &rereviewWaitingDriver{f.driver}}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if err := r.startSegment(ctx, f.prepared); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.BeginHumanWait(ctx, f.prepared, true); err != nil {
+		t.Fatal(err)
+	}
+	began := time.Now()
+	_, err := r.awaitWithLease(ctx, f.prepared)
+	if ctx.Err() == nil {
+		t.Fatalf("proven human wait aborted by active deadline after %s: %v", time.Since(began), err)
+	}
+}
+func TestRereviewSubmissionRegressionReachesDriver(t *testing.T) {
+	f := setupFixture(t)
+	f.prepared.ActiveLimitMS = 50
+	r := Runner{Engine: f.engine, Owner: f.owner, Driver: &delayedSubmitDriver{f.driver}}
+	_, err := r.Run(context.Background(), f.prepared, f.reservation, "write result")
+	if f.driver.Calls["submit"] == 0 {
+		t.Fatalf("submitted slow-budget regression never reaches Submit: %v", err)
+	}
+}
+func TestRereviewBudgetAtOutcomeCommit(t *testing.T) {
+	f := setupFixture(t)
+	r := Runner{Engine: f.engine, Owner: f.owner, Driver: f.driver, Fault: func(point string) error {
+		if point == "before_outcome_commit" {
+			time.Sleep(time.Duration(f.prepared.ActiveLimitMS+100) * time.Millisecond)
+		}
+		return nil
+	}}
+	result, err := r.Run(context.Background(), f.prepared, f.reservation, "write result")
+	if err == nil {
+		t.Fatalf("completed after persisted active limit expired before outcome commit: %s", result.Status)
+	}
+	if errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+}
+
+type rereviewSlowSubmit struct{ *FixtureDriver }
+
+func (d *rereviewSlowSubmit) Submit(_ context.Context, p PreparedRun, s string) (string, string, error) {
+	time.Sleep(time.Duration(p.ActiveLimitMS+100) * time.Millisecond)
+	return d.FixtureDriver.Submit(context.Background(), p, s)
+}
+func TestRereviewReconcileAfterBudgetExhaustion(t *testing.T) {
+	f := setupFixture(t)
+	r := Runner{Engine: f.engine, Owner: f.owner, Driver: &rereviewSlowSubmit{f.driver}}
+	result, err := r.Run(context.Background(), f.prepared, f.reservation, "write result")
+	if err == nil {
+		t.Fatalf("overbudget Run succeeded: %+v", result)
+	}
+	if f.driver.Calls["submit"] != 1 {
+		t.Fatalf("did not reach Submit: %v", err)
+	}
+	view, err := r.Reconcile(context.Background(), f.prepared)
+	if err == nil && (view.RunState == "completed" || view.TaskState == "checking") {
+		t.Fatalf("reconcile converted budget failure to success: run=%s task=%s", view.RunState, view.TaskState)
+	}
+}

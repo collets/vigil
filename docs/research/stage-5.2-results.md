@@ -4,6 +4,8 @@ Date: 2026-09-21. Initial implementation commits: `69de374`, `697b366`, `0e83d10
 
 ## Verdict
 
+Independent re-review of `0d02a9f`/`b23ee5e`: **changes requested**. R1–R5, R7 and R9 are closed; R6 remained P1 because outcome persistence/reconciliation could bypass budget exhaustion, and R8 remained P2 because await deadlines counted proven human-wait time. Commit `d34f894` submits corrections and non-vacuous regressions for both; independent re-review is still required. See [independent review and response](stage-5.2-astra-review.md#r6r8-correction-submitted-for-re-review). Stage 5.2 remains unaccepted and production dispatch disabled.
+
 Checkpoints A–D and the corrections for all six P1 and three P2 findings in the 2026-09-21 Astra review are implemented and verified offline. Stage 5.2 is still **not accepted** until Astra independently re-reviews those corrections. A marked disposable repository completed one persisted synthetic execution through explicit repository enrollment, branch preparation, resource ownership, runtime/native/submission journals, strict result validation and the `checking` transition. It did not create acceptance, run quality checks, publish, push or contact a model provider.
 
 This is not live production qualification. Production dispatch still fails closed unless an exact Stage 5.1 qualification record contains `boundary_execution`, live `provider_idle`, `production_launch_recovery`, every Stage 5.2 recovery class and retained evidence for the exact runtime/image/profile/topology. No currently recorded combination meets that gate. The safe contained Codex ChatGPT route and independent provider-idle proof remain missing; the joint crash matrix has passed only with the synthetic fixture driver.
@@ -44,6 +46,8 @@ This is not live production qualification. Production dispatch still fails close
 - Synthetic writes validate scope/protected/excluded paths before submission and use descriptor-relative no-follow traversal plus atomic replacement. Target symlinks are rejected; replacing a hardlinked target does not truncate the outside inode.
 - Remaining active allowance supplies deadlines to create/start/attach/native-create/submit/lease/await calls and is checked before result persistence. Proven human/resource waits are excluded consistently and wait transitions are atomic.
 - Containment intent reaches durable `executing` before `Stop`. An explicitly reported bounded emergency stop remains the safety policy if storage is unavailable.
+- Final success is budget-gated inside the outcome transaction from the persisted ledger/run limits and live segment. Reconciliation retains over-budget terminal evidence without producing a completed result or `checking` transition.
+- Await keeps wall timeout separate from active allowance. Proven wait transitions suspend/recompute the active timer while wall timeout and lease renewal continue.
 
 ## Disposable CLI execution
 
@@ -88,6 +92,8 @@ No inference, provider, Docker qualification flag or credential was used. The te
 
 The remediation commit `b23ee5e` was independently bundled with SHA-256 `80c37f4fb71b5f4bce4b20241b34d7fd69ed0e6bed6451ea16eec128148a6` and tested in a new isolated checkout on the same macOS 26.6.2 arm64 host with Go 1.27.1. Native `make check` passed (`internal/supervisor` 25.089 seconds), `make check-race` passed (`internal/supervisor` 38.247 seconds), and `make build` passed. Explicit native reruns of filesystem symlink/hardlink confinement, reservation-close serialization and active-submit-budget enforcement all passed. The temporary checkout and bundle were removed; the normal Mac checkout was not accessed or changed.
 
+The follow-up `d34f894` bundle (SHA-256 `0d2308ad5c86111809a3346ad2143743ec1b8e79f5266dc13c1715ff77e6d427`) passed focused R6/R8 tests, full check, race check and build in another isolated checkout on the same Mac. The focused run proved the slow submission reached its driver, over-budget reconciliation stayed non-successful, late outcome commit failed, and active await timing suspended/resumed across proven waits. The temporary checkout and bundle were removed.
+
 ## Crash and recovery matrix
 
 The table reports the permanent synthetic tests in `internal/supervisor`. Every crash case reopens the project database and reloads the prepared run. When the terminal result is known, reconcile persists it; otherwise a later explicit start continues only effects proven not to have happened.
@@ -116,7 +122,10 @@ The table reports the permanent synthetic tests in `internal/supervisor`. Every 
 | Output flood (>1000 events) | Batch rejected; writer contained; task remains unaccepted | No unbounded persistence |
 | Open active segment after crash | Conservative elapsed bound moves to charged/unknown ledger | Remaining allowance never increases |
 | Submission exceeds remaining active allowance | Deadline/checkpoint prevents completion and invokes containment | No completed result/checking transition |
+| Reconcile delivered terminal result after budget exhaustion | Final transaction reads exhausted persisted ledger and refuses progression | Terminal evidence retained; no result/checking transition |
+| Delay after artifact publication and before outcome commit | Live segment is checkpointed and atomically rechecked at commit | Late success cannot commit |
 | Proven human-wait checkpoint beyond active allowance | Category remains excluded; returning to active resumes cumulative accounting | No false budget exhaustion |
+| Proven wait begins during await | Active timer suspends and is recomputed on resume; wall/lease remain live | Wait time is not charged or treated as active timeout |
 | Owner closes or resources quarantine | Exact live owner/claim/ticket/slot validation rejects dispatch; close cannot race an active hold | Driver submission is not called |
 | Containment after phase failure | `containment_stop` is durable and `executing` inside `Stop` | No unjournaled normal stop |
 | Symlink/hardlink fixture target | Protected/symlink target is rejected; hardlink pathname is atomically replaced | Outside inode bytes remain unchanged |
@@ -139,6 +148,7 @@ Permanent tests also cover nested enrollment, branch collision/base drift, dirty
 - Synthetic crash matrix: eleven reopen points plus uncertain create/submission, persistence failure, output flood and budget cases; pass.
 - Disposable CLI execution described above; pass.
 - Native macOS 26.6.2 arm64 at `b23ee5e`: `make check`, `make check-race`, `make build` and explicit confinement/reservation/budget regression reruns; pass. The earlier disposable CLI execution at `88cd2be` also passed.
+- Native macOS 26.6.2 arm64 at `d34f894`: focused R6/R8 tests, `make check`, `make check-race` and `make build`; pass.
 
 No Docker/model/live-provider flag was enabled. No credential value was read or printed. No Codex subscription turn, llama.cpp turn, push, hosting request, purchase or publication occurred.
 

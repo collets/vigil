@@ -1,5 +1,7 @@
 # Stage 5.2 independent security/correctness review
 
+Latest independent re-review, 2026-09-21, of `0d02a9f` and `b23ee5e`: **R1–R5, R7 and R9 resolved; R6 (P1) and R8 (P2) remain open. Changes requested; Stage 5.2 remains unaccepted and production dispatch disabled.** See the independent re-review below. Original findings are retained as historical evidence.
+
 Date: 2026-09-21. Baseline: `b167e10`. Reviewed implementation and evidence through `02f11bd`, including `cdb8f75` and `88cd2be`.
 
 **Verdict: changes requested. Stage 5.2 is not accepted.** The following findings concern the implementation, independently of the explicitly deferred live qualification work. Production dispatch must remain disabled.
@@ -133,3 +135,62 @@ The original verdict above is unchanged until independent re-review. The impleme
 | R9 | Fingerprint observation identity includes repository revision, allowing unchanged re-enrollment. |
 
 Permanent regression tests cover failed recovery inspection, delivered-prompt restart, quarantined and concurrently closing owner authority, branch-revision substitution, unchanged re-enrollment, symlink/hardlink escape, slow submission, containment ordering, human-wait accounting and qualification mismatch. Linux focused/full/race/build/cross-build checks passed. The exact `b23ee5e` bundle also passed native macOS 26.6.2 arm64 full/race/build checks and explicit confinement/reservation/budget reruns. No live qualification or production dispatch was performed; the live gates in this report remain open.
+
+## Independent re-review of 0d02a9f and b23ee5e
+
+Reviewed at documentation HEAD `528480e`; implementation is the submitted `b23ee5e`. Verdict: **changes requested**.
+
+| Finding | Independent disposition |
+| --- | --- |
+| R1 | Resolved: executing state precedes driver effects; failed inspection cannot authorize replay; durable delivered submission is checked before inspection. Permanent regression tests pass. |
+| R2 | Resolved: live owner capability, persisted reservation equality and coordinator root/claim/fence/ticket/slot checks precede dispatch. Exclusive owner locking prevents concurrent close/release during the authorized operation. |
+| R3 | Resolved: unfinished branch operations load the journaled repository revision. The branch-substitution regression passes. |
+| R4 | Resolved at the contract/source level: profile, role, endpoint/capacity, checkout roots/layout/mount digest and independently derived driver inputs/routes are checked, then core ExecutionEligibility is called. This does not qualify an actual production driver or live route. |
+| R5 | Resolved for the reported escapes: protected/scope/exclusion validation precedes descriptor-relative traversal; no-follow parent opens and atomic inode replacement preserve outside symlink/hardlink targets. Native macOS results are submitted evidence, not independently repeated here. |
+| R6 | Partially fixed, still P1: synchronous submission overrun is detected, but successful result persistence/reconciliation can bypass budget exhaustion. See below. |
+| R7 | Resolved: normal containment records executing intent before Stop, with an explicit emergency-stop exception for storage failure. |
+| R8 | Partially fixed, still P2: segment accounting and transitions exclude waits correctly, but the await deadline still counts excluded time. See below. |
+| R9 | Resolved: fingerprint observation IDs now include repository identity and enrollment revision, without rewriting historical migration files. |
+
+### R6 still open — P1: outcome persistence can convert budget exhaustion into success
+
+Exact locations: `internal/supervisor/reconcile.go:147–149` and `internal/supervisor/runner.go:910–923`. The normal path's last checkpoint is at `runner.go:560`, before fingerprinting/artifact publication/outcome persistence.
+
+The added checks correctly reject a native submission that returns after its active allowance, but this does not survive reconciliation. Reconcile passes terminal delivered observations directly to persistResult, whose successful outcome transaction checks neither the remaining allowance nor an existing budget-exhaustion outcome. It can change an interrupted, over-budget run into completed/checking.
+
+Independent disposable reproductions, both using the actual persisted 30,000 ms active and 60,000 ms wall limits:
+
+1. `TestRereviewReconcileAfterBudgetExhaustion`: a synthetic driver returns delivered/terminal after 30,100 ms. Run correctly fails and contains the writer. Reconcile then succeeds with `run=completed task=checking`.
+2. `TestRereviewBudgetAtOutcomeCommit`: delay at the existing `before_outcome_commit` hook by 30,100 ms, simulating latency after the last active checkpoint. The successful outcome still commits. This confirms that the final transaction does not enforce the allowance after intervening persistence work.
+
+Required correction: successful completion must consult authoritative budget/outcome state at the final outcome boundary on both normal and recovery paths. Preserve terminal evidence from an over-budget run without converting it into successful progression. A late observation must not erase an exhaustion outcome; if timely completion can be proven independently, encode that proof and policy explicitly. Reconciliation must work with closed segments and conservative crash-gap accounting rather than assuming an open segment.
+
+The submitted `TestActiveBudgetBoundsSubmissionAndCompletion` at `internal/supervisor/review_regression_test.go:179–188` does not currently exercise submission: it changes only the in-memory active limit to 50 ms. The new immutable-snapshot check rejects it before Create/Submit. `TestRereviewSubmissionRegressionReachesDriver` confirmed zero Submit calls and the error `prepared execution identity differs from its immutable run snapshot`. Configure the small allowance through normal preparation and assert the driver was reached, along with the expected budget failure and reconciliation behavior.
+
+### R8 still open — P2: the fixed await deadline counts proven wait time
+
+Exact locations: `internal/supervisor/budget.go:121–130` and `internal/supervisor/runner.go:748–755,775–780`.
+
+Although checkpointSegment now excludes human/resource waits, activeCallContext always converts the remaining active allowance to a wall-clock timeout. Await retains that single deadline until it returns. Beginning a proven wait cannot suspend it; even entering await while already in a proven wait creates an active timeout. When it expires, checkpointSegment correctly says the excluded interval did not exhaust the allowance, but await still returns context deadline exceeded and the caller contains the execution.
+
+`TestRereviewHumanWaitAwaitDeadline` starts a proven human-wait segment and calls the await helper with a 100 ms active allowance and a 300 ms parent timeout. Await aborts after approximately 103 ms while the parent context is still live. This test targets the timer/accounting integration; it does not modify a persisted run or claim a production execution.
+
+Required correction: separate the absolute wall timeout from active-time enforcement. Suspend/recompute the active deadline across proven waiting transitions, including waits beginning during an existing Await call; continue enforcing the wall limit and containment lease. Add an await-level wait/resume regression, not only a direct checkpoint test.
+
+### Re-review validation and retained evidence
+
+- Independent Linux `make check`, `make check-race`, `make build` and all four `make cross-build` targets passed before adding the temporary probes.
+- Four independent probes exposed the two remaining findings and the vacuous budget regression. Sources are retained as inert text in [rereview_test.go.txt](stage-5.2-review/rereview_test.go.txt). Copy into `internal/supervisor/rereview_test.go` in a disposable source checkout and run `go test ./internal/supervisor -run TestRereview -count=1 -v` with the repository Go environment. Two tests intentionally take about 30 seconds each. Their assertions are expected to fail on `b23ee5e`.
+- Temporary executable test files were removed. Implementation source is unchanged. No commits, pushes, model/provider calls, production activation or live qualification were performed.
+- Native macOS was not independently rerun in this review. Remaining live gates are unchanged.
+
+## R6/R8 correction submitted for re-review
+
+Commit `d34f894` addresses the two findings that remained open. This is an implementation response, not an independent acceptance; the latest independent verdict at the top of this report remains authoritative until Astra re-reviews it.
+
+- **R6:** the outcome path checkpoints again after the `before_outcome_commit` boundary, then the same database transaction that would insert the result and advance the task recomputes authoritative consumption from the persisted task ledger, persisted run limit and any live active segment. Closed segments and conservative crash-gap `unknown_ms` are included. Reconciliation can retain delivered/terminal evidence, but an exhausted ledger cannot create an execution result or change the task to `checking`. Reconciliation also no longer regresses an interrupted/contained run merely while recording delivered submission evidence.
+- **R8:** await now inherits only the absolute parent/wall context. A separate active-budget timer is scheduled from the current persisted segment, disabled while its category is proven `human_wait`/`resource_wait`, and recomputed immediately on wait transitions. Ending the wait restores the timer with cumulative consumption intact; the wall deadline and lease renewal continue throughout the wait.
+- The formerly vacuous submission regression now creates its small active allowance through normal configuration/task preparation, asserts exactly one `Submit` call, asserts the initial budget failure, runs reconciliation, and proves no `completed` run or `checking` task. A separate late-outcome test proves the fault hook was reached before sleeping past the persisted allowance.
+- Await regressions cover entering await while already waiting, beginning a wait during an existing await, and restoring enforcement after the wait ends.
+
+Validation of exact commit `d34f894`: Linux focused tests, full `make check`, `make check-race`, `make build`, all four `make cross-build` targets, five race-detector repetitions of the wait-transition test and three repetitions of both outcome tests passed. A Git bundle with SHA-256 `0d2308ad5c86111809a3346ad2143743ec1b8e79f5266dc13c1715ff77e6d427` was tested in an isolated macOS 26.6.2 arm64 checkout with Go 1.27.1: focused R6/R8 tests, full check (`internal/supervisor` 30.705 seconds), race check (`internal/supervisor` 45.395 seconds) and build passed. The temporary Mac checkout and bundle were removed; the normal Mac checkout was not accessed. No live qualification or production dispatch was performed.
