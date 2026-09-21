@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -34,6 +35,23 @@ var protectedNames = []string{".git", ".gitmodules", "AGENTS.md", "AGENTS.overri
 func protectedName(name string) bool {
 	for _, p := range protectedNames {
 		if strings.EqualFold(name, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsProtectedCheckoutPath reports whether any component names application,
+// repository or instruction state that an implementation writer must not
+// target directly. Matching is case-insensitive to preserve the admission
+// contract on both case-sensitive and case-insensitive filesystems.
+func IsProtectedCheckoutPath(path string) bool {
+	clean := filepath.Clean(filepath.FromSlash(path))
+	if clean == "." || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return true
+	}
+	for _, component := range strings.Split(clean, string(filepath.Separator)) {
+		if protectedName(component) {
 			return true
 		}
 	}
@@ -312,4 +330,41 @@ func (p Checkout) MountArgsForRole(ctx context.Context, role string) ([]string, 
 		args = append(args, "--mount", "type=bind,src="+filepath.Join(p.Root, path)+",dst=/work/"+filepath.ToSlash(path)+",readonly,bind-recursive=readonly,bind-propagation=rprivate")
 	}
 	return args, nil
+}
+
+// QualificationLayout and QualificationRoots expose only the immutable
+// security-relevant shape needed to bind a prepared execution to qualification.
+func (p Checkout) QualificationLayout() string {
+	if len(p.repositories) == 0 {
+		return "ordinary_single_repository"
+	}
+	return "ordinary_enrolled_nested_repositories"
+}
+
+func (p Checkout) QualificationRoots() []string {
+	roots := []string{p.Root}
+	for _, repository := range p.repositories {
+		roots = append(roots, repository.Root)
+	}
+	sort.Strings(roots)
+	return roots
+}
+
+// QualificationMountPlanDigest binds exact canonical sources, destinations and
+// access modes produced by this validated checkout plan.
+func (p Checkout) QualificationMountPlanDigest(ctx context.Context, role string) (string, error) {
+	args, err := p.MountArgsForRole(ctx, role)
+	if err != nil {
+		return "", err
+	}
+	raw, err := json.Marshal(struct {
+		Layout string   `json:"layout"`
+		Roots  []string `json:"roots"`
+		Args   []string `json:"mount_args"`
+	}{p.QualificationLayout(), p.QualificationRoots(), args})
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.Sum256(raw)
+	return hex.EncodeToString(hash[:]), nil
 }

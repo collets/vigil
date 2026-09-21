@@ -51,6 +51,14 @@ type Driver interface {
 	Stop(context.Context, PreparedRun) (Observation, error)
 }
 
+// ProductionBindingProvider is required for every non-synthetic driver. It
+// reports the security-relevant inputs and inference routes the driver will
+// actually use, rather than accepting the caller's qualification request as a
+// description of its own configuration.
+type ProductionBindingProvider interface {
+	ProductionBinding(context.Context, PreparedRun) (boundary.QualificationInputs, []string, error)
+}
+
 type Result struct {
 	SchemaVersion int      `json:"schema_version"`
 	Status        string   `json:"status"`

@@ -49,6 +49,74 @@ type Ticket struct {
 	State      string `json:"state"`
 }
 
+// HoldReservation keeps the live owner capability exclusively locked while fn
+// may start external effects. The exact claims, fencing generations, queue
+// ticket and endpoint slot are re-read from the coordinator database before fn
+// runs. Close, release and replacement operations therefore cannot race a
+// successful authorization.
+func (o *Owner) HoldReservation(ctx context.Context, project, run, endpoint string, roots []workspace.Identity, claims []Claim, ticket Ticket, fn func() error) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if err := o.live(); err != nil {
+		return err
+	}
+	if fn == nil || !store.SafeID(project) || !store.SafeID(run) || !store.SafeID(endpoint) || len(roots) == 0 || len(roots) != len(claims) || ticket.Sequence < 1 || ticket.Generation < 1 || ticket.Endpoint != endpoint || ticket.State != "reserved" {
+		return errors.New("invalid live reservation authority")
+	}
+	tx, err := o.Coordinator.DB.SQL.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	wanted := map[string]workspace.Identity{}
+	for _, root := range roots {
+		if err := root.Validate(); err != nil {
+			return err
+		}
+		wanted[root.Key+"\x00"+root.CommonGit] = root
+	}
+	seen := map[string]bool{}
+	for _, claim := range claims {
+		var priorProject, owner, raw, state string
+		var generation int64
+		if err := tx.QueryRowContext(ctx, "SELECT project_id,instance_id,identity_json,generation,state FROM workspace_claims WHERE id=?", claim.ID).Scan(&priorProject, &owner, &raw, &generation, &state); err != nil {
+			return err
+		}
+		var identity workspace.Identity
+		if err := json.Unmarshal([]byte(raw), &identity); err != nil {
+			return err
+		}
+		key := identity.Key + "\x00" + identity.CommonGit
+		root, exists := wanted[key]
+		if !exists || seen[key] || priorProject != project || owner != o.ID || generation != claim.Generation || state != "active" || claim.Identity.Key != identity.Key || claim.Identity.CommonGit != identity.CommonGit || root.Root != identity.Root || root.CommonGitPath != identity.CommonGitPath {
+			return errors.New("workspace reservation is stale, foreign or quarantined")
+		}
+		seen[key] = true
+	}
+	if len(seen) != len(wanted) {
+		return errors.New("workspace reservation does not cover every participating root")
+	}
+	var ticketEndpoint, ticketOwner, ticketProject, ticketRun, ticketState string
+	if err := tx.QueryRowContext(ctx, "SELECT endpoint_id,instance_id,project_id,run_id,state FROM queue_tickets WHERE sequence=?", ticket.Sequence).Scan(&ticketEndpoint, &ticketOwner, &ticketProject, &ticketRun, &ticketState); err != nil {
+		return err
+	}
+	if ticketEndpoint != endpoint || ticketOwner != o.ID || ticketProject != project || ticketRun != run || ticketState != "reserved" {
+		return errors.New("endpoint ticket is stale, foreign or quarantined")
+	}
+	var slotState string
+	var generation int64
+	if err := tx.QueryRowContext(ctx, "SELECT generation,state FROM endpoint_slots WHERE ticket=? AND endpoint_id=?", ticket.Sequence, endpoint).Scan(&generation, &slotState); err != nil {
+		return err
+	}
+	if generation != ticket.Generation || slotState != "reserved" {
+		return errors.New("endpoint slot is stale or quarantined")
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return fn()
+}
+
 type GlobalGrant struct {
 	ID              string `json:"id"`
 	Category        string `json:"category"`

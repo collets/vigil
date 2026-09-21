@@ -38,6 +38,8 @@ type PreparedRun struct {
 	PlanID              string                       `json:"plan_id"`
 	TaskID              string                       `json:"task_id"`
 	ProfileID           string                       `json:"profile_id"`
+	ProfileRevision     int                          `json:"profile_revision"`
+	ProfileDigest       string                       `json:"profile_digest"`
 	EndpointID          string                       `json:"endpoint_id"`
 	ExpectedRevision    int                          `json:"expected_project_revision"`
 	ActiveLimitMS       int64                        `json:"active_limit_ms"`
@@ -49,20 +51,21 @@ type PreparedRun struct {
 }
 
 type preparationObservation struct {
-	request      PrepareRequest
-	planID       string
-	planRevision int
-	taskRevision int
-	configID     string
-	profileID    string
-	profileRev   int
-	configRaw    string
-	profileRaw   string
-	taskRaw      string
-	task         policy.Task
-	config       policy.Config
-	profile      policy.Profile
-	repositories []core.RepositoryRecord
+	request       PrepareRequest
+	planID        string
+	planRevision  int
+	taskRevision  int
+	configID      string
+	profileID     string
+	profileRev    int
+	profileDigest string
+	configRaw     string
+	profileRaw    string
+	taskRaw       string
+	task          policy.Task
+	config        policy.Config
+	profile       policy.Profile
+	repositories  []core.RepositoryRecord
 }
 
 func observePreparation(ctx context.Context, engine *core.Engine, request PrepareRequest) (preparationObservation, error) {
@@ -139,7 +142,7 @@ func observePreparation(ctx context.Context, engine *core.Engine, request Prepar
 		return observed, err
 	}
 	observed.profileID = observed.task.Implementation
-	if err := engine.DB.SQL.QueryRowContext(ctx, `SELECT p.revision,s.resolved_json FROM profiles p JOIN config_snapshots s ON s.id=p.config_id WHERE p.id=? ORDER BY p.revision DESC LIMIT 1`, observed.profileID).Scan(&observed.profileRev, &observed.profileRaw); err != nil {
+	if err := engine.DB.SQL.QueryRowContext(ctx, `SELECT p.revision,s.digest,s.resolved_json FROM profiles p JOIN config_snapshots s ON s.id=p.config_id WHERE p.id=? ORDER BY p.revision DESC LIMIT 1`, observed.profileID).Scan(&observed.profileRev, &observed.profileDigest, &observed.profileRaw); err != nil {
 		return observed, err
 	}
 	if err := json.Unmarshal([]byte(observed.profileRaw), &observed.profile); err != nil {
@@ -147,6 +150,22 @@ func observePreparation(ctx context.Context, engine *core.Engine, request Prepar
 	}
 	if issues := policy.Eligibility(observed.config, observed.profile, "implementation"); len(issues) != 0 {
 		return observed, fmt.Errorf("implementation profile ineligible: %v", issues)
+	}
+	if request.RuntimeKind != "synthetic" {
+		qualification := request.Eligibility
+		if qualification.Role != "implementation" || qualification.Inputs.ProfileID != observed.profileID || qualification.Inputs.ProfileRevision != observed.profileRev || qualification.Inputs.ProfileDigest != observed.profileDigest {
+			return observed, errors.New("production qualification is not bound to the selected immutable implementation profile")
+		}
+		if qualification.Inputs.Harness != observed.profile.Harness || qualification.Inputs.HarnessVersion != observed.profile.Version || qualification.Inputs.Model != observed.profile.Model || qualification.Inputs.Provider != observed.profile.Provider || qualification.Inputs.EndpointAuthority != observed.profile.EndpointID {
+			return observed, errors.New("production qualification harness, model, provider or endpoint differs from the selected profile")
+		}
+		seenRoutes := map[string]bool{}
+		for _, route := range request.ExpectedRoutes {
+			if route == "" || len(route) > 256 || seenRoutes[route] {
+				return observed, errors.New("production inference routes must be unique bounded identities")
+			}
+			seenRoutes[route] = true
+		}
 	}
 	rows, err = engine.DB.SQL.QueryContext(ctx, "SELECT repository_id FROM plan_repositories WHERE plan_id=? ORDER BY repository_id", observed.planID)
 	if err != nil {
@@ -251,7 +270,7 @@ func Prepare(ctx context.Context, engine *core.Engine, request PrepareRequest) (
 		if request.RuntimeKind == "docker" {
 			containerName = "vigil-" + runID + "-g1"
 		}
-		result = PreparedRun{RunID: runID, GenerationID: generationID, TransportGeneration: transportGeneration, RuntimeResourceID: runtimeResourceID, ContainerName: containerName, RuntimeKind: request.RuntimeKind, PlanID: observed.planID, TaskID: request.TaskID, ProfileID: observed.profileID, EndpointID: observed.profile.EndpointID, ExpectedRevision: revision + 1, ActiveLimitMS: activeLimit, WallLimitMS: request.WallLimitMS, Task: observed.task, Repositories: observed.repositories, Eligibility: request.Eligibility, ExpectedRoutes: request.ExpectedRoutes}
+		result = PreparedRun{RunID: runID, GenerationID: generationID, TransportGeneration: transportGeneration, RuntimeResourceID: runtimeResourceID, ContainerName: containerName, RuntimeKind: request.RuntimeKind, PlanID: observed.planID, TaskID: request.TaskID, ProfileID: observed.profileID, ProfileRevision: observed.profileRev, ProfileDigest: observed.profileDigest, EndpointID: observed.profile.EndpointID, ExpectedRevision: revision + 1, ActiveLimitMS: activeLimit, WallLimitMS: request.WallLimitMS, Task: observed.task, Repositories: observed.repositories, Eligibility: request.Eligibility, ExpectedRoutes: request.ExpectedRoutes}
 		budgetSnapshot, _ := json.Marshal(map[string]any{"active_limit_ms": activeLimit, "wall_limit_ms": request.WallLimitMS, "task_limit_ms": observed.config.TaskLimitMS, "plan_services_limit_ms": 1800000})
 		repositoriesJSON, _ := json.Marshal(observed.repositories)
 		snapshotValue := map[string]json.RawMessage{"task": json.RawMessage(observed.taskRaw), "config": json.RawMessage(observed.configRaw), "profile": json.RawMessage(observed.profileRaw), "budget": budgetSnapshot, "repositories": repositoriesJSON}
@@ -315,11 +334,11 @@ func LoadPrepared(ctx context.Context, engine *core.Engine, runID string) (Prepa
 	}
 	var taskJSON, repositoriesJSON, qualificationJSON, routesJSON string
 	var expectedRevision int
-	err := engine.DB.SQL.QueryRowContext(ctx, `SELECT r.id,g.id,g.transport_generation,g.runtime_resource_id,coalesce(g.container_name,''),g.runtime_kind,r.plan_id,r.task_id,r.profile_id,coalesce(p.endpoint_id,''),s.expected_project_revision,s.task_snapshot_json,s.repository_snapshot_json,g.qualification_request_json,g.expected_routes_json,r.active_limit_ms,r.wall_limit_ms
+	err := engine.DB.SQL.QueryRowContext(ctx, `SELECT r.id,g.id,g.transport_generation,g.runtime_resource_id,coalesce(g.container_name,''),g.runtime_kind,r.plan_id,r.task_id,r.profile_id,r.profile_revision,cs.digest,coalesce(p.endpoint_id,''),s.expected_project_revision,s.task_snapshot_json,s.repository_snapshot_json,g.qualification_request_json,g.expected_routes_json,r.active_limit_ms,r.wall_limit_ms
 		FROM runs r JOIN run_generations g ON g.run_id=r.id JOIN run_snapshots s ON s.run_id=r.id
 		JOIN profiles pr ON pr.id=r.profile_id AND pr.revision=r.profile_revision JOIN config_snapshots cs ON cs.id=pr.config_id
 		JOIN (SELECT id,json_extract(resolved_json,'$.endpoint_id') AS endpoint_id FROM config_snapshots) p ON p.id=cs.id
-		WHERE r.id=? AND g.ordinal=1`, runID).Scan(&result.RunID, &result.GenerationID, &result.TransportGeneration, &result.RuntimeResourceID, &result.ContainerName, &result.RuntimeKind, &result.PlanID, &result.TaskID, &result.ProfileID, &result.EndpointID, &expectedRevision, &taskJSON, &repositoriesJSON, &qualificationJSON, &routesJSON, &result.ActiveLimitMS, &result.WallLimitMS)
+		WHERE r.id=? AND g.ordinal=1`, runID).Scan(&result.RunID, &result.GenerationID, &result.TransportGeneration, &result.RuntimeResourceID, &result.ContainerName, &result.RuntimeKind, &result.PlanID, &result.TaskID, &result.ProfileID, &result.ProfileRevision, &result.ProfileDigest, &result.EndpointID, &expectedRevision, &taskJSON, &repositoriesJSON, &qualificationJSON, &routesJSON, &result.ActiveLimitMS, &result.WallLimitMS)
 	if err != nil {
 		return result, err
 	}

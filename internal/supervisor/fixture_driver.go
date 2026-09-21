@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/sys/unix"
+	"vigil/internal/boundary"
 	"vigil/internal/store"
 	"vigil/internal/workspace"
 )
@@ -43,7 +45,7 @@ func (d *FixtureDriver) count(name string) {
 }
 func (d *FixtureDriver) validate(ctx context.Context, prepared PreparedRun) (string, error) {
 	clean := filepath.Clean(d.RelativePath)
-	if prepared.RuntimeKind != "synthetic" || d.RepositoryID == "" || d.RelativePath == "" || len(d.Content) > 65536 || filepath.IsAbs(d.RelativePath) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+	if prepared.RuntimeKind != "synthetic" || d.RepositoryID == "" || d.RelativePath == "" || d.RelativePath != filepath.ToSlash(clean) || len(d.Content) > 65536 || filepath.IsAbs(d.RelativePath) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return "", errors.New("invalid synthetic fixture driver")
 	}
 	identity, err := workspace.Inspect(ctx, d.Root)
@@ -58,6 +60,15 @@ func (d *FixtureDriver) validate(ctx context.Context, prepared PreparedRun) (str
 	known := false
 	for _, repository := range prepared.Repositories {
 		if repository.ID == d.RepositoryID && repository.Root == identity.Root && repository.Identity.Key == identity.Key && repository.Identity.CommonGit == identity.CommonGit {
+			relative := filepath.ToSlash(clean)
+			if !pathAllowed(prepared.Task.Scope, relative) || boundary.IsProtectedCheckoutPath(relative) {
+				return "", errors.New("synthetic fixture path is outside task scope or protected")
+			}
+			for _, exclusion := range repository.Baseline.Exclusions {
+				if relative == exclusion || strings.HasPrefix(relative, exclusion+"/") {
+					return "", errors.New("synthetic fixture path is excluded from the enrolled repository")
+				}
+			}
 			known = true
 		}
 	}
@@ -65,6 +76,80 @@ func (d *FixtureDriver) validate(ctx context.Context, prepared PreparedRun) (str
 		return "", errors.New("fixture driver targets an unenrolled repository")
 	}
 	return identity.Root, nil
+}
+
+// confinedReplace walks existing parents with openat/O_NOFOLLOW and atomically
+// replaces the target with a new single-link inode. It never truncates an
+// existing hard link and never follows a target symlink.
+func confinedReplace(root, relative string, content []byte) error {
+	clean := filepath.Clean(relative)
+	parts := strings.Split(clean, string(filepath.Separator))
+	if len(parts) == 0 || parts[len(parts)-1] == "" {
+		return errors.New("invalid confined fixture path")
+	}
+	rootFD, err := unix.Open(root, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(rootFD)
+	parentFD := rootFD
+	for _, component := range parts[:len(parts)-1] {
+		next, openErr := unix.Openat(parentFD, component, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		if openErr != nil {
+			if parentFD != rootFD {
+				unix.Close(parentFD)
+			}
+			return errors.New("synthetic fixture parent must be an existing confined directory")
+		}
+		if parentFD != rootFD {
+			unix.Close(parentFD)
+		}
+		parentFD = next
+	}
+	if parentFD != rootFD {
+		defer unix.Close(parentFD)
+	}
+	base := parts[len(parts)-1]
+	var existing unix.Stat_t
+	if err := unix.Fstatat(parentFD, base, &existing, unix.AT_SYMLINK_NOFOLLOW); err == nil {
+		if existing.Mode&unix.S_IFMT != unix.S_IFREG {
+			return errors.New("synthetic fixture target must be a regular file")
+		}
+	} else if !errors.Is(err, unix.ENOENT) {
+		return err
+	}
+	temporary := ".vigil-fixture-write-" + store.ID()
+	fd, err := unix.Openat(parentFD, temporary, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0600)
+	if err != nil {
+		return err
+	}
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = unix.Unlinkat(parentFD, temporary, 0)
+		}
+	}()
+	file := os.NewFile(uintptr(fd), temporary)
+	if file == nil {
+		unix.Close(fd)
+		return errors.New("failed to open confined fixture file")
+	}
+	if _, err := file.Write(content); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if err := unix.Renameat(parentFD, temporary, parentFD, base); err != nil {
+		return err
+	}
+	cleanup = false
+	return unix.Fsync(parentFD)
 }
 
 func (d *FixtureDriver) Inspect(ctx context.Context, prepared PreparedRun) (Observation, error) {
@@ -147,10 +232,7 @@ func (d *FixtureDriver) Submit(ctx context.Context, prepared PreparedRun, _ stri
 		return "uncertain", d.observation.NativeTurnID, errors.New("fixture injected ambiguous submission response")
 	}
 	d.observation.SubmissionState = "delivered"
-	if err := os.MkdirAll(filepath.Dir(filepath.Join(root, d.RelativePath)), 0700); err != nil {
-		return "delivered", d.observation.NativeTurnID, err
-	}
-	if err := os.WriteFile(filepath.Join(root, d.RelativePath), d.Content, 0600); err != nil {
+	if err := confinedReplace(root, d.RelativePath, d.Content); err != nil {
 		return "delivered", d.observation.NativeTurnID, err
 	}
 	result := Result{SchemaVersion: 1, Status: "completed", Summary: "deterministic fixture edit completed", ChangedPaths: []string{d.RepositoryID + ":" + filepath.ToSlash(d.RelativePath)}}

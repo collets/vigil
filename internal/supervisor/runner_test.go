@@ -126,7 +126,7 @@ func TestOnePersistedSyntheticExecutionStopsAtChecking(t *testing.T) {
 	if err != nil || loaded.GenerationID != fixture.prepared.GenerationID || loaded.EndpointID != fixture.prepared.EndpointID {
 		t.Fatal(loaded, err)
 	}
-	runner := Runner{Engine: fixture.engine, Driver: fixture.driver}
+	runner := Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: fixture.driver}
 	result, err := runner.Run(context.Background(), fixture.prepared, fixture.reservation, "Write the fixture result")
 	if err != nil || result.Status != "completed" || len(result.ChangedPaths) != 1 {
 		t.Fatal(result, err)
@@ -148,13 +148,25 @@ func TestOnePersistedSyntheticExecutionStopsAtChecking(t *testing.T) {
 	}
 }
 
+func TestQuarantinedReservationCannotDispatch(t *testing.T) {
+	fixture := setupFixture(t)
+	if err := fixture.owner.Close(); err != nil {
+		t.Fatal(err)
+	}
+	runner := Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: fixture.driver}
+	result, err := runner.Run(context.Background(), fixture.prepared, fixture.reservation, "write result")
+	if err == nil || fixture.driver.Calls["submit"] != 0 {
+		t.Fatal("quarantined owner authorized dispatch", result, fixture.driver.Calls, err)
+	}
+}
+
 func TestCrashMatrixReopensWithoutDuplicateSubmission(t *testing.T) {
 	points := []string{"after_runtime_create", "after_runtime_start", "after_runtime_attach", "after_native_create", "after_prompt_write", "before_prompt_ack", "after_prompt_ack", "after_terminal_observe", "after_artifact_publish", "before_outcome_commit", "after_outcome_commit"}
 	for _, point := range points {
 		t.Run(point, func(t *testing.T) {
 			fixture := setupFixture(t)
 			injected := errors.New("controller crash at " + point)
-			runner := Runner{Engine: fixture.engine, Driver: fixture.driver, Fault: func(at string) error {
+			runner := Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: fixture.driver, Fault: func(at string) error {
 				if at == point {
 					return injected
 				}
@@ -172,7 +184,7 @@ func TestCrashMatrixReopensWithoutDuplicateSubmission(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			reconciler := Runner{Engine: reopened, Driver: fixture.driver}
+			reconciler := Runner{Engine: reopened, Owner: fixture.owner, Driver: fixture.driver}
 			view, err := reconciler.Reconcile(context.Background(), prepared)
 			if err != nil {
 				t.Fatal(view, err)
@@ -205,7 +217,7 @@ func TestUncertainCreateAndSubmissionNeverDuplicateEffects(t *testing.T) {
 	t.Run("create", func(t *testing.T) {
 		fixture := setupFixture(t)
 		fixture.driver.CreateUncertain = true
-		runner := Runner{Engine: fixture.engine, Driver: fixture.driver}
+		runner := Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: fixture.driver}
 		if _, err := runner.Run(context.Background(), fixture.prepared, fixture.reservation, "fixture"); err == nil {
 			t.Fatal("uncertain create accepted")
 		}
@@ -218,7 +230,7 @@ func TestUncertainCreateAndSubmissionNeverDuplicateEffects(t *testing.T) {
 	t.Run("submission", func(t *testing.T) {
 		fixture := setupFixture(t)
 		fixture.driver.SubmitUncertain = true
-		runner := Runner{Engine: fixture.engine, Driver: fixture.driver}
+		runner := Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: fixture.driver}
 		if _, err := runner.Run(context.Background(), fixture.prepared, fixture.reservation, "fixture"); err == nil {
 			t.Fatal("uncertain submission accepted")
 		}
@@ -238,7 +250,7 @@ func TestUncertainCreateAndSubmissionNeverDuplicateEffects(t *testing.T) {
 func TestCrashAfterTerminalReconcilesResultWithoutSubmissionReplay(t *testing.T) {
 	fixture := setupFixture(t)
 	injected := errors.New("crash before result persistence")
-	runner := Runner{Engine: fixture.engine, Driver: fixture.driver, Fault: func(point string) error {
+	runner := Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: fixture.driver, Fault: func(point string) error {
 		if point == "before_result_persist" {
 			return injected
 		}
@@ -271,7 +283,7 @@ func TestPersistenceFailureTriggersBoundedContainment(t *testing.T) {
 	if _, err := fixture.engine.DB.SQL.Exec(`CREATE TRIGGER fixture_event_write_failure BEFORE INSERT ON normalized_run_events BEGIN SELECT RAISE(FAIL,'injected event persistence failure'); END`); err != nil {
 		t.Fatal(err)
 	}
-	runner := Runner{Engine: fixture.engine, Driver: fixture.driver}
+	runner := Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: fixture.driver}
 	if _, err := runner.Run(context.Background(), fixture.prepared, fixture.reservation, "fixture"); err == nil {
 		t.Fatal("persistence failure accepted")
 	}
@@ -288,7 +300,7 @@ func TestPersistenceFailureTriggersBoundedContainment(t *testing.T) {
 func TestOutputFloodStopsAndContains(t *testing.T) {
 	fixture := setupFixture(t)
 	fixture.driver.ExtraEvents = 1001
-	runner := Runner{Engine: fixture.engine, Driver: fixture.driver}
+	runner := Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: fixture.driver}
 	if _, err := runner.Run(context.Background(), fixture.prepared, fixture.reservation, "fixture"); err == nil {
 		t.Fatal("output flood accepted")
 	}

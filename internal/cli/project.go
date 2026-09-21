@@ -193,7 +193,7 @@ func projectCommand(stateDir *string) *cobra.Command {
 			return err
 		}
 		driver := &supervisor.FixtureDriver{RepositoryID: fixtureRepository, Root: repositoryRoot, RelativePath: fixturePath, Content: []byte(fixtureContent)}
-		runner := supervisor.Runner{Engine: e, Driver: driver, StartCommandID: startCommand}
+		runner := supervisor.Runner{Engine: e, Owner: owner, Driver: driver, StartCommandID: startCommand}
 		result, err := runner.Run(cmd.Context(), prepared, reservation, fixturePrompt)
 		if err != nil {
 			return err

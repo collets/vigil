@@ -14,6 +14,7 @@ import (
 
 	"vigil/internal/artifacts"
 	"vigil/internal/boundary"
+	"vigil/internal/coordinator"
 	"vigil/internal/core"
 	"vigil/internal/store"
 	"vigil/internal/workspace"
@@ -21,6 +22,7 @@ import (
 
 type Runner struct {
 	Engine             *core.Engine
+	Owner              *coordinator.Owner
 	Driver             Driver
 	Checkout           *boundary.Checkout
 	StartCommandID     string
@@ -123,7 +125,35 @@ func phaseObserved(kind string, observation Observation) bool {
 	return false
 }
 
-func (r *Runner) ensureDriverEffect(ctx context.Context, prepared PreparedRun, ordinal int, kind string, call func() error) error {
+func phaseProvenAbsent(kind string, observation Observation) bool {
+	switch kind {
+	case "runtime_create":
+		return !observation.Exists
+	case "runtime_start":
+		return observation.Exists && !observation.Started
+	case "runtime_attach":
+		return observation.Started && !observation.Attached
+	case "native_create":
+		return observation.Attached && observation.NativeSessionID == ""
+	}
+	return false
+}
+
+func (r *Runner) beginEffect(ctx context.Context, id string) error {
+	return r.Engine.DB.Write(ctx, func(tx *store.Tx) error {
+		var state string
+		if err := tx.QueryRowContext(ctx, "SELECT state FROM execution_effects WHERE id=?", id).Scan(&state); err != nil {
+			return err
+		}
+		if state != "prepared" && state != "cancelled" {
+			return fmt.Errorf("effect is not safe to start from state %s", state)
+		}
+		_, err := tx.ExecContext(ctx, "UPDATE execution_effects SET state='executing' WHERE id=?", id)
+		return err
+	})
+}
+
+func (r *Runner) ensureDriverEffect(ctx context.Context, prepared PreparedRun, ordinal int, kind string, call func(context.Context) error) error {
 	id, err := r.effect(ctx, prepared, ordinal, kind, map[string]any{"run_id": prepared.RunID, "generation_id": prepared.GenerationID, "kind": kind})
 	if err != nil {
 		return err
@@ -142,25 +172,73 @@ func (r *Runner) ensureDriverEffect(ctx context.Context, prepared PreparedRun, o
 	if state == "uncertain" {
 		return fmt.Errorf("%s remains uncertain; reconcile before any retry", kind)
 	}
+	if inspectErr != nil {
+		if state == "executing" {
+			_ = r.observeEffect(context.Background(), id, "uncertain", map[string]string{"inspection_error": inspectErr.Error()})
+		}
+		return fmt.Errorf("%s inspection unavailable; external effect cannot be replayed: %w", kind, inspectErr)
+	}
+	if !phaseProvenAbsent(kind, observation) {
+		if state == "executing" {
+			_ = r.observeEffect(context.Background(), id, "uncertain", observation)
+		}
+		return fmt.Errorf("%s non-occurrence is not proven; external effect cannot start", kind)
+	}
+	if state == "executing" {
+		if err := r.observeEffect(ctx, id, "cancelled", map[string]any{"source": "trusted_inspection", "observation": observation}); err != nil {
+			return err
+		}
+	}
 	if err := r.checkpointSegment(ctx, prepared); err != nil {
 		return err
 	}
 	if err := r.checkpoint("before_" + kind); err != nil {
 		return err
 	}
-	if err := call(); err != nil {
-		observed, observedErr := r.Driver.Inspect(ctx, prepared)
-		_ = r.observeEffect(context.Background(), id, "uncertain", map[string]any{"driver_error": err.Error(), "inspection_available": observedErr == nil, "observation": observed})
+	callCtx, cancel, err := r.activeCallContext(ctx, prepared)
+	if err != nil {
 		return err
+	}
+	if err := r.beginEffect(ctx, id); err != nil {
+		cancel()
+		return err
+	}
+	callErr := call(callCtx)
+	cancel()
+	if callErr != nil {
+		observed, observedErr := r.Driver.Inspect(ctx, prepared)
+		state := "uncertain"
+		if observedErr == nil && phaseObserved(kind, observed) {
+			state = "reconciled"
+		} else if observedErr == nil && phaseProvenAbsent(kind, observed) {
+			state = "cancelled"
+		}
+		_ = r.observeEffect(context.Background(), id, state, map[string]any{"driver_error": callErr.Error(), "inspection_available": observedErr == nil, "observation": observed})
+		return callErr
 	}
 	if err := r.checkpoint("after_" + kind); err != nil {
 		return err
 	}
+	if err := r.checkpointSegment(ctx, prepared); err != nil {
+		observed, observedErr := r.Driver.Inspect(ctx, prepared)
+		if observedErr == nil && phaseObserved(kind, observed) {
+			_ = r.observeEffect(context.Background(), id, "observed", observed)
+		} else {
+			_ = r.observeEffect(context.Background(), id, "uncertain", map[string]any{"budget_error": err.Error(), "inspection_available": observedErr == nil, "observation": observed})
+		}
+		return err
+	}
 	observation, err = r.Driver.Inspect(ctx, prepared)
 	if err != nil {
+		_ = r.observeEffect(context.Background(), id, "uncertain", map[string]string{"inspection_error": err.Error()})
 		return err
 	}
 	if !phaseObserved(kind, observation) {
+		state := "uncertain"
+		if phaseProvenAbsent(kind, observation) {
+			state = "cancelled"
+		}
+		_ = r.observeEffect(context.Background(), id, state, observation)
 		return fmt.Errorf("%s completed without required observation", kind)
 	}
 	return r.observeEffect(ctx, id, "observed", observation)
@@ -173,10 +251,33 @@ func (r *Runner) validateStart(ctx context.Context, prepared PreparedRun, reserv
 	if reservation.RunID != prepared.RunID || reservation.Phase != "reserved" || len(reservation.Claims) != len(prepared.Repositories) {
 		return errors.New("all participating repository and endpoint reservations are required")
 	}
+	persisted, err := r.Engine.Reservation(ctx, reservation.OperationID)
+	if err != nil {
+		return err
+	}
+	want, _ := json.Marshal(reservation)
+	have, _ := json.Marshal(persisted)
+	if store.Digest(want) != store.Digest(have) {
+		return errors.New("supplied reservation does not match its durable project journal")
+	}
 	var runState string
 	var projectRevision int
-	if err := r.Engine.DB.SQL.QueryRowContext(ctx, "SELECT state FROM runs WHERE id=?", prepared.RunID).Scan(&runState); err != nil {
+	var persistedRuntime, persistedPlan, persistedTask, persistedProfile, persistedProfileDigest, persistedTransport, persistedResource, persistedContainer string
+	var repositoriesJSON, taskJSON, qualificationJSON, routesJSON string
+	var persistedProfileRevision, persistedExpectedRevision int
+	var persistedActiveLimit, persistedWallLimit int64
+	if err := r.Engine.DB.SQL.QueryRowContext(ctx, `SELECT r.state,g.runtime_kind,r.plan_id,r.task_id,r.profile_id,r.profile_revision,c.digest,g.transport_generation,g.runtime_resource_id,coalesce(g.container_name,''),s.expected_project_revision,r.active_limit_ms,r.wall_limit_ms,s.repository_snapshot_json,s.task_snapshot_json,g.qualification_request_json,g.expected_routes_json FROM runs r JOIN run_generations g ON g.run_id=r.id AND g.id=? JOIN run_snapshots s ON s.run_id=r.id JOIN profiles p ON p.id=r.profile_id AND p.revision=r.profile_revision JOIN config_snapshots c ON c.id=p.config_id WHERE r.id=?`, prepared.GenerationID, prepared.RunID).Scan(&runState, &persistedRuntime, &persistedPlan, &persistedTask, &persistedProfile, &persistedProfileRevision, &persistedProfileDigest, &persistedTransport, &persistedResource, &persistedContainer, &persistedExpectedRevision, &persistedActiveLimit, &persistedWallLimit, &repositoriesJSON, &taskJSON, &qualificationJSON, &routesJSON); err != nil {
 		return err
+	}
+	if persistedRuntime != prepared.RuntimeKind || persistedPlan != prepared.PlanID || persistedTask != prepared.TaskID || persistedProfile != prepared.ProfileID || persistedProfileRevision != prepared.ProfileRevision || persistedProfileDigest != prepared.ProfileDigest || persistedTransport != prepared.TransportGeneration || persistedResource != prepared.RuntimeResourceID || persistedContainer != prepared.ContainerName || persistedExpectedRevision+1 != prepared.ExpectedRevision || persistedActiveLimit != prepared.ActiveLimitMS || persistedWallLimit != prepared.WallLimitMS {
+		return errors.New("prepared execution identity differs from its immutable run snapshot")
+	}
+	qualificationValue := any(map[string]any{})
+	if prepared.Eligibility != nil {
+		qualificationValue = prepared.Eligibility
+	}
+	if !snapshotEqual(repositoriesJSON, prepared.Repositories) || !snapshotEqual(taskJSON, prepared.Task) || !snapshotEqual(qualificationJSON, qualificationValue) || !snapshotEqual(routesJSON, prepared.ExpectedRoutes) {
+		return errors.New("prepared execution content differs from its immutable run snapshot")
 	}
 	if runState != "prepared" && runState != "starting" && runState != "active" {
 		return errors.New("run is not startable")
@@ -207,34 +308,100 @@ func (r *Runner) validateStart(ctx context.Context, prepared PreparedRun, reserv
 		return errors.New("execution budget exhausted before dispatch")
 	}
 	if prepared.RuntimeKind != "synthetic" {
-		if prepared.Eligibility == nil {
-			return errors.New("missing exact production qualification")
-		}
-		for _, claim := range []string{boundary.ClaimBoundaryExecution, boundary.ClaimProviderIdle, boundary.ClaimProductionLaunch} {
-			if !stringSetContains(prepared.Eligibility.RequiredClaims, claim) {
-				return fmt.Errorf("production qualification request omits required claim %s", claim)
-			}
-		}
-		for _, recovery := range productionRecoveryClasses {
-			if !stringSetContains(prepared.Eligibility.RequiredRecoveryClasses, recovery) {
-				return fmt.Errorf("production qualification request omits recovery class %s", recovery)
-			}
-		}
-		eligibility, err := boundary.QueryEligibility(ctx, r.Engine.DB, *prepared.Eligibility)
-		if err != nil {
-			return err
-		}
-		if eligibility.Status != "supported" {
-			return fmt.Errorf("production dispatch disabled: %v", eligibility.Reasons)
-		}
-		if r.Checkout == nil {
-			return errors.New("qualified checkout plan required")
-		}
-		if err := r.Checkout.Validate(ctx); err != nil {
-			return err
-		}
+		return r.validateProductionBinding(ctx, prepared)
 	}
 	return nil
+}
+
+func snapshotEqual(raw string, value any) bool {
+	want, err := json.Marshal(value)
+	if err != nil {
+		return false
+	}
+	left, err := store.Canonical([]byte(raw))
+	if err != nil {
+		return false
+	}
+	right, err := store.Canonical(want)
+	return err == nil && store.Digest(left) == store.Digest(right)
+}
+
+func (r *Runner) validateProductionBinding(ctx context.Context, prepared PreparedRun) error {
+	if prepared.Eligibility == nil {
+		return errors.New("missing exact production qualification")
+	}
+	for _, claim := range []string{boundary.ClaimBoundaryExecution, boundary.ClaimProviderIdle, boundary.ClaimProductionLaunch} {
+		if !stringSetContains(prepared.Eligibility.RequiredClaims, claim) {
+			return fmt.Errorf("production qualification request omits required claim %s", claim)
+		}
+	}
+	for _, recovery := range productionRecoveryClasses {
+		if !stringSetContains(prepared.Eligibility.RequiredRecoveryClasses, recovery) {
+			return fmt.Errorf("production qualification request omits recovery class %s", recovery)
+		}
+	}
+	if r.Checkout == nil {
+		return errors.New("qualified checkout plan required")
+	}
+	if err := r.Checkout.Validate(ctx); err != nil {
+		return err
+	}
+	qualification := prepared.Eligibility
+	if qualification.Role != "implementation" || qualification.Inputs.ProfileID != prepared.ProfileID || qualification.Inputs.ProfileRevision != prepared.ProfileRevision || qualification.Inputs.ProfileDigest != prepared.ProfileDigest {
+		return errors.New("production qualification is not bound to the prepared implementation profile")
+	}
+	if qualification.Inputs.EndpointAuthority != prepared.EndpointID || qualification.Inputs.CapacityAuthority != coordinator.Host() || qualification.Inputs.CapacityAuthorityScope != "single_host" {
+		return errors.New("production qualification endpoint or capacity authority differs from the live reservation")
+	}
+	if qualification.Inputs.RuntimeName != prepared.RuntimeKind {
+		return errors.New("production qualification runtime differs from the prepared runtime")
+	}
+	if qualification.Layout != r.Checkout.QualificationLayout() {
+		return errors.New("production qualification layout differs from the actual checkout")
+	}
+	mountDigest, err := r.Checkout.QualificationMountPlanDigest(ctx, "implementation")
+	if err != nil {
+		return err
+	}
+	if qualification.Inputs.MountPlanDigest != mountDigest {
+		return errors.New("production qualification mount plan differs from the actual checkout")
+	}
+	actualRoots := r.Checkout.QualificationRoots()
+	preparedRoots := make([]string, 0, len(prepared.Repositories))
+	for _, repository := range prepared.Repositories {
+		preparedRoots = append(preparedRoots, repository.Root)
+	}
+	sort.Strings(preparedRoots)
+	if strings.Join(actualRoots, "\x00") != strings.Join(preparedRoots, "\x00") {
+		return errors.New("qualified checkout roots differ from the prepared repositories")
+	}
+	bindingProvider, ok := r.Driver.(ProductionBindingProvider)
+	if !ok {
+		return errors.New("production driver does not expose an independently derived qualification binding")
+	}
+	actualInputs, actualRoutes, err := bindingProvider.ProductionBinding(ctx, prepared)
+	if err != nil {
+		return fmt.Errorf("production driver qualification binding unavailable: %w", err)
+	}
+	if !snapshotEqualValue(actualInputs, qualification.Inputs) {
+		return errors.New("production driver runtime inputs differ from the qualified inputs")
+	}
+	if !snapshotEqualValue(actualRoutes, prepared.ExpectedRoutes) {
+		return errors.New("production driver inference routes differ from the prepared routes")
+	}
+	eligibility, err := r.Engine.ExecutionEligibility(ctx, *qualification)
+	if err != nil {
+		return err
+	}
+	if eligibility.Status != "supported" {
+		return fmt.Errorf("production dispatch disabled: %v", eligibility.Reasons)
+	}
+	return nil
+}
+
+func snapshotEqualValue(left, right any) bool {
+	raw, err := json.Marshal(left)
+	return err == nil && snapshotEqual(string(raw), right)
 }
 
 func stringSetContains(values []string, wanted string) bool {
@@ -247,6 +414,23 @@ func stringSetContains(values []string, wanted string) bool {
 }
 
 func (r *Runner) Run(ctx context.Context, prepared PreparedRun, reservation core.Reservation, prompt string) (Result, error) {
+	var result Result
+	if r.Engine == nil || r.Owner == nil || r.Owner.Coordinator == nil {
+		return result, errors.New("live coordinator owner is required for dispatch")
+	}
+	roots := reservation.Roots
+	if len(roots) == 0 && reservation.Root.Root != "" {
+		roots = []workspace.Identity{reservation.Root}
+	}
+	err := r.Owner.HoldReservation(ctx, r.Engine.ProjectID, prepared.RunID, prepared.EndpointID, roots, reservation.Claims, reservation.Ticket, func() error {
+		var runErr error
+		result, runErr = r.runAuthorized(ctx, prepared, reservation, prompt)
+		return runErr
+	})
+	return result, err
+}
+
+func (r *Runner) runAuthorized(ctx context.Context, prepared PreparedRun, reservation core.Reservation, prompt string) (Result, error) {
 	var result Result
 	if prompt == "" || len(prompt) > 65536 {
 		return result, errors.New("bounded nonempty prompt required")
@@ -275,10 +459,31 @@ func (r *Runner) Run(ctx context.Context, prepared PreparedRun, reservation core
 	contain := func(cause error) (Result, error) {
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer stopCancel()
+		containmentID, journalErr := r.effect(context.Background(), prepared, 10, "containment_stop", map[string]string{"run_id": prepared.RunID, "generation_id": prepared.GenerationID, "runtime_resource_id": prepared.RuntimeResourceID})
+		if journalErr == nil {
+			var state string
+			state, journalErr = r.effectState(context.Background(), containmentID)
+			if state == "observed" || state == "reconciled" {
+				return result, cause
+			}
+			if journalErr == nil && (state == "prepared" || state == "cancelled") {
+				journalErr = r.beginEffect(context.Background(), containmentID)
+			} else if journalErr == nil && state != "executing" && state != "uncertain" {
+				journalErr = fmt.Errorf("containment effect is not startable from state %s", state)
+			}
+		}
+		// Stopping an unsafe writer is the sole emergency exception to normal
+		// journal-first ordering: if storage is unavailable, attempt the bounded
+		// stop and return an explicit unjournaled-containment error.
 		observation, stopErr := r.Driver.Stop(stopCtx, prepared)
-		_ = r.recordContainment(context.Background(), prepared, observation, stopErr)
+		if journalErr == nil {
+			journalErr = r.recordContainment(context.Background(), prepared, containmentID, observation, stopErr)
+		}
 		if stopErr != nil {
 			return result, fmt.Errorf("%w; containment failed: %v", cause, stopErr)
+		}
+		if journalErr != nil {
+			return result, fmt.Errorf("%w; containment completed but its journal failed: %v", cause, journalErr)
 		}
 		return result, cause
 	}
@@ -289,7 +494,7 @@ func (r *Runner) Run(ctx context.Context, prepared PreparedRun, reservation core
 		}
 		return contain(cause)
 	}
-	if err := r.ensureDriverEffect(ctx, prepared, 1, "runtime_create", func() error { return r.Driver.Create(ctx, prepared) }); err != nil {
+	if err := r.ensureDriverEffect(ctx, prepared, 1, "runtime_create", func(callCtx context.Context) error { return r.Driver.Create(callCtx, prepared) }); err != nil {
 		return fail(err)
 	}
 	if prepared.RuntimeKind != "synthetic" {
@@ -301,16 +506,16 @@ func (r *Runner) Run(ctx context.Context, prepared PreparedRun, reservation core
 			return contain(err)
 		}
 	}
-	if err := r.ensureDriverEffect(ctx, prepared, 2, "runtime_start", func() error { return r.Driver.Start(ctx, prepared) }); err != nil {
+	if err := r.ensureDriverEffect(ctx, prepared, 2, "runtime_start", func(callCtx context.Context) error { return r.Driver.Start(callCtx, prepared) }); err != nil {
 		return fail(err)
 	}
-	if err := r.ensureDriverEffect(ctx, prepared, 3, "runtime_attach", func() error { return r.Driver.Attach(ctx, prepared) }); err != nil {
+	if err := r.ensureDriverEffect(ctx, prepared, 3, "runtime_attach", func(callCtx context.Context) error { return r.Driver.Attach(callCtx, prepared) }); err != nil {
 		return fail(err)
 	}
-	if err := r.ensureDriverEffect(ctx, prepared, 4, "native_create", func() error {
-		id, err := r.Driver.CreateNative(ctx, prepared)
+	if err := r.ensureDriverEffect(ctx, prepared, 4, "native_create", func(callCtx context.Context) error {
+		id, err := r.Driver.CreateNative(callCtx, prepared)
 		if err == nil {
-			err = r.persistNativeSession(ctx, prepared, id)
+			err = r.persistNativeSession(callCtx, prepared, id)
 		}
 		return err
 	}); err != nil {
@@ -319,7 +524,16 @@ func (r *Runner) Run(ctx context.Context, prepared PreparedRun, reservation core
 	if err := r.submit(ctx, prepared, prompt); err != nil {
 		return fail(err)
 	}
-	if err := r.Driver.RenewLease(ctx, prepared); err != nil {
+	leaseCtx, leaseCancel, err := r.activeCallContext(ctx, prepared)
+	if err != nil {
+		return contain(err)
+	}
+	leaseErr := r.Driver.RenewLease(leaseCtx, prepared)
+	leaseCancel()
+	if leaseErr != nil {
+		return contain(leaseErr)
+	}
+	if err := r.checkpointSegment(ctx, prepared); err != nil {
 		return contain(err)
 	}
 	terminalID, err := r.effect(ctx, prepared, 7, "terminal_observe", map[string]string{"generation_id": prepared.GenerationID})
@@ -341,6 +555,9 @@ func (r *Runner) Run(ctx context.Context, prepared PreparedRun, reservation core
 		return contain(err)
 	}
 	if err := r.ingest(ctx, prepared, observation); err != nil {
+		return contain(err)
+	}
+	if err := r.checkpointSegment(ctx, prepared); err != nil {
 		return contain(err)
 	}
 	if err := r.checkpoint("before_result_persist"); err != nil {
@@ -395,6 +612,20 @@ func (r *Runner) submit(ctx context.Context, prepared PreparedRun, prompt string
 	if err != nil {
 		return err
 	}
+	var generationState, persistedTurn string
+	if err := r.Engine.DB.SQL.QueryRowContext(ctx, "SELECT submission_state,coalesce(native_turn_id,'') FROM run_generations WHERE id=?", prepared.GenerationID).Scan(&generationState, &persistedTurn); err != nil {
+		return err
+	}
+	if generationState == "delivered" {
+		persisted := map[string]string{"submission_state": "delivered", "native_turn_id": persistedTurn, "source": "durable_generation"}
+		if err := r.observeEffect(ctx, writeID, "reconciled", persisted); err != nil {
+			return err
+		}
+		return r.observeEffect(ctx, ackID, "reconciled", persisted)
+	}
+	if generationState == "uncertain" {
+		return errors.New("native submission is uncertain and cannot be replayed")
+	}
 	observation, inspectErr := r.Driver.Inspect(ctx, prepared)
 	if inspectErr == nil && observation.SubmissionState == "delivered" {
 		if err := r.observeEffect(ctx, writeID, "reconciled", observation); err != nil {
@@ -405,15 +636,19 @@ func (r *Runner) submit(ctx context.Context, prepared PreparedRun, prompt string
 		}
 		return r.setSubmission(ctx, prepared, "delivered", observation.NativeTurnID)
 	}
-	var generationState string
-	if err := r.Engine.DB.SQL.QueryRowContext(ctx, "SELECT submission_state FROM run_generations WHERE id=?", prepared.GenerationID).Scan(&generationState); err != nil {
-		return err
-	}
-	if generationState == "uncertain" {
-		return errors.New("native submission is uncertain and cannot be replayed")
-	}
 	if generationState == "writing" && (inspectErr != nil || observation.SubmissionState != "not_attempted") {
 		return errors.New("native submission delivery is unresolved and cannot be replayed")
+	}
+	if inspectErr != nil {
+		return fmt.Errorf("native submission inspection unavailable; delivery cannot safely begin: %w", inspectErr)
+	}
+	if observation.SubmissionState != "not_attempted" {
+		return errors.New("native submission non-delivery is not proven")
+	}
+	if generationState == "writing" {
+		if err := r.observeEffect(ctx, writeID, "cancelled", map[string]string{"submission_state": "not_attempted", "source": "trusted_inspection"}); err != nil {
+			return err
+		}
 	}
 	if err := r.checkpoint("before_prompt_write"); err != nil {
 		return err
@@ -427,35 +662,54 @@ func (r *Runner) submit(ctx context.Context, prepared PreparedRun, prompt string
 	}); err != nil {
 		return err
 	}
-	state, nativeTurn, submitErr := r.Driver.Submit(ctx, prepared, prompt)
+	if err := r.beginEffect(ctx, writeID); err != nil {
+		return err
+	}
+	callCtx, cancel, err := r.activeCallContext(ctx, prepared)
+	if err != nil {
+		return err
+	}
+	state, nativeTurn, submitErr := r.Driver.Submit(callCtx, prepared, prompt)
+	cancel()
 	if submitErr != nil || state != "delivered" {
 		if state != "proven_not_delivered" {
 			state = "uncertain"
 		}
 		_ = r.setSubmission(context.Background(), prepared, state, nativeTurn)
-		_ = r.observeEffect(context.Background(), writeID, "uncertain", map[string]any{"submission_state": state, "error": errorString(submitErr)})
+		effectState := "uncertain"
+		if state == "proven_not_delivered" {
+			effectState = "cancelled"
+		}
+		_ = r.observeEffect(context.Background(), writeID, effectState, map[string]any{"submission_state": state, "error": errorString(submitErr)})
 		return fmt.Errorf("native submission %s; automatic replay disabled: %w", state, submitErr)
 	}
+	// Delivery is durable before any subsequent crash point, inspection or
+	// budget failure. A later start must never submit this generation again.
+	if err := r.setSubmission(ctx, prepared, "delivered", nativeTurn); err != nil {
+		_ = r.observeEffect(context.Background(), writeID, "uncertain", map[string]string{"submission_state": "delivered", "persistence": "failed"})
+		return err
+	}
+	delivered := map[string]string{"submission_state": "delivered", "native_turn_id": nativeTurn, "source": "driver_return"}
+	if err := r.observeEffect(ctx, writeID, "observed", delivered); err != nil {
+		return err
+	}
+	if err := r.checkpointSegment(ctx, prepared); err != nil {
+		_ = r.observeEffect(context.Background(), ackID, "reconciled", delivered)
+		return err
+	}
 	if err := r.checkpoint("after_prompt_write"); err != nil {
-		return err
-	}
-	observation, err = r.Driver.Inspect(ctx, prepared)
-	if err != nil {
-		return err
-	}
-	if err := r.observeEffect(ctx, writeID, "observed", observation); err != nil {
 		return err
 	}
 	if err := r.checkpoint("before_prompt_ack"); err != nil {
 		return err
 	}
-	if err := r.observeEffect(ctx, ackID, "observed", observation); err != nil {
+	if err := r.observeEffect(ctx, ackID, "observed", delivered); err != nil {
 		return err
 	}
 	if err := r.checkpoint("after_prompt_ack"); err != nil {
 		return err
 	}
-	return r.setSubmission(ctx, prepared, "delivered", nativeTurn)
+	return nil
 }
 
 func errorString(err error) string {
@@ -491,7 +745,12 @@ func (r *Runner) awaitWithLease(ctx context.Context, prepared PreparedRun) (Obse
 		err         error
 	}
 	done := make(chan response, 1)
-	awaitCtx, cancel := context.WithCancel(ctx)
+	activeCtx, activeCancel, err := r.activeCallContext(ctx, prepared)
+	if err != nil {
+		return Observation{}, err
+	}
+	defer activeCancel()
+	awaitCtx, cancel := context.WithCancel(activeCtx)
 	defer cancel()
 	go func() { observation, err := r.Driver.Await(awaitCtx, prepared); done <- response{observation, err} }()
 	ticker := time.NewTicker(time.Second)
@@ -513,9 +772,12 @@ func (r *Runner) awaitWithLease(ctx context.Context, prepared PreparedRun) (Obse
 				cancel()
 				return Observation{}, err
 			}
-		case <-ctx.Done():
+		case <-activeCtx.Done():
 			cancel()
-			return Observation{}, ctx.Err()
+			if err := r.checkpointSegment(context.Background(), prepared); err != nil {
+				return Observation{}, err
+			}
+			return Observation{}, activeCtx.Err()
 		}
 	}
 }
@@ -679,11 +941,7 @@ func (r *Runner) persistResult(ctx context.Context, prepared PreparedRun, observ
 	return result, nil
 }
 
-func (r *Runner) recordContainment(ctx context.Context, prepared PreparedRun, observation Observation, stopErr error) error {
-	id, err := r.effect(ctx, prepared, 10, "containment_stop", map[string]string{"cause": errorString(stopErr)})
-	if err != nil {
-		return err
-	}
+func (r *Runner) recordContainment(ctx context.Context, prepared PreparedRun, id string, observation Observation, stopErr error) error {
 	state := "uncertain"
 	if stopErr == nil && observation.WriterState == "contained_stopped" {
 		state = "observed"
