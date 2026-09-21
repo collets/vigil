@@ -29,6 +29,49 @@ type FixtureDriver struct {
 	CreateUncertain bool
 	SubmitUncertain bool
 	ExtraEvents     int
+	History         *HistoryObservation
+	Verifier        CheckpointVerifier
+}
+
+// SyntheticHistoryInspector supplies an explicit observation only for a
+// disposable synthetic run. It cannot qualify a production recovery path.
+type SyntheticHistoryInspector struct {
+	Observation HistoryObservation
+	Verifier    CheckpointVerifier
+}
+
+func (i SyntheticHistoryInspector) VerifyCheckpoint(ctx context.Context, checkpointID string) error {
+	if i.Verifier == nil {
+		return errors.New("synthetic checkpoint verifier required")
+	}
+	return i.Verifier.VerifyCheckpoint(ctx, checkpointID)
+}
+
+func (i SyntheticHistoryInspector) InspectHistory(_ context.Context, prepared PreparedRun) (HistoryObservation, error) {
+	if prepared.RuntimeKind != "synthetic" || i.Observation.Qualification != "synthetic" {
+		return HistoryObservation{}, errors.New("synthetic history evidence cannot qualify a production run")
+	}
+	return i.Observation, nil
+}
+
+func (d *FixtureDriver) InspectHistory(ctx context.Context, prepared PreparedRun) (HistoryObservation, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.count("inspect_history")
+	if _, err := d.validate(ctx, prepared); err != nil {
+		return HistoryObservation{}, err
+	}
+	if d.History == nil {
+		return HistoryObservation{State: "missing", Qualification: "synthetic"}, nil
+	}
+	return *d.History, nil
+}
+
+func (d *FixtureDriver) VerifyCheckpoint(ctx context.Context, checkpointID string) error {
+	if d.Verifier == nil {
+		return errors.New("fixture checkpoint verifier required")
+	}
+	return d.Verifier.VerifyCheckpoint(ctx, checkpointID)
 }
 
 func (d *FixtureDriver) Restore(observation Observation) {
@@ -214,6 +257,19 @@ func (d *FixtureDriver) CreateNative(ctx context.Context, prepared PreparedRun) 
 	}
 	d.observation.NativeSessionID = "fixture-session-" + prepared.GenerationID
 	return d.observation.NativeSessionID, nil
+}
+func (d *FixtureDriver) Resume(ctx context.Context, prepared PreparedRun, nativeSessionID string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.count("resume")
+	if _, err := d.validate(ctx, prepared); err != nil {
+		return err
+	}
+	if !d.observation.Attached || nativeSessionID == "" {
+		return errors.New("fixture resume requires attached transport and exact native session")
+	}
+	d.observation.NativeSessionID = nativeSessionID
+	return nil
 }
 func (d *FixtureDriver) Submit(ctx context.Context, prepared PreparedRun, _ string) (string, string, error) {
 	d.mu.Lock()

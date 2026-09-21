@@ -37,6 +37,7 @@ var productionRecoveryClasses = []string{
 	"intent_commit", "workspace_reservation", "endpoint_slot", "runtime_create", "runtime_start",
 	"runtime_attach", "native_create", "submit_write", "submit_ack", "terminal_observe",
 	"artifact_publish", "outcome_commit", "persistence_failure",
+	"exact_resume:interrupted", "fresh_context_reconstruction",
 }
 
 type checkpointFailure struct{ error }
@@ -118,7 +119,7 @@ func phaseObserved(kind string, observation Observation) bool {
 		return observation.Started
 	case "runtime_attach":
 		return observation.Attached
-	case "native_create":
+	case "native_create", "native_resume":
 		return observation.NativeSessionID != ""
 	case "prompt_write", "prompt_ack":
 		return observation.SubmissionState == "delivered"
@@ -136,7 +137,7 @@ func phaseProvenAbsent(kind string, observation Observation) bool {
 		return observation.Exists && !observation.Started
 	case "runtime_attach":
 		return observation.Started && !observation.Attached
-	case "native_create":
+	case "native_create", "native_resume":
 		return observation.Attached && observation.NativeSessionID == ""
 	}
 	return false
@@ -269,7 +270,7 @@ func (r *Runner) validateStart(ctx context.Context, prepared PreparedRun, reserv
 	var repositoriesJSON, taskJSON, qualificationJSON, routesJSON string
 	var persistedProfileRevision, persistedExpectedRevision int
 	var persistedActiveLimit, persistedWallLimit int64
-	if err := r.Engine.DB.SQL.QueryRowContext(ctx, `SELECT r.state,g.runtime_kind,r.plan_id,r.task_id,r.profile_id,r.profile_revision,c.digest,g.transport_generation,g.runtime_resource_id,coalesce(g.container_name,''),s.expected_project_revision,r.active_limit_ms,r.wall_limit_ms,s.repository_snapshot_json,s.task_snapshot_json,g.qualification_request_json,g.expected_routes_json FROM runs r JOIN run_generations g ON g.run_id=r.id AND g.id=? JOIN run_snapshots s ON s.run_id=r.id JOIN profiles p ON p.id=r.profile_id AND p.revision=r.profile_revision JOIN config_snapshots c ON c.id=p.config_id WHERE r.id=?`, prepared.GenerationID, prepared.RunID).Scan(&runState, &persistedRuntime, &persistedPlan, &persistedTask, &persistedProfile, &persistedProfileRevision, &persistedProfileDigest, &persistedTransport, &persistedResource, &persistedContainer, &persistedExpectedRevision, &persistedActiveLimit, &persistedWallLimit, &repositoriesJSON, &taskJSON, &qualificationJSON, &routesJSON); err != nil {
+	if err := r.Engine.DB.SQL.QueryRowContext(ctx, `SELECT r.state,g.runtime_kind,r.plan_id,r.task_id,r.profile_id,r.profile_revision,c.digest,g.transport_generation,g.runtime_resource_id,coalesce(g.container_name,''),coalesce(l.expected_project_revision,s.expected_project_revision),r.active_limit_ms,r.wall_limit_ms,s.repository_snapshot_json,s.task_snapshot_json,g.qualification_request_json,g.expected_routes_json FROM runs r JOIN run_generations g ON g.run_id=r.id AND g.id=? JOIN run_snapshots s ON s.run_id=r.id JOIN profiles p ON p.id=r.profile_id AND p.revision=r.profile_revision JOIN config_snapshots c ON c.id=p.config_id LEFT JOIN recovery_attempt_links l ON l.prepared_generation_id=g.id WHERE r.id=?`, prepared.GenerationID, prepared.RunID).Scan(&runState, &persistedRuntime, &persistedPlan, &persistedTask, &persistedProfile, &persistedProfileRevision, &persistedProfileDigest, &persistedTransport, &persistedResource, &persistedContainer, &persistedExpectedRevision, &persistedActiveLimit, &persistedWallLimit, &repositoriesJSON, &taskJSON, &qualificationJSON, &routesJSON); err != nil {
 		return err
 	}
 	if persistedRuntime != prepared.RuntimeKind || persistedPlan != prepared.PlanID || persistedTask != prepared.TaskID || persistedProfile != prepared.ProfileID || persistedProfileRevision != prepared.ProfileRevision || persistedProfileDigest != prepared.ProfileDigest || persistedTransport != prepared.TransportGeneration || persistedResource != prepared.RuntimeResourceID || persistedContainer != prepared.ContainerName || persistedExpectedRevision+1 != prepared.ExpectedRevision || persistedActiveLimit != prepared.ActiveLimitMS || persistedWallLimit != prepared.WallLimitMS {
@@ -299,7 +300,8 @@ func (r *Runner) validateStart(ctx context.Context, prepared PreparedRun, reserv
 		if err != nil {
 			return err
 		}
-		if current.Dirty || current.HeadOID != repository.BaseOID || current.HeadRef != "refs/heads/"+repository.PlanBranch || current.IndexDigest != repository.Baseline.IndexDigest || current.ContentDigest != repository.Baseline.ContentDigest {
+		baselineMatches := current.HeadOID == repository.Baseline.HeadOID && current.IndexDigest == repository.Baseline.IndexDigest && current.ContentDigest == repository.Baseline.ContentDigest && current.Dirty == repository.Baseline.Dirty && snapshotEqualValue(current.DirtyPaths, repository.Baseline.DirtyPaths)
+		if !baselineMatches || (prepared.AttemptKind == "initial" && current.Dirty) || current.HeadOID != repository.BaseOID || current.HeadRef != "refs/heads/"+repository.PlanBranch {
 			return fmt.Errorf("repository %s baseline no longer matches", repository.ID)
 		}
 	}
@@ -435,7 +437,10 @@ func (r *Runner) Run(ctx context.Context, prepared PreparedRun, reservation core
 
 func (r *Runner) runAuthorized(ctx context.Context, prepared PreparedRun, reservation core.Reservation, prompt string) (Result, error) {
 	var result Result
-	if prompt == "" || len(prompt) > 65536 {
+	if prepared.ExactResume && prompt != "" {
+		return result, errors.New("exact resume refuses a replacement prompt")
+	}
+	if !prepared.ExactResume && (prompt == "" || len(prompt) > 65536) {
 		return result, errors.New("bounded nonempty prompt required")
 	}
 	commandID := r.StartCommandID
@@ -451,6 +456,9 @@ func (r *Runner) runAuthorized(ctx context.Context, prepared PreparedRun, reserv
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(prepared.WallLimitMS)*time.Millisecond)
 	defer cancel()
 	if err := r.startSegment(ctx, prepared); err != nil {
+		if errors.Is(err, ErrBudgetExhausted) {
+			_ = persistBudgetExhaustion(context.Background(), r.Engine, prepared, "dispatch")
+		}
 		return result, err
 	}
 	skipClose := false
@@ -491,6 +499,9 @@ func (r *Runner) runAuthorized(ctx context.Context, prepared PreparedRun, reserv
 		return result, cause
 	}
 	fail := func(cause error) (Result, error) {
+		if errors.Is(cause, ErrBudgetExhausted) {
+			_ = persistBudgetExhaustion(context.Background(), r.Engine, prepared, "active_run")
+		}
 		if isCheckpointFailure(cause) {
 			skipClose = true
 			return result, cause
@@ -515,17 +526,32 @@ func (r *Runner) runAuthorized(ctx context.Context, prepared PreparedRun, reserv
 	if err := r.ensureDriverEffect(ctx, prepared, 3, "runtime_attach", func(callCtx context.Context) error { return r.Driver.Attach(callCtx, prepared) }); err != nil {
 		return fail(err)
 	}
-	if err := r.ensureDriverEffect(ctx, prepared, 4, "native_create", func(callCtx context.Context) error {
-		id, err := r.Driver.CreateNative(callCtx, prepared)
-		if err == nil {
-			err = r.persistNativeSession(callCtx, prepared, id)
+	if prepared.ExactResume {
+		driver, ok := r.Driver.(ResumeDriver)
+		if !ok {
+			return fail(errors.New("driver does not implement qualified exact resume"))
 		}
-		return err
-	}); err != nil {
-		return fail(err)
-	}
-	if err := r.submit(ctx, prepared, prompt); err != nil {
-		return fail(err)
+		if err := r.ensureDriverEffect(ctx, prepared, 4, "native_resume", func(callCtx context.Context) error {
+			if err := driver.Resume(callCtx, prepared, prepared.ResumeNativeSession); err != nil {
+				return err
+			}
+			return r.persistNativeSession(callCtx, prepared, prepared.ResumeNativeSession)
+		}); err != nil {
+			return fail(err)
+		}
+	} else {
+		if err := r.ensureDriverEffect(ctx, prepared, 4, "native_create", func(callCtx context.Context) error {
+			id, err := r.Driver.CreateNative(callCtx, prepared)
+			if err == nil {
+				err = r.persistNativeSession(callCtx, prepared, id)
+			}
+			return err
+		}); err != nil {
+			return fail(err)
+		}
+		if err := r.submit(ctx, prepared, prompt); err != nil {
+			return fail(err)
+		}
 	}
 	leaseCtx, leaseCancel, err := r.activeCallContext(ctx, prepared)
 	if err != nil {
@@ -601,7 +627,7 @@ func (r *Runner) persistNativeSession(ctx context.Context, prepared PreparedRun,
 			return err
 		}
 		caps := `{"persisted":true}`
-		_, err := tx.ExecContext(ctx, `INSERT INTO sessions(id,run_id,generation,harness,durable_id,runtime_id,native_home_ref,workspace_identity,profile_digest,capabilities_json) VALUES(?,?,?,?,?,?,?, ?,?,?) ON CONFLICT(id) DO NOTHING`, store.Digest([]byte(prepared.GenerationID+"\x00session")), prepared.RunID, prepared.TransportGeneration, prepared.ProfileID, nativeID, nativeID, "private:"+prepared.GenerationID, prepared.Repositories[0].Identity.Key, store.Digest([]byte(prepared.ProfileID)), caps)
+		_, err := tx.ExecContext(ctx, `INSERT INTO sessions(id,run_id,generation,harness,durable_id,runtime_id,native_home_ref,workspace_identity,profile_digest,capabilities_json) VALUES(?,?,?,?,?,?,?, ?,?,?) ON CONFLICT(id) DO NOTHING`, store.Digest([]byte(prepared.GenerationID+"\x00session")), prepared.RunID, prepared.TransportGeneration, prepared.ProfileID, nativeID, nativeID, "private:"+prepared.GenerationID, prepared.Repositories[0].Identity.Key, prepared.ProfileDigest, caps)
 		return err
 	})
 }

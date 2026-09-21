@@ -57,6 +57,10 @@ type InterruptDriver interface {
 	Interrupt(context.Context, PreparedRun) error
 }
 
+type ResumeDriver interface {
+	Resume(context.Context, PreparedRun, string) error
+}
+
 // ProductionBindingProvider is required for every non-synthetic driver. It
 // reports the security-relevant inputs and inference routes the driver will
 // actually use, rather than accepting the caller's qualification request as a

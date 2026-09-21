@@ -293,3 +293,18 @@ func (m *Manager) verifiedSet(ctx context.Context, id, expectedState string) (Se
 	}
 	return result, nil
 }
+
+// VerifySet re-verifies both the database-bound manifest artifact and every
+// private checkpoint blob before a caller relies on the recovery copy.
+func (m *Manager) VerifySet(ctx context.Context, id string) (SetManifest, error) {
+	var state string
+	if err := m.Engine.DB.SQL.QueryRowContext(ctx, "SELECT state FROM checkpoint_sets WHERE id=?", id).Scan(&state); err != nil {
+		return SetManifest{}, err
+	}
+	switch state {
+	case "verified", "saved", "clearing", "restoring", "conflicted", "restored":
+		return m.verifiedSet(ctx, id, state)
+	default:
+		return SetManifest{}, fmt.Errorf("checkpoint state %s is not a verified recovery copy", state)
+	}
+}

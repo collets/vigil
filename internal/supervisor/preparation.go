@@ -35,6 +35,7 @@ type PreparedRun struct {
 	RuntimeResourceID   string                       `json:"runtime_resource_id"`
 	ContainerName       string                       `json:"container_name,omitempty"`
 	RuntimeKind         string                       `json:"runtime_kind"`
+	AttemptKind         string                       `json:"attempt_kind"`
 	PlanID              string                       `json:"plan_id"`
 	TaskID              string                       `json:"task_id"`
 	ProfileID           string                       `json:"profile_id"`
@@ -48,6 +49,8 @@ type PreparedRun struct {
 	Repositories        []core.RepositoryRecord      `json:"repositories"`
 	Eligibility         *boundary.EligibilityRequest `json:"eligibility,omitempty"`
 	ExpectedRoutes      []string                     `json:"expected_routes"`
+	ExactResume         bool                         `json:"exact_resume,omitempty"`
+	ResumeNativeSession string                       `json:"resume_native_session,omitempty"`
 }
 
 type preparationObservation struct {
@@ -270,7 +273,7 @@ func Prepare(ctx context.Context, engine *core.Engine, request PrepareRequest) (
 		if request.RuntimeKind == "docker" {
 			containerName = "vigil-" + runID + "-g1"
 		}
-		result = PreparedRun{RunID: runID, GenerationID: generationID, TransportGeneration: transportGeneration, RuntimeResourceID: runtimeResourceID, ContainerName: containerName, RuntimeKind: request.RuntimeKind, PlanID: observed.planID, TaskID: request.TaskID, ProfileID: observed.profileID, ProfileRevision: observed.profileRev, ProfileDigest: observed.profileDigest, EndpointID: observed.profile.EndpointID, ExpectedRevision: revision + 1, ActiveLimitMS: activeLimit, WallLimitMS: request.WallLimitMS, Task: observed.task, Repositories: observed.repositories, Eligibility: request.Eligibility, ExpectedRoutes: request.ExpectedRoutes}
+		result = PreparedRun{RunID: runID, GenerationID: generationID, TransportGeneration: transportGeneration, RuntimeResourceID: runtimeResourceID, ContainerName: containerName, RuntimeKind: request.RuntimeKind, AttemptKind: "initial", PlanID: observed.planID, TaskID: request.TaskID, ProfileID: observed.profileID, ProfileRevision: observed.profileRev, ProfileDigest: observed.profileDigest, EndpointID: observed.profile.EndpointID, ExpectedRevision: revision + 1, ActiveLimitMS: activeLimit, WallLimitMS: request.WallLimitMS, Task: observed.task, Repositories: observed.repositories, Eligibility: request.Eligibility, ExpectedRoutes: request.ExpectedRoutes}
 		budgetSnapshot, _ := json.Marshal(map[string]any{"active_limit_ms": activeLimit, "wall_limit_ms": request.WallLimitMS, "task_limit_ms": observed.config.TaskLimitMS, "plan_services_limit_ms": 1800000})
 		repositoriesJSON, _ := json.Marshal(observed.repositories)
 		snapshotValue := map[string]json.RawMessage{"task": json.RawMessage(observed.taskRaw), "config": json.RawMessage(observed.configRaw), "profile": json.RawMessage(observed.profileRaw), "budget": budgetSnapshot, "repositories": repositoriesJSON}
@@ -332,13 +335,14 @@ func LoadPrepared(ctx context.Context, engine *core.Engine, runID string) (Prepa
 	if engine == nil || engine.DB == nil || !store.SafeID(runID) {
 		return result, errors.New("valid persisted run required")
 	}
-	var taskJSON, repositoriesJSON, qualificationJSON, routesJSON string
+	var taskJSON, repositoriesJSON, qualificationJSON, routesJSON, recoveryMode, resumeNative string
 	var expectedRevision int
-	err := engine.DB.SQL.QueryRowContext(ctx, `SELECT r.id,g.id,g.transport_generation,g.runtime_resource_id,coalesce(g.container_name,''),g.runtime_kind,r.plan_id,r.task_id,r.profile_id,r.profile_revision,cs.digest,coalesce(p.endpoint_id,''),s.expected_project_revision,s.task_snapshot_json,s.repository_snapshot_json,g.qualification_request_json,g.expected_routes_json,r.active_limit_ms,r.wall_limit_ms
+	err := engine.DB.SQL.QueryRowContext(ctx, `SELECT r.id,g.id,g.transport_generation,g.runtime_resource_id,coalesce(g.container_name,''),g.runtime_kind,r.attempt_kind,r.plan_id,r.task_id,r.profile_id,r.profile_revision,cs.digest,coalesce(p.endpoint_id,''),coalesce(l.expected_project_revision,s.expected_project_revision),s.task_snapshot_json,s.repository_snapshot_json,g.qualification_request_json,g.expected_routes_json,r.active_limit_ms,r.wall_limit_ms,coalesce(l.mode,''),coalesce(g.native_session_id,'')
 		FROM runs r JOIN run_generations g ON g.run_id=r.id JOIN run_snapshots s ON s.run_id=r.id
 		JOIN profiles pr ON pr.id=r.profile_id AND pr.revision=r.profile_revision JOIN config_snapshots cs ON cs.id=pr.config_id
 		JOIN (SELECT id,json_extract(resolved_json,'$.endpoint_id') AS endpoint_id FROM config_snapshots) p ON p.id=cs.id
-		WHERE r.id=? AND g.ordinal=1`, runID).Scan(&result.RunID, &result.GenerationID, &result.TransportGeneration, &result.RuntimeResourceID, &result.ContainerName, &result.RuntimeKind, &result.PlanID, &result.TaskID, &result.ProfileID, &result.ProfileRevision, &result.ProfileDigest, &result.EndpointID, &expectedRevision, &taskJSON, &repositoriesJSON, &qualificationJSON, &routesJSON, &result.ActiveLimitMS, &result.WallLimitMS)
+		LEFT JOIN recovery_attempt_links l ON l.prepared_generation_id=g.id
+		WHERE r.id=? ORDER BY g.ordinal DESC LIMIT 1`, runID).Scan(&result.RunID, &result.GenerationID, &result.TransportGeneration, &result.RuntimeResourceID, &result.ContainerName, &result.RuntimeKind, &result.AttemptKind, &result.PlanID, &result.TaskID, &result.ProfileID, &result.ProfileRevision, &result.ProfileDigest, &result.EndpointID, &expectedRevision, &taskJSON, &repositoriesJSON, &qualificationJSON, &routesJSON, &result.ActiveLimitMS, &result.WallLimitMS, &recoveryMode, &resumeNative)
 	if err != nil {
 		return result, err
 	}
@@ -359,5 +363,7 @@ func LoadPrepared(ctx context.Context, engine *core.Engine, runID string) (Prepa
 	if err := json.Unmarshal([]byte(routesJSON), &result.ExpectedRoutes); err != nil {
 		return result, err
 	}
+	result.ExactResume = recoveryMode == "exact_resume"
+	result.ResumeNativeSession = resumeNative
 	return result, nil
 }

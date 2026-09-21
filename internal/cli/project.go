@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -183,8 +184,8 @@ func projectCommand(stateDir *string) *cobra.Command {
 		if !syntheticFixture {
 			return errors.New("--synthetic-fixture required; no production or spike fallback is available")
 		}
-		if startCommand == "" || fixtureRepository == "" || fixturePath == "" || fixturePrompt == "" {
-			return errors.New("--command-id, --repository, --path and --prompt required")
+		if startCommand == "" || fixtureRepository == "" || fixturePath == "" {
+			return errors.New("--command-id, --repository and --path required")
 		}
 		m, err := manager(cmd, stateDir)
 		if err != nil {
@@ -202,6 +203,12 @@ func projectCommand(stateDir *string) *cobra.Command {
 		}
 		if prepared.RuntimeKind != "synthetic" {
 			return errors.New("this CLI build has no production execution driver")
+		}
+		if prepared.ExactResume && fixturePrompt != "" {
+			return errors.New("exact resume refuses --prompt because it must not submit replacement instructions")
+		}
+		if !prepared.ExactResume && fixturePrompt == "" {
+			return errors.New("--prompt required for a new synthetic attempt")
 		}
 		var repositoryRoot string
 		for _, repository := range prepared.Repositories {
@@ -351,6 +358,110 @@ func projectCommand(stateDir *string) *cobra.Command {
 	executionReconcile.Flags().StringVar(&reconcileRepository, "repository", "", "Enrolled repository ID")
 	executionReconcile.Flags().StringVar(&reconcilePath, "path", "", "Expected repository-relative fixture path")
 	root.AddCommand(executionReconcile)
+
+	var recoveryCommand, recoveryMode, historyState, historyClass string
+	var recoveryRevision int
+	var historyAutomatic bool
+	recoveryChoose := &cobra.Command{Use: "execution-recovery-choose PROJECT_ID RUN_ID", Short: "Record an explicit synthetic exact-resume, reconstruction, or blocked recovery choice", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		if !syntheticFixture {
+			return errors.New("--synthetic-fixture required; production history inspection is not implemented")
+		}
+		if recoveryCommand == "" || recoveryRevision < 1 || recoveryMode == "" {
+			return errors.New("--command-id, --expected-revision and --mode required")
+		}
+		if historyState != "readable" && historyState != "missing" && historyState != "corrupt" && historyState != "unsupported" {
+			return errors.New("--history-state must be readable, missing, corrupt, or unsupported")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			prepared, err := supervisor.LoadPrepared(cmd.Context(), e, args[1])
+			if err != nil {
+				return err
+			}
+			if prepared.RuntimeKind != "synthetic" {
+				return errors.New("synthetic history evidence cannot qualify a production run")
+			}
+			history := supervisor.HistoryObservation{State: historyState, RecoveryClass: historyClass, AutomaticWork: historyAutomatic, Qualification: "synthetic"}
+			if historyState == "readable" {
+				if err := e.DB.SQL.QueryRowContext(cmd.Context(), `SELECT native_home_ref,coalesce(durable_id,''),profile_digest,workspace_identity,generation FROM sessions WHERE run_id=? ORDER BY rowid DESC LIMIT 1`, args[1]).Scan(&history.NativeHomeRef, &history.NativeSessionID, &history.ProfileDigest, &history.WorkspaceIdentity, &history.TransportGeneration); err != nil {
+					return fmt.Errorf("readable synthetic history requires a recorded native session: %w", err)
+				}
+			}
+			checkpointManager, err := checkpoint.NewManager(e)
+			if err != nil {
+				return err
+			}
+			verifier := supervisor.CheckpointVerifierFunc(func(ctx context.Context, checkpointID string) error {
+				_, verifyErr := checkpointManager.VerifySet(ctx, checkpointID)
+				return verifyErr
+			})
+			runner := supervisor.Runner{Engine: e}
+			receipt, err := runner.ChooseRecovery(cmd.Context(), supervisor.RecoveryChoiceRequest{CommandID: recoveryCommand, ExpectedRevision: recoveryRevision, RunID: args[1], Mode: recoveryMode}, supervisor.SyntheticHistoryInspector{Observation: history, Verifier: verifier})
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, receipt)
+		})
+	}}
+	recoveryChoose.Flags().BoolVar(&syntheticFixture, "synthetic-fixture", false, "Use only explicit disposable-fixture history evidence")
+	recoveryChoose.Flags().StringVar(&recoveryCommand, "command-id", "", "Unique replay-safe recovery choice")
+	recoveryChoose.Flags().IntVar(&recoveryRevision, "expected-revision", 0, "Expected project revision")
+	recoveryChoose.Flags().StringVar(&recoveryMode, "mode", "", "exact_resume, fresh_context, or remain_blocked")
+	recoveryChoose.Flags().StringVar(&historyState, "history-state", "missing", "Observed synthetic native history state")
+	recoveryChoose.Flags().StringVar(&historyClass, "history-class", "interrupted", "Observed synthetic recovery class")
+	recoveryChoose.Flags().BoolVar(&historyAutomatic, "history-automatic-work", false, "Record automatic or queued native work")
+	root.AddCommand(recoveryChoose)
+
+	var exactCommand string
+	var exactRevision int
+	exactPrepare := &cobra.Command{Use: "execution-resume-prepare PROJECT_ID CHOICE_ID", Short: "Prepare one eligible exact native resume without a replacement prompt", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		if exactCommand == "" || exactRevision < 1 {
+			return errors.New("--command-id and --expected-revision required")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			prepared, err := (&supervisor.Runner{Engine: e}).PrepareExactResume(cmd.Context(), supervisor.ExactResumeRequest{CommandID: exactCommand, ExpectedRevision: exactRevision, ChoiceID: args[1]})
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, prepared)
+		})
+	}}
+	exactPrepare.Flags().StringVar(&exactCommand, "command-id", "", "Unique replay-safe exact-resume preparation")
+	exactPrepare.Flags().IntVar(&exactRevision, "expected-revision", 0, "Expected project revision")
+	root.AddCommand(exactPrepare)
+
+	var followupCommand, followupKind, followupChoice string
+	var followupRevision int
+	var followupWall int64
+	followupPrepare := &cobra.Command{Use: "execution-followup-prepare PROJECT_ID SOURCE_RUN_ID", Short: "Prepare a distinct repair, infrastructure retry, or fresh-context attempt", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		if followupCommand == "" || followupRevision < 1 || followupKind == "" {
+			return errors.New("--command-id, --expected-revision and --kind required")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			var verifier supervisor.CheckpointVerifier
+			if followupKind == "fresh_context" {
+				checkpointManager, err := checkpoint.NewManager(e)
+				if err != nil {
+					return err
+				}
+				verifier = supervisor.CheckpointVerifierFunc(func(ctx context.Context, checkpointID string) error {
+					_, verifyErr := checkpointManager.VerifySet(ctx, checkpointID)
+					return verifyErr
+				})
+			}
+			prepared, err := supervisor.PrepareFollowup(cmd.Context(), e, supervisor.FollowupRequest{CommandID: followupCommand, ExpectedRevision: followupRevision, SourceRunID: args[1], Kind: followupKind, ChoiceID: followupChoice, WallLimitMS: followupWall, Verifier: verifier})
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, prepared)
+		})
+	}}
+	followupPrepare.Flags().StringVar(&followupCommand, "command-id", "", "Unique replay-safe follow-up preparation")
+	followupPrepare.Flags().IntVar(&followupRevision, "expected-revision", 0, "Expected project revision")
+	followupPrepare.Flags().StringVar(&followupKind, "kind", "", "repair, infrastructure, or fresh_context")
+	followupPrepare.Flags().StringVar(&followupChoice, "choice-id", "", "Eligible fresh-context recovery choice")
+	followupPrepare.Flags().Int64Var(&followupWall, "wall-limit-ms", 60000, "Absolute wall limit for the new attempt")
+	root.AddCommand(followupPrepare)
+
 	var checkpointCommand string
 	var checkpointRevision int
 	checkpointSave := &cobra.Command{Use: "checkpoint-save PROJECT_ID RUN_ID", Short: "Save and verify every participating repository without clearing work", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {

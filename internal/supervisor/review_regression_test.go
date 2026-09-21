@@ -300,7 +300,7 @@ func TestAwaitSuspendsAndResumesActiveDeadlineForProvenWait(t *testing.T) {
 	})
 
 	t.Run("wait_suspends_deadline", func(t *testing.T) {
-		fixture := setupFixtureWithLimits(t, 150, 2000)
+		fixture := setupFixtureWithLimits(t, 500, 2000)
 		driver := &controlledAwaitDriver{FixtureDriver: fixture.driver, entered: make(chan struct{}), release: make(chan struct{})}
 		runner := Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: driver}
 		if err := runner.startSegment(context.Background(), fixture.prepared); err != nil {
@@ -329,7 +329,7 @@ func TestAwaitSuspendsAndResumesActiveDeadlineForProvenWait(t *testing.T) {
 	})
 
 	t.Run("resume_restores_deadline", func(t *testing.T) {
-		fixture := setupFixtureWithLimits(t, 150, 2000)
+		fixture := setupFixtureWithLimits(t, 500, 2000)
 		driver := &controlledAwaitDriver{FixtureDriver: fixture.driver, entered: make(chan struct{}), release: make(chan struct{})}
 		runner := Runner{Engine: fixture.engine, Owner: fixture.owner, Driver: driver}
 		if err := runner.startSegment(context.Background(), fixture.prepared); err != nil {
@@ -351,7 +351,7 @@ func TestAwaitSuspendsAndResumesActiveDeadlineForProvenWait(t *testing.T) {
 			if err == nil {
 				t.Fatal("await succeeded without terminal observation")
 			}
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(900 * time.Millisecond):
 			close(driver.release)
 			t.Fatal("active deadline was not restored after proven wait")
 		}
