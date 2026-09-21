@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -49,6 +48,56 @@ func withProject(cmd *cobra.Command, stateDir *string, id string, fn func(*core.
 	}
 	defer e.DB.Close()
 	return fn(e)
+}
+
+func withRecoveryProject(cmd *cobra.Command, stateDir *string, projectID, checkpointID, commandID string, fn func(*checkpoint.Manager) error) error {
+	m, err := manager(cmd, stateDir)
+	if err != nil {
+		return err
+	}
+	defer m.Close()
+	e, err := m.Open(cmd.Context(), projectID)
+	if err != nil {
+		return err
+	}
+	defer e.DB.Close()
+	var runID string
+	if err := e.DB.SQL.QueryRowContext(cmd.Context(), "SELECT run_id FROM checkpoint_sets WHERE id=?", checkpointID).Scan(&runID); err != nil {
+		return err
+	}
+	prepared, err := supervisor.LoadPrepared(cmd.Context(), e, runID)
+	if err != nil {
+		return err
+	}
+	owner, err := m.Coordinator.Register(cmd.Context())
+	if err != nil {
+		return err
+	}
+	defer owner.Close()
+	reservation, err := e.ReserveResources(cmd.Context(), owner, "checkpoint-recovery-"+store.Digest([]byte(commandID)), runID, prepared.EndpointID)
+	if err != nil {
+		return err
+	}
+	checkpointManager, err := checkpoint.NewManager(e)
+	if err == nil {
+		err = checkpointManager.AuthorizeRecovery(owner, reservation)
+	}
+	if err == nil {
+		err = fn(checkpointManager)
+	}
+	releaseErr := owner.FinishTicket(context.Background(), reservation.Ticket, "contained_stopped")
+	if releaseErr == nil {
+		for _, claim := range reservation.Claims {
+			if claimErr := owner.Release(context.Background(), claim, "contained_stopped"); claimErr != nil {
+				releaseErr = claimErr
+				break
+			}
+		}
+	}
+	if err != nil {
+		return err
+	}
+	return releaseErr
 }
 func projectCommand(stateDir *string) *cobra.Command {
 	root := &cobra.Command{Use: "project", Short: "Persist project definitions, policy, decisions and evidence"}
@@ -390,10 +439,13 @@ func projectCommand(stateDir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			verifier := supervisor.CheckpointVerifierFunc(func(ctx context.Context, checkpointID string) error {
-				_, verifyErr := checkpointManager.VerifySet(ctx, checkpointID)
-				return verifyErr
-			})
+			verifier := supervisor.CheckpointVerifierPair{
+				Verify: func(ctx context.Context, checkpointID string) error {
+					_, verifyErr := checkpointManager.VerifySet(ctx, checkpointID)
+					return verifyErr
+				},
+				VerifyCurrent: checkpointManager.VerifyCheckpointCurrent,
+			}
 			runner := supervisor.Runner{Engine: e}
 			receipt, err := runner.ChooseRecovery(cmd.Context(), supervisor.RecoveryChoiceRequest{CommandID: recoveryCommand, ExpectedRevision: recoveryRevision, RunID: args[1], Mode: recoveryMode}, supervisor.SyntheticHistoryInspector{Observation: history, Verifier: verifier})
 			if err != nil {
@@ -498,28 +550,8 @@ func projectCommand(stateDir *string) *cobra.Command {
 		if clearCommand == "" || clearRevision < 1 {
 			return errors.New("--command-id and --expected-revision required")
 		}
-		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
-			var runID string
-			if err := e.DB.SQL.QueryRowContext(cmd.Context(), "SELECT run_id FROM checkpoint_sets WHERE id=?", args[1]).Scan(&runID); err != nil {
-				return err
-			}
-			result, err := (&supervisor.Runner{Engine: e}).Result(cmd.Context(), runID)
-			if err != nil {
-				return errors.New("clear requires a validated execution result naming agent-owned paths")
-			}
-			owned := map[string][]string{}
-			for _, changed := range result.ChangedPaths {
-				parts := strings.SplitN(changed, ":", 2)
-				if len(parts) != 2 {
-					return errors.New("validated result contains an invalid changed path")
-				}
-				owned[parts[0]] = append(owned[parts[0]], parts[1])
-			}
-			manager, err := checkpoint.NewManager(e)
-			if err != nil {
-				return err
-			}
-			receipt, err := manager.Clear(cmd.Context(), checkpoint.ClearRequest{CommandID: clearCommand, ExpectedRevision: clearRevision, CheckpointID: args[1], BaselineCheckpointID: args[2], OwnedPaths: owned})
+		return withRecoveryProject(cmd, stateDir, args[0], args[1], clearCommand, func(manager *checkpoint.Manager) error {
+			receipt, err := manager.Clear(cmd.Context(), checkpoint.ClearRequest{CommandID: clearCommand, ExpectedRevision: clearRevision, CheckpointID: args[1], BaselineCheckpointID: args[2]})
 			if err != nil {
 				return err
 			}
@@ -536,11 +568,7 @@ func projectCommand(stateDir *string) *cobra.Command {
 		if restoreCommand == "" || restoreRevision < 1 {
 			return errors.New("--command-id and --expected-revision required")
 		}
-		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
-			manager, err := checkpoint.NewManager(e)
-			if err != nil {
-				return err
-			}
+		return withRecoveryProject(cmd, stateDir, args[0], args[1], restoreCommand, func(manager *checkpoint.Manager) error {
 			receipt, err := manager.Restore(cmd.Context(), checkpoint.RestoreRequest{CommandID: restoreCommand, ExpectedRevision: restoreRevision, CheckpointID: args[1], BaselineCheckpointID: args[2], DestinationCheckpointID: args[3]})
 			if err != nil {
 				return err

@@ -5,14 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"vigil/internal/coordinator"
 	"vigil/internal/core"
 	"vigil/internal/policy"
 	"vigil/internal/store"
 	"vigil/internal/supervisor"
+	"vigil/internal/workspace"
 )
 
 type recoveryFixture struct {
@@ -21,6 +24,8 @@ type recoveryFixture struct {
 	prepared supervisor.PreparedRun
 	root     string
 	recovery *Manager
+	owner    *coordinator.Owner
+	reserved core.Reservation
 }
 
 func applyCore(t *testing.T, engine *core.Engine, kind string, payload any) {
@@ -85,7 +90,25 @@ func recoverySetup(t *testing.T) recoveryFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return recoveryFixture{manager: manager, engine: engine, prepared: prepared, root: root, recovery: recovery}
+	if _, err := engine.DB.SQL.Exec("UPDATE runs SET state='interrupted',writer_state='contained_stopped',ended_at=? WHERE id=?", store.Now(), prepared.RunID); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Coordinator.Endpoint(context.Background(), prepared.EndpointID, []string{"http://127.0.0.1:1/v1"}, 1, coordinator.Host()); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := manager.Coordinator.Register(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { owner.Close() })
+	reserved, err := engine.ReserveResources(context.Background(), owner, "checkpoint-recovery", prepared.RunID, prepared.EndpointID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := recovery.AuthorizeRecovery(owner, reserved); err != nil {
+		t.Fatal(err)
+	}
+	return recoveryFixture{manager: manager, engine: engine, prepared: prepared, root: root, recovery: recovery, owner: owner, reserved: reserved}
 }
 
 func revision(t *testing.T, engine *core.Engine) int {
@@ -129,11 +152,33 @@ func ownedRecoveryPaths() map[string][]string {
 	return map[string][]string{"repo": {"same.txt", "delete.txt", "script.sh", "binary.dat", "link", "dir/item.txt"}}
 }
 
+func recordValidatedResult(t *testing.T, fixture recoveryFixture) {
+	t.Helper()
+	fingerprints := map[string]workspace.Baseline{}
+	var changed []string
+	for _, repository := range fixture.prepared.Repositories {
+		fingerprint, err := workspace.Fingerprint(context.Background(), repository.Root, repository.Baseline.Exclusions)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fingerprints[repository.ID] = fingerprint
+		for _, path := range fingerprint.DirtyPaths {
+			changed = append(changed, repository.ID+":"+path)
+		}
+	}
+	changedJSON, _ := json.Marshal(changed)
+	fingerprintsJSON, _ := json.Marshal(fingerprints)
+	if _, err := fixture.engine.DB.SQL.Exec(`INSERT INTO execution_results(run_id,generation_id,schema_version,status,summary,changed_paths_json,repository_fingerprints_json,result_digest,validated_at) VALUES(?,?,1,'completed','fixture ownership evidence',?,?,?,?) ON CONFLICT(run_id) DO NOTHING`, fixture.prepared.RunID, fixture.prepared.GenerationID, string(changedJSON), string(fingerprintsJSON), store.Digest(changedJSON), store.Now()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSaveAndClearRoundTripWithPerPathRecovery(t *testing.T) {
 	fixture := recoverySetup(t)
 	baseline := saveRun(t, fixture, "save-baseline")
 	mutateRecoveryFixture(t, fixture)
 	captured := saveRun(t, fixture, "save-captured")
+	recordValidatedResult(t, fixture)
 	if baseline.State != "verified" || captured.State != "verified" {
 		t.Fatal(baseline, captured)
 	}
@@ -145,7 +190,7 @@ func TestSaveAndClearRoundTripWithPerPathRecovery(t *testing.T) {
 	if err != nil || !again.Repeated || again.CheckpointID != captured.CheckpointID {
 		t.Fatal(again, err)
 	}
-	request := ClearRequest{CommandID: "clear", ExpectedRevision: revision(t, fixture.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID, OwnedPaths: ownedRecoveryPaths()}
+	request := ClearRequest{CommandID: "clear", ExpectedRevision: revision(t, fixture.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID}
 	injected := errors.New("controller interrupted after apply")
 	fired := false
 	fixture.recovery.Fault = func(point string) error {
@@ -206,8 +251,9 @@ func TestClearRejectsConcurrentEditBeforeAnyApply(t *testing.T) {
 	baseline := saveRun(t, fixture, "save-baseline")
 	mutateRecoveryFixture(t, fixture)
 	captured := saveRun(t, fixture, "save-captured")
+	recordValidatedResult(t, fixture)
 	write(t, filepath.Join(fixture.root, "same.txt"), []byte("manual-after-save\n"), 0600)
-	request := ClearRequest{CommandID: "clear-conflict", ExpectedRevision: revision(t, fixture.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID, OwnedPaths: ownedRecoveryPaths()}
+	request := ClearRequest{CommandID: "clear-conflict", ExpectedRevision: revision(t, fixture.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID}
 	if _, err := fixture.recovery.Clear(context.Background(), request); err == nil {
 		t.Fatal("concurrent edit was overwritten")
 	}
@@ -220,9 +266,62 @@ func TestClearRejectsConcurrentEditBeforeAnyApply(t *testing.T) {
 	}
 }
 
+func TestClearRequiresCoreOwnershipEvidenceAndLiveAuthority(t *testing.T) {
+	fixture := recoverySetup(t)
+	baseline := saveRun(t, fixture, "ownership-base")
+	write(t, filepath.Join(fixture.root, "same.txt"), []byte("user-only edit\n"), 0600)
+	captured := saveRun(t, fixture, "ownership-captured")
+	request := ClearRequest{CommandID: "ownership-clear", ExpectedRevision: revision(t, fixture.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID}
+	if _, err := fixture.recovery.Clear(context.Background(), request); err == nil || !strings.Contains(err.Error(), "validated completed execution result") {
+		t.Fatal("user-only edit acquired clear ownership", err)
+	}
+	got, _ := os.ReadFile(filepath.Join(fixture.root, "same.txt"))
+	if string(got) != "user-only edit\n" {
+		t.Fatal("user-only bytes changed", string(got))
+	}
+	recordValidatedResult(t, fixture)
+	unauthorized, err := NewManager(fixture.engine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := unauthorized.Clear(context.Background(), ClearRequest{CommandID: "no-authority", ExpectedRevision: revision(t, fixture.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID}); err == nil || !strings.Contains(err.Error(), "live coordinator reservation") {
+		t.Fatal("clear proceeded without current workspace authority", err)
+	}
+	if _, err := fixture.engine.DB.SQL.Exec("UPDATE runs SET state='active',writer_state='unconfirmed' WHERE id=?", fixture.prepared.RunID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.recovery.Clear(context.Background(), ClearRequest{CommandID: "unsafe-writer", ExpectedRevision: revision(t, fixture.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID}); err == nil || !strings.Contains(err.Error(), "writer containment") {
+		t.Fatal("clear proceeded with unresolved writer", err)
+	}
+}
+
+func TestRestoreReinstallsPrunedStagedObjects(t *testing.T) {
+	fixture := recoverySetup(t)
+	baseline := saveRun(t, fixture, "object-base")
+	write(t, filepath.Join(fixture.root, "same.txt"), []byte("unique staged object bytes\n"), 0600)
+	git(t, "-C", fixture.root, "add", "same.txt")
+	oid := strings.TrimSpace(string(git(t, "-C", fixture.root, "rev-parse", ":same.txt")))
+	target := saveRun(t, fixture, "object-target")
+	recordValidatedResult(t, fixture)
+	clearCaptured(t, fixture, baseline, target, "object-clear")
+	git(t, "-C", fixture.root, "prune", "--expire", "now")
+	if command := exec.Command("git", "-C", fixture.root, "cat-file", "-e", oid+"^{blob}"); command.Run() == nil {
+		t.Fatal("fixture staged object was not pruned")
+	}
+	destination := saveRun(t, fixture, "object-destination")
+	receipt, err := fixture.recovery.Restore(context.Background(), RestoreRequest{CommandID: "object-restore", ExpectedRevision: revision(t, fixture.engine), CheckpointID: target.CheckpointID, BaselineCheckpointID: baseline.CheckpointID, DestinationCheckpointID: destination.CheckpointID})
+	if err != nil || receipt.State != "restored" {
+		t.Fatal(receipt, err)
+	}
+	if err := exec.Command("git", "-C", fixture.root, "cat-file", "-e", oid+"^{blob}").Run(); err != nil {
+		t.Fatal("restored index still references a missing staged object", err)
+	}
+}
+
 func clearCaptured(t *testing.T, fixture recoveryFixture, baseline, captured SaveReceipt, command string) RecoveryReceipt {
 	t.Helper()
-	receipt, err := fixture.recovery.Clear(context.Background(), ClearRequest{CommandID: command, ExpectedRevision: revision(t, fixture.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID, OwnedPaths: ownedRecoveryPaths()})
+	recordValidatedResult(t, fixture)
+	receipt, err := fixture.recovery.Clear(context.Background(), ClearRequest{CommandID: command, ExpectedRevision: revision(t, fixture.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,16 +382,22 @@ func TestClearRejectsReplacedParentAtApplyBoundary(t *testing.T) {
 	baseline := saveRun(t, fixture, "save-baseline")
 	mutateRecoveryFixture(t, fixture)
 	captured := saveRun(t, fixture, "save-captured")
+	recordValidatedResult(t, fixture)
 	original := filepath.Join(fixture.root, "dir-original")
-	if err := os.Rename(filepath.Join(fixture.root, "dir"), original); err != nil {
-		t.Fatal(err)
-	}
 	outside := filepath.Join(t.TempDir(), "outside")
 	write(t, filepath.Join(outside, "item.txt"), []byte("agent item\n"), 0600)
-	if err := os.Symlink(outside, filepath.Join(fixture.root, "dir")); err != nil {
-		t.Fatal(err)
+	replaced := false
+	fixture.recovery.Fault = func(point string) error {
+		if point == "before_apply:repo:dir/item.txt" && !replaced {
+			replaced = true
+			if err := os.Rename(filepath.Join(fixture.root, "dir"), original); err != nil {
+				return err
+			}
+			return os.Symlink(outside, filepath.Join(fixture.root, "dir"))
+		}
+		return nil
 	}
-	request := ClearRequest{CommandID: "clear-replaced-parent", ExpectedRevision: revision(t, fixture.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID, OwnedPaths: ownedRecoveryPaths()}
+	request := ClearRequest{CommandID: "clear-replaced-parent", ExpectedRevision: revision(t, fixture.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID}
 	receipt, err := fixture.recovery.Clear(context.Background(), request)
 	if err == nil || receipt.State != "conflicted" {
 		t.Fatal("replaced parent was not rejected at the intended apply", receipt, err)
@@ -319,7 +424,7 @@ func TestIncompleteSaveCannotAuthorizeClear(t *testing.T) {
 	}
 	fixture.recovery.Store.Fault = nil
 	before, _ := os.ReadFile(filepath.Join(fixture.root, "same.txt"))
-	_, clearErr := fixture.recovery.Clear(context.Background(), ClearRequest{CommandID: "clear-failed", ExpectedRevision: revision(t, fixture.engine), CheckpointID: failed.CheckpointID, BaselineCheckpointID: baseline.CheckpointID, OwnedPaths: ownedRecoveryPaths()})
+	_, clearErr := fixture.recovery.Clear(context.Background(), ClearRequest{CommandID: "clear-failed", ExpectedRevision: revision(t, fixture.engine), CheckpointID: failed.CheckpointID, BaselineCheckpointID: baseline.CheckpointID})
 	if clearErr == nil {
 		t.Fatal("incomplete checkpoint authorized clear")
 	}
@@ -418,7 +523,25 @@ func multiRecoverySetup(t *testing.T) recoveryFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return recoveryFixture{manager: manager, engine: engine, prepared: prepared, root: root, recovery: recovery}
+	if _, err := engine.DB.SQL.Exec("UPDATE runs SET state='interrupted',writer_state='contained_stopped',ended_at=? WHERE id=?", store.Now(), prepared.RunID); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Coordinator.Endpoint(context.Background(), prepared.EndpointID, []string{"http://127.0.0.1:1/v1"}, 1, coordinator.Host()); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := manager.Coordinator.Register(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { owner.Close() })
+	reserved, err := engine.ReserveResources(context.Background(), owner, "checkpoint-recovery", prepared.RunID, prepared.EndpointID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := recovery.AuthorizeRecovery(owner, reserved); err != nil {
+		t.Fatal(err)
+	}
+	return recoveryFixture{manager: manager, engine: engine, prepared: prepared, root: root, recovery: recovery, owner: owner, reserved: reserved}
 }
 
 func saveAll(t *testing.T, fixture recoveryFixture, command string) SaveReceipt {
@@ -449,8 +572,9 @@ func mutateAll(t *testing.T, fixture recoveryFixture) map[string][]string {
 func TestCorruptRepositoryInSetPreventsEveryClear(t *testing.T) {
 	fixture := multiRecoverySetup(t)
 	baseline := saveAll(t, fixture, "save-baseline")
-	owned := mutateAll(t, fixture)
+	mutateAll(t, fixture)
 	captured := saveAll(t, fixture, "save-captured")
+	recordValidatedResult(t, fixture)
 	manifest := mustReadSet(t, fixture.recovery, captured.CheckpointID)
 	child := findRepository(t, manifest, "child")
 	entry := findPath(t, child, "same.txt")
@@ -458,7 +582,7 @@ func TestCorruptRepositoryInSetPreventsEveryClear(t *testing.T) {
 		t.Fatal(err)
 	}
 	parentBefore, _ := os.ReadFile(filepath.Join(fixture.root, "same.txt"))
-	_, err := fixture.recovery.Clear(context.Background(), ClearRequest{CommandID: "clear-corrupt", ExpectedRevision: revision(t, fixture.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID, OwnedPaths: owned})
+	_, err := fixture.recovery.Clear(context.Background(), ClearRequest{CommandID: "clear-corrupt", ExpectedRevision: revision(t, fixture.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID})
 	if err == nil {
 		t.Fatal("corrupt repository checkpoint authorized a multi-repository clear")
 	}
@@ -475,9 +599,10 @@ func TestCorruptRepositoryInSetPreventsEveryClear(t *testing.T) {
 func TestMultiRepositoryRestoreInterruptionRetainsBothRecoveryCopies(t *testing.T) {
 	fixture := multiRecoverySetup(t)
 	baseline := saveAll(t, fixture, "save-baseline")
-	owned := mutateAll(t, fixture)
+	mutateAll(t, fixture)
 	captured := saveAll(t, fixture, "save-captured")
-	if _, err := fixture.recovery.Clear(context.Background(), ClearRequest{CommandID: "clear", ExpectedRevision: revision(t, fixture.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID, OwnedPaths: owned}); err != nil {
+	recordValidatedResult(t, fixture)
+	if _, err := fixture.recovery.Clear(context.Background(), ClearRequest{CommandID: "clear", ExpectedRevision: revision(t, fixture.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID}); err != nil {
 		t.Fatal(err)
 	}
 	destination := saveAll(t, fixture, "save-destination")

@@ -251,7 +251,7 @@ func parseIndex(raw []byte) ([]IndexEntry, error) {
 		meta := strings.Fields(string(parts[0]))
 		stage, err := strconv.Atoi(metaValue(meta, 2))
 		path := filepath.ToSlash(string(parts[1]))
-		if err != nil || len(meta) != 3 || stage != 0 || meta[0] == "160000" || path == "" || filepath.IsAbs(path) || path == ".." || strings.HasPrefix(path, "../") {
+		if err != nil || len(meta) != 3 || stage < 0 || stage > 3 || meta[0] == "160000" || path == "" || filepath.IsAbs(path) || path == ".." || strings.HasPrefix(path, "../") {
 			return nil, errors.New("unsupported or invalid Git index entry")
 		}
 		result = append(result, IndexEntry{Path: path, Mode: meta[0], OID: meta[1], Stage: stage})
@@ -613,12 +613,35 @@ func (s *Store) Verify(ctx context.Context, manifest SetManifest) error {
 			}
 		}
 		bundlePath := filepath.Join(s.Dir, "blobs", repository.BundleBlob)
-		cmd := exec.CommandContext(ctx, "git", "bundle", "list-heads", bundlePath)
-		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + filepath.Join(s.Dir, "no-home"), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull, "LC_ALL=C"}
-		bundleHeads, err := cmd.Output()
-		if err != nil || !bytes.Contains(bundleHeads, []byte(repository.HeadOID)) {
+		bundleBytes, _, err := readBounded(bundlePath)
+		if err != nil || !validBundleHeader(bundleBytes, repository.HeadOID, repository.HeadRef) {
 			return errors.New("checkpoint Git bundle is not recovery-readable")
 		}
 	}
 	return nil
+}
+
+func validBundleHeader(bundle []byte, headOID, _ string) bool {
+	sections := bytes.SplitN(bundle, []byte("\n\n"), 2)
+	if len(sections) != 2 || !bytes.HasPrefix(sections[1], []byte("PACK")) {
+		return false
+	}
+	lines := bytes.Split(sections[0], []byte{'\n'})
+	if len(lines) < 2 || (!bytes.Equal(lines[0], []byte("# v2 git bundle")) && !bytes.Equal(lines[0], []byte("# v3 git bundle"))) {
+		return false
+	}
+	format := "sha1"
+	if len(headOID) == 64 {
+		format = "sha256"
+	}
+	if format == "sha256" && !bytes.Contains(sections[0], []byte("@object-format=sha256\n")) {
+		return false
+	}
+	for _, line := range lines[1:] {
+		fields := strings.Fields(string(line))
+		if len(fields) == 2 && fields[0] == headOID {
+			return true
+		}
+	}
+	return false
 }

@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"vigil/internal/store"
@@ -17,6 +19,18 @@ func git(t *testing.T, args ...string) []byte {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1", "GIT_OPTIONAL_LOCKS=0")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatal(args, err, string(out))
+	}
+	return out
+}
+
+func gitInput(t *testing.T, input string, args ...string) []byte {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1", "GIT_OPTIONAL_LOCKS=0")
+	cmd.Stdin = strings.NewReader(input)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatal(args, err, string(out))
@@ -147,6 +161,78 @@ func TestCaptureVerifiesMixedRepositoryState(t *testing.T) {
 	staged, err := os.ReadFile(filepath.Join(checkpointStore.Dir, "blobs", sameIndex.BlobDigest))
 	if err != nil || string(staged) != "staged\n" {
 		t.Fatal("staged bytes lost", string(staged), err)
+	}
+}
+
+func TestDescriptorRelativeObjectRecoverySupportsGitFormatsAndConflictStages(t *testing.T) {
+	for _, format := range []string{"sha1", "sha256"} {
+		t.Run(format, func(t *testing.T) {
+			base := t.TempDir()
+			root := filepath.Join(base, "repository")
+			if err := os.MkdirAll(root, 0700); err != nil {
+				t.Fatal(err)
+			}
+			init := exec.Command("git", "init", "-q", "-b", "main", "--object-format="+format, root)
+			init.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+			if output, err := init.CombinedOutput(); err != nil {
+				if format == "sha256" {
+					t.Skipf("installed Git lacks SHA-256 repository support: %s", output)
+				}
+				t.Fatal(err, string(output))
+			}
+			write(t, filepath.Join(root, "same.txt"), []byte("base\n"), 0600)
+			git(t, "-C", root, "add", "same.txt")
+			git(t, "-C", root, "-c", "user.name=Fixture", "-c", "user.email=fixture@invalid", "commit", "-qm", "base")
+			var expectedOIDs []string
+			if format == "sha1" {
+				var stageLines strings.Builder
+				for stage, content := range []string{"base stage\n", "ours stage\n", "theirs stage\n"} {
+					path := filepath.Join(base, fmt.Sprintf("stage-%d", stage+1))
+					write(t, path, []byte(content), 0600)
+					oid := strings.TrimSpace(string(git(t, "-C", root, "hash-object", "-w", path)))
+					expectedOIDs = append(expectedOIDs, oid)
+					fmt.Fprintf(&stageLines, "100644 %s %d\tsame.txt\n", oid, stage+1)
+				}
+				var lines strings.Builder
+				fmt.Fprintf(&lines, "0 %s\tsame.txt\n", strings.Repeat("0", len(expectedOIDs[0])))
+				lines.WriteString(stageLines.String())
+				gitInput(t, lines.String(), "-C", root, "update-index", "--index-info")
+			} else {
+				write(t, filepath.Join(root, "same.txt"), []byte("unique sha256 staged bytes\n"), 0600)
+				git(t, "-C", root, "add", "same.txt")
+				expectedOIDs = []string{strings.TrimSpace(string(git(t, "-C", root, "rev-parse", ":same.txt")))}
+			}
+			identity, err := workspace.Inspect(context.Background(), root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkpointStore, err := Open(filepath.Join(base, "private", "checkpoints"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			manifest, err := checkpointStore.Capture(context.Background(), "object-set", 1, []RepositorySpec{{ID: "repo", Root: root, Identity: identity, Exclusions: []string{".git"}, UntrackedScope: []string{"**"}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			repository := manifest.Repositories[0]
+			if format == "sha1" && len(repository.IndexEntries) != 3 {
+				t.Fatalf("conflict stages were not captured: %#v", repository.IndexEntries)
+			}
+			for _, oid := range expectedOIDs {
+				if err := os.Remove(filepath.Join(identity.CommonGitPath, "objects", oid[:2], oid[2:])); err != nil {
+					t.Fatal(err)
+				}
+			}
+			manager := &Manager{Store: checkpointStore}
+			if err := manager.restoreIndexObjects(context.Background(), repository); err != nil {
+				t.Fatal(err)
+			}
+			for _, oid := range expectedOIDs {
+				if err := exec.Command("git", "-C", root, "cat-file", "-e", oid+"^{blob}").Run(); err != nil {
+					t.Fatal("restored object is unusable", oid, err)
+				}
+			}
+		})
 	}
 }
 

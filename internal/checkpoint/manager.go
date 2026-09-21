@@ -9,15 +9,28 @@ import (
 	"path/filepath"
 
 	"vigil/internal/artifacts"
+	"vigil/internal/coordinator"
 	"vigil/internal/core"
 	"vigil/internal/store"
 	"vigil/internal/workspace"
 )
 
 type Manager struct {
-	Engine *core.Engine
-	Store  *Store
-	Fault  func(point string) error
+	Engine      *core.Engine
+	Store       *Store
+	Owner       *coordinator.Owner
+	Reservation core.Reservation
+	Fault       func(point string) error
+}
+
+// AuthorizeRecovery binds destructive recovery to a live, fenced reservation.
+// Save and verification remain read-only and do not require this capability.
+func (m *Manager) AuthorizeRecovery(owner *coordinator.Owner, reservation core.Reservation) error {
+	if m == nil || owner == nil || owner.Coordinator == nil || reservation.Phase != "reserved" || reservation.OwnerID != owner.ID {
+		return errors.New("live recovery owner and reserved authority required")
+	}
+	m.Owner, m.Reservation = owner, reservation
+	return nil
 }
 
 type SaveRequest struct {

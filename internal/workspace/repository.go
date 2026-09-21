@@ -320,15 +320,23 @@ func Fingerprint(ctx context.Context, root string, exclusions []string) (Baselin
 		if entry.IsDir() {
 			return nil
 		}
-		if !info.Mode().IsRegular() {
-			return errors.New("repository fingerprint rejects symlinks and special files")
+		var content []byte
+		if info.Mode()&os.ModeSymlink != 0 {
+			target, readErr := os.Readlink(path)
+			if readErr != nil {
+				return readErr
+			}
+			content = []byte(target)
+		} else if info.Mode().IsRegular() {
+			f, openErr := os.Open(path)
+			if openErr != nil {
+				return openErr
+			}
+			content, err = io.ReadAll(io.LimitReader(f, (64<<20)+1))
+			f.Close()
+		} else {
+			return errors.New("repository fingerprint rejects special files")
 		}
-		f, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		content, err := io.ReadAll(io.LimitReader(f, (64<<20)+1))
-		f.Close()
 		if err != nil {
 			return err
 		}
@@ -342,8 +350,12 @@ func Fingerprint(ctx context.Context, root string, exclusions []string) (Baselin
 			dirty[rel] = true
 		}
 		if tracked {
-			executable := info.Mode().Perm()&0111 != 0
-			if executable != (indexed.mode == "100755") {
+			modeMatches := indexed.mode == "120000" && info.Mode()&os.ModeSymlink != 0
+			if info.Mode().IsRegular() {
+				executable := info.Mode().Perm()&0111 != 0
+				modeMatches = executable == (indexed.mode == "100755") && (indexed.mode == "100644" || indexed.mode == "100755")
+			}
+			if !modeMatches {
 				dirty[rel] = true
 			}
 		}

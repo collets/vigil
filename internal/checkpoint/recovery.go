@@ -1,26 +1,35 @@
 package checkpoint
 
 import (
+	"bytes"
+	"compress/zlib"
 	"context"
+	"crypto/sha1"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 
+	"golang.org/x/sys/unix"
 	"vigil/internal/core"
 	"vigil/internal/store"
+	"vigil/internal/workspace"
 )
 
 type ClearRequest struct {
-	CommandID            string              `json:"command_id"`
-	ExpectedRevision     int                 `json:"expected_revision"`
-	CheckpointID         string              `json:"checkpoint_id"`
-	BaselineCheckpointID string              `json:"baseline_checkpoint_id"`
-	OwnedPaths           map[string][]string `json:"owned_paths"`
+	CommandID            string `json:"command_id"`
+	ExpectedRevision     int    `json:"expected_revision"`
+	CheckpointID         string `json:"checkpoint_id"`
+	BaselineCheckpointID string `json:"baseline_checkpoint_id"`
+	// OwnedPaths is retained only to reject legacy callers that attempted to
+	// self-assert ownership. Ownership is derived from persisted result evidence.
+	OwnedPaths map[string][]string `json:"owned_paths,omitempty"`
 }
 
 type RestoreRequest struct {
@@ -121,6 +130,153 @@ func normalizeOwned(input map[string][]string) (map[string]map[string]bool, erro
 	return result, nil
 }
 
+func (m *Manager) withRecoveryAuthority(ctx context.Context, manifest SetManifest, fn func() (RecoveryReceipt, error)) (RecoveryReceipt, error) {
+	var zero RecoveryReceipt
+	if m == nil || m.Owner == nil || m.Owner.Coordinator == nil || m.Reservation.Phase != "reserved" {
+		return zero, errors.New("destructive recovery requires a live coordinator reservation")
+	}
+	var runID string
+	if err := m.Engine.DB.SQL.QueryRowContext(ctx, "SELECT run_id FROM checkpoint_sets WHERE id=?", manifest.ID).Scan(&runID); err != nil {
+		return zero, err
+	}
+	if runID != m.Reservation.RunID {
+		return zero, errors.New("recovery reservation is not bound to the checkpoint run")
+	}
+	roots := m.Reservation.Roots
+	if len(roots) == 0 && m.Reservation.Root.Root != "" {
+		roots = []workspace.Identity{m.Reservation.Root}
+	}
+	if len(roots) != len(manifest.Repositories) {
+		return zero, errors.New("recovery reservation does not cover the entire checkpoint set")
+	}
+	wanted := map[string]bool{}
+	for _, repository := range manifest.Repositories {
+		wanted[repository.Identity.Key+"\x00"+repository.Identity.CommonGit] = true
+	}
+	for _, root := range roots {
+		if !wanted[root.Key+"\x00"+root.CommonGit] {
+			return zero, errors.New("recovery reservation contains a different workspace root")
+		}
+	}
+	if err := m.writerContained(ctx, runID); err != nil {
+		return zero, err
+	}
+	var receipt RecoveryReceipt
+	err := m.Owner.HoldReservation(ctx, m.Engine.ProjectID, runID, m.Reservation.Endpoint, roots, m.Reservation.Claims, m.Reservation.Ticket, func() error {
+		if err := m.writerContained(ctx, runID); err != nil {
+			return err
+		}
+		var inner error
+		receipt, inner = fn()
+		return inner
+	})
+	return receipt, err
+}
+
+func (m *Manager) writerContained(ctx context.Context, runID string) error {
+	var state, writer string
+	if err := m.Engine.DB.SQL.QueryRowContext(ctx, "SELECT state,writer_state FROM runs WHERE id=?", runID).Scan(&state, &writer); err != nil {
+		return err
+	}
+	if writer != "contained_stopped" || (state != "completed" && state != "failed" && state != "interrupted") {
+		return errors.New("destructive recovery requires a terminal run with independently proven writer containment")
+	}
+	return nil
+}
+
+func (m *Manager) manifestContentDigest(repository RepositoryManifest) (string, error) {
+	paths := append([]PathEntry(nil), repository.Paths...)
+	sort.Slice(paths, func(i, j int) bool { return paths[i].Path < paths[j].Path })
+	hash := sha256.New()
+	for _, entry := range paths {
+		if entry.Kind == "deleted" {
+			continue
+		}
+		if entry.Kind != "regular" && entry.Kind != "symlink" {
+			return "", errors.New("original run baseline contains an unsupported path")
+		}
+		content, err := m.readBlob(entry.Digest)
+		if err != nil || int64(len(content)) != entry.Size {
+			return "", errors.New("run baseline checkpoint blob is unavailable")
+		}
+		fmt.Fprintf(hash, "%s\x00%o\x00%d\x00", entry.Path, os.FileMode(entry.Mode).Perm(), len(content))
+		hash.Write(content)
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func (m *Manager) clearOwnership(ctx context.Context, baseline, captured SetManifest) (map[string]map[string]bool, error) {
+	if len(baseline.Repositories) != len(captured.Repositories) {
+		return nil, errors.New("clear checkpoint repository sets differ")
+	}
+	var capturedRun, baselineRun, repositoriesJSON, changedJSON, fingerprintsJSON string
+	if err := m.Engine.DB.SQL.QueryRowContext(ctx, "SELECT run_id FROM checkpoint_sets WHERE id=?", captured.ID).Scan(&capturedRun); err != nil {
+		return nil, err
+	}
+	if err := m.Engine.DB.SQL.QueryRowContext(ctx, "SELECT run_id FROM checkpoint_sets WHERE id=?", baseline.ID).Scan(&baselineRun); err != nil {
+		return nil, err
+	}
+	if capturedRun != baselineRun {
+		return nil, errors.New("clear baseline is not bound to the captured run")
+	}
+	if err := m.Engine.DB.SQL.QueryRowContext(ctx, "SELECT repository_snapshot_json FROM run_snapshots WHERE run_id=?", capturedRun).Scan(&repositoriesJSON); err != nil {
+		return nil, err
+	}
+	var repositories []core.RepositoryRecord
+	if err := json.Unmarshal([]byte(repositoriesJSON), &repositories); err != nil {
+		return nil, err
+	}
+	baseMap := repositoryMap(baseline)
+	if len(baseMap) != len(repositories) {
+		return nil, errors.New("clear baseline does not cover the original run snapshot")
+	}
+	for _, repository := range repositories {
+		manifest, ok := baseMap[repository.ID]
+		expectedRef := "refs/heads/" + repository.PlanBranch
+		if !ok || manifest.HeadOID != repository.Baseline.HeadOID || manifest.HeadRef != expectedRef || manifest.IndexDigest != repository.Baseline.IndexDigest {
+			return nil, fmt.Errorf("clear baseline is not the immutable pre-attempt state for repository %s", repository.ID)
+		}
+		contentDigest, err := m.manifestContentDigest(manifest)
+		if err != nil || contentDigest != repository.Baseline.ContentDigest {
+			return nil, errors.New("clear baseline bytes differ from the immutable pre-attempt state")
+		}
+	}
+	if err := m.Engine.DB.SQL.QueryRowContext(ctx, "SELECT changed_paths_json,repository_fingerprints_json FROM execution_results WHERE run_id=? AND status='completed'", capturedRun).Scan(&changedJSON, &fingerprintsJSON); err != nil {
+		return nil, errors.New("clear requires a validated completed execution result")
+	}
+	var changed []string
+	var fingerprints map[string]workspace.Baseline
+	if err := json.Unmarshal([]byte(changedJSON), &changed); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(fingerprintsJSON), &fingerprints); err != nil {
+		return nil, err
+	}
+	ownedInput := map[string][]string{}
+	for _, value := range changed {
+		parts := strings.SplitN(value, ":", 2)
+		if len(parts) != 2 {
+			return nil, errors.New("validated result contains an invalid changed path")
+		}
+		ownedInput[parts[0]] = append(ownedInput[parts[0]], parts[1])
+	}
+	owned, err := normalizeOwned(ownedInput)
+	if err != nil {
+		return nil, err
+	}
+	for _, repository := range captured.Repositories {
+		current, err := workspace.Fingerprint(ctx, repository.Identity.Root, repository.Exclusions)
+		if err != nil {
+			return nil, fmt.Errorf("cannot bind clear ownership for repository %s: %w", repository.RepositoryID, err)
+		}
+		expected, ok := fingerprints[repository.RepositoryID]
+		if !ok || !snapshotEqual(current, expected) {
+			return nil, fmt.Errorf("repository %s changed after validated execution result", repository.RepositoryID)
+		}
+	}
+	return owned, nil
+}
+
 func sameRepositorySet(left, right SetManifest) error {
 	l, r := repositoryMap(left), repositoryMap(right)
 	if len(l) != len(r) {
@@ -150,11 +306,13 @@ func (m *Manager) loadRecoverySet(ctx context.Context, id string) (SetManifest, 
 }
 
 func currentPath(root, relative, source string) (*PathEntry, error) {
-	content, mode, err := readBounded(filepath.Join(root, filepath.FromSlash(relative)))
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
+	parent, base, closeParent, err := confinedParent(root, "", relative, false)
 	if err != nil {
+		return nil, err
+	}
+	defer closeParent()
+	content, mode, exists, err := readAt(parent, base)
+	if err != nil || !exists {
 		return nil, err
 	}
 	kind := "regular"
@@ -177,9 +335,14 @@ func currentHead(ctx context.Context, repository RepositoryManifest) (string, st
 }
 
 func currentIndex(repository RepositoryManifest) (string, error) {
-	content, _, err := readBounded(filepath.Join(repository.Identity.CommonGitPath, "index"))
+	parent, base, closeParent, err := confinedParent(repository.Identity.CommonGitPath, repository.Identity.CommonGit, "index", false)
 	if err != nil {
 		return "", err
+	}
+	defer closeParent()
+	content, _, exists, err := readAt(parent, base)
+	if err != nil || !exists {
+		return "", errors.New("Git index is unavailable through its enrolled directory")
 	}
 	return store.Digest(content), nil
 }
@@ -304,19 +467,32 @@ func (m *Manager) clearActions(ctx context.Context, baseline, captured SetManife
 }
 
 func (m *Manager) Clear(ctx context.Context, request ClearRequest) (RecoveryReceipt, error) {
+	if len(request.OwnedPaths) != 0 {
+		return RecoveryReceipt{}, errors.New("caller-declared ownership is not accepted")
+	}
+	manifest, _, err := m.loadRecoverySet(ctx, request.CheckpointID)
+	if err != nil {
+		return RecoveryReceipt{}, err
+	}
+	return m.withRecoveryAuthority(ctx, manifest, func() (RecoveryReceipt, error) {
+		return m.clearAuthorized(ctx, request)
+	})
+}
+
+func (m *Manager) clearAuthorized(ctx context.Context, request ClearRequest) (RecoveryReceipt, error) {
 	var receipt RecoveryReceipt
 	if !store.SafeID(request.CommandID) || request.ExpectedRevision < 1 || !store.SafeID(request.CheckpointID) || !store.SafeID(request.BaselineCheckpointID) || request.CheckpointID == request.BaselineCheckpointID {
 		return receipt, errors.New("valid clear command, revision, captured set and distinct baseline set required")
-	}
-	owned, err := normalizeOwned(request.OwnedPaths)
-	if err != nil {
-		return receipt, err
 	}
 	captured, _, err := m.loadRecoverySet(ctx, request.CheckpointID)
 	if err != nil {
 		return receipt, err
 	}
 	baseline, _, err := m.loadRecoverySet(ctx, request.BaselineCheckpointID)
+	if err != nil {
+		return receipt, err
+	}
+	owned, err := m.clearOwnership(ctx, baseline, captured)
 	if err != nil {
 		return receipt, err
 	}
@@ -408,6 +584,9 @@ func (m *Manager) Clear(ctx context.Context, request ClearRequest) (RecoveryRece
 			receipt.Applied++
 			continue
 		}
+		if err := m.checkpoint("before_apply:" + action.repository.RepositoryID + ":" + action.path); err != nil {
+			return receipt, err
+		}
 		if err := m.applyAction(action, baseline); err != nil {
 			m.markRecoveryConflict(receipt.OperationID, request.CheckpointID, action, err)
 			receipt.State, receipt.Conflicts = "conflicted", 1
@@ -495,45 +674,120 @@ func (m *Manager) readBlob(digest string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
-func validateParent(root, relative string, create bool) (string, error) {
+func confinedParent(root, identityKey, relative string, create bool) (int, string, func(), error) {
 	clean := filepath.Clean(filepath.FromSlash(relative))
 	if clean == "." || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-		return "", errors.New("invalid recovery path")
+		return -1, "", func() {}, errors.New("invalid recovery path")
 	}
-	parent := root
+	rootFD, err := unix.Open(root, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return -1, "", func() {}, err
+	}
+	closeAll := func() { _ = unix.Close(rootFD) }
+	if identityKey != "" {
+		var stat unix.Stat_t
+		if err := unix.Fstat(rootFD, &stat); err != nil || fmt.Sprintf("%d:%d", stat.Dev, stat.Ino) != identityKey {
+			closeAll()
+			return -1, "", func() {}, errors.New("recovery root descriptor differs from its enrolled filesystem identity")
+		}
+	}
+	parentFD := rootFD
 	for _, component := range strings.Split(filepath.Dir(clean), string(filepath.Separator)) {
 		if component == "." || component == "" {
 			continue
 		}
-		parent = filepath.Join(parent, component)
-		info, err := os.Lstat(parent)
-		if os.IsNotExist(err) && create {
-			if err := os.Mkdir(parent, 0700); err != nil {
-				return "", err
+		next, openErr := unix.Openat(parentFD, component, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		if errors.Is(openErr, unix.ENOENT) && create {
+			if mkdirErr := unix.Mkdirat(parentFD, component, 0700); mkdirErr != nil && !errors.Is(mkdirErr, unix.EEXIST) {
+				if parentFD != rootFD {
+					_ = unix.Close(parentFD)
+				}
+				closeAll()
+				return -1, "", func() {}, mkdirErr
 			}
-			info, err = os.Lstat(parent)
+			next, openErr = unix.Openat(parentFD, component, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		}
-		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return "", errors.New("recovery path parent is missing, replaced or not an ordinary directory")
+		if openErr != nil {
+			if parentFD != rootFD {
+				_ = unix.Close(parentFD)
+			}
+			closeAll()
+			return -1, "", func() {}, errors.New("recovery path parent is missing, replaced or not an ordinary directory")
 		}
+		if parentFD != rootFD {
+			_ = unix.Close(parentFD)
+		}
+		parentFD = next
 	}
-	return filepath.Join(root, clean), nil
+	closeParent := func() {
+		if parentFD != rootFD {
+			_ = unix.Close(parentFD)
+		}
+		closeAll()
+	}
+	return parentFD, filepath.Base(clean), closeParent, nil
 }
 
-func atomicWrite(path string, content []byte, mode os.FileMode, symlink bool) error {
-	parent := filepath.Dir(path)
-	temporary := filepath.Join(parent, ".vigil-recovery-"+store.ID())
+func readAt(parentFD int, base string) ([]byte, os.FileMode, bool, error) {
+	var before unix.Stat_t
+	if err := unix.Fstatat(parentFD, base, &before, unix.AT_SYMLINK_NOFOLLOW); errors.Is(err, unix.ENOENT) {
+		return nil, 0, false, nil
+	} else if err != nil {
+		return nil, 0, false, err
+	}
+	mode := os.FileMode(before.Mode & 0777)
+	switch before.Mode & unix.S_IFMT {
+	case unix.S_IFLNK:
+		buffer := make([]byte, maxFileBytes+1)
+		n, err := unix.Readlinkat(parentFD, base, buffer)
+		if err != nil || n > maxFileBytes {
+			return nil, mode | os.ModeSymlink, true, errors.New("recovery symlink target is unavailable or exceeds limit")
+		}
+		return buffer[:n], mode | os.ModeSymlink, true, nil
+	case unix.S_IFREG:
+	default:
+		return nil, mode, true, errors.New("unsupported recovery destination kind")
+	}
+	if before.Size > maxFileBytes {
+		return nil, mode, true, errors.New("recovery destination exceeds 64 MiB")
+	}
+	fd, err := unix.Openat(parentFD, base, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, mode, true, err
+	}
+	file := os.NewFile(uintptr(fd), base)
+	if file == nil {
+		_ = unix.Close(fd)
+		return nil, mode, true, errors.New("failed to open recovery destination")
+	}
+	content, err := io.ReadAll(io.LimitReader(file, maxFileBytes+1))
+	var after unix.Stat_t
+	statErr := unix.Fstat(fd, &after)
+	closeErr := file.Close()
+	if err != nil || statErr != nil || closeErr != nil || len(content) > maxFileBytes || before.Dev != after.Dev || before.Ino != after.Ino || before.Size != after.Size {
+		return nil, mode, true, errors.New("recovery destination changed while observed")
+	}
+	return content, mode, true, nil
+}
+
+func atomicWriteAt(parentFD int, base string, content []byte, mode os.FileMode, symlink bool) error {
+	temporary := ".vigil-recovery-" + store.ID()
 	if symlink {
-		if err := os.Symlink(string(content), temporary); err != nil {
+		if err := unix.Symlinkat(string(content), parentFD, temporary); err != nil {
 			return err
 		}
 	} else {
-		file, err := os.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0600)
+		fd, err := unix.Openat(parentFD, temporary, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0600)
 		if err != nil {
 			return err
 		}
+		file := os.NewFile(uintptr(fd), temporary)
+		if file == nil {
+			_ = unix.Close(fd)
+			return errors.New("failed to create recovery temporary")
+		}
 		if _, err = file.Write(content); err == nil {
-			err = file.Chmod(mode.Perm())
+			err = unix.Fchmod(fd, uint32(mode.Perm()))
 		}
 		if err == nil {
 			err = file.Sync()
@@ -542,15 +796,145 @@ func atomicWrite(path string, content []byte, mode os.FileMode, symlink bool) er
 			err = closeErr
 		}
 		if err != nil {
-			_ = os.Remove(temporary)
+			_ = unix.Unlinkat(parentFD, temporary, 0)
 			return err
 		}
 	}
-	if err := os.Rename(temporary, path); err != nil {
-		_ = os.Remove(temporary)
+	if err := unix.Renameat(parentFD, temporary, parentFD, base); err != nil {
+		_ = unix.Unlinkat(parentFD, temporary, 0)
 		return err
 	}
-	return syncDir(parent)
+	return unix.Fsync(parentFD)
+}
+
+func atomicIndexWriteAt(parentFD int, base string, content []byte, expectedDigest string) error {
+	lock := base + ".lock"
+	fd, err := unix.Openat(parentFD, lock, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0600)
+	if err != nil {
+		return fmt.Errorf("Git index lock is unavailable: %w", err)
+	}
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = unix.Unlinkat(parentFD, lock, 0)
+		}
+	}()
+	observed, _, exists, err := readAt(parentFD, base)
+	if err != nil || !exists || store.Digest(observed) != expectedDigest {
+		_ = unix.Close(fd)
+		return errors.New("index changed before locked descriptor-relative apply")
+	}
+	file := os.NewFile(uintptr(fd), lock)
+	if file == nil {
+		_ = unix.Close(fd)
+		return errors.New("failed to open Git index lock")
+	}
+	if _, err = file.Write(content); err == nil {
+		err = file.Sync()
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	if err := unix.Renameat(parentFD, lock, parentFD, base); err != nil {
+		return err
+	}
+	cleanup = false
+	return unix.Fsync(parentFD)
+}
+
+func gitBlobObject(content []byte, oid string) ([]byte, error) {
+	header := []byte(fmt.Sprintf("blob %d\x00", len(content)))
+	plain := append(header, content...)
+	var actual string
+	switch len(oid) {
+	case 40:
+		digest := sha1.Sum(plain)
+		actual = hex.EncodeToString(digest[:])
+	case 64:
+		digest := sha256.Sum256(plain)
+		actual = hex.EncodeToString(digest[:])
+	default:
+		return nil, errors.New("unsupported Git object identity")
+	}
+	if actual != oid {
+		return nil, errors.New("staged recovery bytes do not match their Git object identity")
+	}
+	var compressed bytes.Buffer
+	writer := zlib.NewWriter(&compressed)
+	if _, err := writer.Write(plain); err != nil {
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	return compressed.Bytes(), nil
+}
+
+func verifyLooseObject(compressed []byte, oid string) error {
+	reader, err := zlib.NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		return err
+	}
+	plain, err := io.ReadAll(io.LimitReader(reader, maxFileBytes+128))
+	closeErr := reader.Close()
+	if err != nil || closeErr != nil || len(plain) > maxFileBytes+127 {
+		return errors.New("restored Git object is unreadable or exceeds limit")
+	}
+	separator := bytes.IndexByte(plain, 0)
+	if separator < 6 || !bytes.HasPrefix(plain, []byte("blob ")) {
+		return errors.New("restored Git object is not a blob")
+	}
+	_, err = gitBlobObject(plain[separator+1:], oid)
+	return err
+}
+
+func (m *Manager) restoreIndexObjects(_ context.Context, repository RepositoryManifest) error {
+	seen := map[string]bool{}
+	for _, entry := range repository.IndexEntries {
+		if seen[entry.OID] {
+			continue
+		}
+		seen[entry.OID] = true
+		content, err := m.readBlob(entry.BlobDigest)
+		if err != nil {
+			return errors.New("staged recovery blob is unavailable")
+		}
+		compressed, err := gitBlobObject(content, entry.OID)
+		if err != nil {
+			return fmt.Errorf("restored staged object identity differs for %s: %w", entry.Path, err)
+		}
+		relative := filepath.ToSlash(filepath.Join("objects", entry.OID[:2], entry.OID[2:]))
+		parent, name, closeParent, err := confinedParent(repository.Identity.CommonGitPath, repository.Identity.CommonGit, relative, true)
+		if err != nil {
+			return err
+		}
+		existing, _, exists, readErr := readAt(parent, name)
+		if readErr != nil {
+			closeParent()
+			return readErr
+		}
+		if exists {
+			err = verifyLooseObject(existing, entry.OID)
+		} else {
+			err = atomicWriteAt(parent, name, compressed, 0444, false)
+			if err == nil {
+				existing, _, exists, err = readAt(parent, name)
+				if err == nil && exists {
+					err = verifyLooseObject(existing, entry.OID)
+				} else if err == nil {
+					err = errors.New("restored Git object disappeared after write")
+				}
+			}
+		}
+		closeParent()
+		if err != nil {
+			return fmt.Errorf("restored staged object %s is unavailable: %w", entry.OID, err)
+		}
+	}
+	return nil
 }
 
 func (m *Manager) applyAction(action recoveryAction, baseline SetManifest) error {
@@ -572,7 +956,15 @@ func (m *Manager) applyAction(action recoveryAction, baseline SetManifest) error
 		if err != nil || store.Digest(content) != base.IndexDigest {
 			return errors.New("baseline index recovery blob is unavailable")
 		}
-		return atomicWrite(filepath.Join(action.repository.Identity.CommonGitPath, "index"), content, 0600, false)
+		if err := m.restoreIndexObjects(context.Background(), base); err != nil {
+			return err
+		}
+		parent, name, closeParent, err := confinedParent(action.repository.Identity.CommonGitPath, action.repository.Identity.CommonGit, "index", false)
+		if err != nil {
+			return err
+		}
+		defer closeParent()
+		return atomicIndexWriteAt(parent, name, content, action.repository.IndexDigest)
 	}
 	source := "untracked"
 	if action.expected != nil {
@@ -590,21 +982,34 @@ func (m *Manager) applyAction(action recoveryAction, baseline SetManifest) error
 	if pathState(current) != pathState(action.expected) {
 		return errors.New("destination changed after recovery authorization")
 	}
-	target, err := validateParent(action.repository.Identity.Root, action.path, action.desired != nil)
+	parent, name, closeParent, err := confinedParent(action.repository.Identity.Root, action.repository.Identity.Key, action.path, action.desired != nil)
 	if err != nil {
 		return err
 	}
+	defer closeParent()
+	observed, mode, exists, err := readAt(parent, name)
+	var descriptorCurrent *PathEntry
+	if err == nil && exists {
+		kind := "regular"
+		if mode&os.ModeSymlink != 0 {
+			kind = "symlink"
+		}
+		descriptorCurrent = &PathEntry{Path: action.path, Kind: kind, Mode: uint32(mode.Perm()), Digest: store.Digest(observed), Size: int64(len(observed)), Source: source}
+	}
+	if err != nil || pathState(descriptorCurrent) != pathState(action.expected) {
+		return errors.New("destination changed before descriptor-relative apply")
+	}
 	if action.desired == nil || action.desired.Kind == "deleted" {
-		if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
+		if err := unix.Unlinkat(parent, name, 0); err != nil && !errors.Is(err, unix.ENOENT) {
 			return err
 		}
-		return syncDir(filepath.Dir(target))
+		return unix.Fsync(parent)
 	}
 	content, err := m.readBlob(action.desired.Digest)
 	if err != nil || int64(len(content)) != action.desired.Size {
 		return errors.New("desired recovery blob is unavailable")
 	}
-	return atomicWrite(target, content, os.FileMode(action.desired.Mode), action.desired.Kind == "symlink")
+	return atomicWriteAt(parent, name, content, os.FileMode(action.desired.Mode), action.desired.Kind == "symlink")
 }
 
 func (m *Manager) markRecoveryConflict(operationID, checkpointID string, action recoveryAction, cause error) {
@@ -792,6 +1197,16 @@ func (m *Manager) restoreActions(ctx context.Context, baseline, target, destinat
 }
 
 func (m *Manager) Restore(ctx context.Context, request RestoreRequest) (RecoveryReceipt, error) {
+	manifest, _, err := m.loadRecoverySet(ctx, request.CheckpointID)
+	if err != nil {
+		return RecoveryReceipt{}, err
+	}
+	return m.withRecoveryAuthority(ctx, manifest, func() (RecoveryReceipt, error) {
+		return m.restoreAuthorized(ctx, request)
+	})
+}
+
+func (m *Manager) restoreAuthorized(ctx context.Context, request RestoreRequest) (RecoveryReceipt, error) {
 	var receipt RecoveryReceipt
 	if !store.SafeID(request.CommandID) || request.ExpectedRevision < 1 || !store.SafeID(request.CheckpointID) || !store.SafeID(request.BaselineCheckpointID) || !store.SafeID(request.DestinationCheckpointID) || request.CheckpointID == request.DestinationCheckpointID {
 		return receipt, errors.New("valid approved restore command and three distinct recovery roles required")
