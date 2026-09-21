@@ -1,6 +1,6 @@
 # Stage 5.2 independent security/correctness review
 
-Latest independent re-review, 2026-09-21, of `0d02a9f` and `b23ee5e`: **R1–R5, R7 and R9 resolved; R6 (P1) and R8 (P2) remain open. Changes requested; Stage 5.2 remains unaccepted and production dispatch disabled.** See the independent re-review below. Original findings are retained as historical evidence.
+Latest independent follow-up, 2026-09-21, of `d34f894`: **R6 and R8 resolved; all R1–R9 findings are closed. The Stage 5.2 offline implementation review is accepted.** Production dispatch remains disabled pending the shared live qualification gates. Earlier verdicts and findings below are historical evidence; see the independent follow-up acceptance at the end.
 
 Date: 2026-09-21. Baseline: `b167e10`. Reviewed implementation and evidence through `02f11bd`, including `cdb8f75` and `88cd2be`.
 
@@ -194,3 +194,26 @@ Commit `d34f894` addresses the two findings that remained open. This is an imple
 - Await regressions cover entering await while already waiting, beginning a wait during an existing await, and restoring enforcement after the wait ends.
 
 Validation of exact commit `d34f894`: Linux focused tests, full `make check`, `make check-race`, `make build`, all four `make cross-build` targets, five race-detector repetitions of the wait-transition test and three repetitions of both outcome tests passed. A Git bundle with SHA-256 `0d2308ad5c86111809a3346ad2143743ec1b8e79f5266dc13c1715ff77e6d427` was tested in an isolated macOS 26.6.2 arm64 checkout with Go 1.27.1: focused R6/R8 tests, full check (`internal/supervisor` 30.705 seconds), race check (`internal/supervisor` 45.395 seconds) and build passed. The temporary Mac checkout and bundle were removed; the normal Mac checkout was not accessed. No live qualification or production dispatch was performed.
+
+## Independent follow-up acceptance of d34f894
+
+Date: 2026-09-21. Reviewed implementation `d34f894` at documentation HEAD `10bad93`. **R6 and R8 are resolved; no remaining findings from R1–R9.** This accepts the offline implementation review, not live production qualification or the still-open shared 5.1/5.2 live gate.
+
+Confirmed independently:
+
+- **R6 / normal completion:** persistResult checkpoints after the `before_outcome_commit` hook and calls enforceCompletionBudget inside the same write transaction that inserts the execution result and advances the task. The guard uses persisted ledger/run limits, charged and unknown consumption, and live active time; it does not trust a mutable caller limit. Delaying at the hook beyond the actual persisted 30-second allowance now rejects success.
+- **R6 / reconciliation:** reconciliation reaches that same guarded outcome transaction after closing/reconciling any open segment. A delivered terminal result from a submission exceeding the actual persisted 30-second allowance cannot become completed/checking. Recording delivery no longer regresses interrupted/contained state.
+- **Evidence preservation:** an additional disposable probe confirmed delivered submission, a reconciled terminal effect and one retained execution-result artifact, with zero execution_results rows, an interrupted run and no checking transition after budget failure and reconciliation.
+- **Meaningful submission regression:** the permanent test now configures its allowance through normal preparation and asserts exactly one Submit call. The adapted retained reproduction likewise reaches Submit exactly once before budget rejection.
+- **R8 / wall versus active time:** Await inherits the parent/wall context. Its separate active timer is disabled for excluded segments and re-evaluates segment state on transitions, timer expiry and periodic checks. Already-waiting and mid-Await wait cases pass without consuming active allowance, while the parent wall timeout remains effective.
+- **R8 / cumulative resume:** checkpoint enforcement includes prior ledger consumption. An independent probe spent approximately 200 ms active, then 350 ms in proven wait, with a 300 ms active allowance. After EndHumanWait it exhausted the remaining allowance within 200 ms rather than receiving a fresh 300 ms. This probe and the permanent wait-transition tests passed three repetitions under the race detector.
+
+Validation:
+
+- Independent Linux `make check`, `make check-race`, `make build` and all four `make cross-build` targets passed.
+- The four retained follow-up reproductions passed with the required adaptation of the submission regression to the new delayed-driver field and normal persisted limit configuration. The original 30-second limits/delays were retained for late-outcome and reconciliation tests. The additional evidence-retention probe passed; that invocation completed in 64.367 seconds.
+- Three race-detector repetitions of the independent cumulative-resume probe plus permanent await-transition tests passed in 10.634 seconds.
+- Adapted probes are retained as inert text in [followup_test.go.txt](stage-5.2-review/followup_test.go.txt). Copy into `internal/supervisor/followup_review_test.go` in a disposable checkout and run `go test ./internal/supervisor -run 'Test(Rereview|Followup)' -count=1 -v` using the repository's Go environment. The two original long cases take about 30 seconds each. The temporary executable copy was removed after validation.
+- Native macOS evidence for exact commit `d34f894` was inspected as submitted evidence; macOS was not independently rerun in this follow-up. No live harness/provider qualification, credential use, production activation, implementation edits, commits or pushes occurred.
+
+Next: Stage 5.3 recovery/control work may use these reviewed contracts in disposable fixtures. The scoped no-extra-charge Codex route, independent provider-idle proof, shared Mac/WSL capacity authority and complete advertised live recovery matrix remain pending. Production dispatch must stay disabled until those gates are independently satisfied.

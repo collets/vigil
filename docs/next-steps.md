@@ -1,14 +1,14 @@
 # Next steps and resumption plan
 
-Updated: 2026-09-21. Stages 3/3.5 investigations and Stage 4 specification complete; Stage 5.1 offline qualification/review fixes and Stage 5.2 checkpoints A–D are implemented. Follow-up commit `d34f894` addresses the R6/R8 findings left open by independent re-review; acceptance and production qualification remain pending.
+Updated: 2026-09-21. Stages 3/3.5 investigations and Stage 4 specification complete; Stage 5.1 offline qualification/review fixes and Stage 5.2 checkpoints A–D are implemented. Independent follow-up accepts the offline implementation at `d34f894` and closes all R1–R9 findings; live production qualification remains pending.
 
 Status: Stage 3 Linux experiments and adapter improvements are complete, with explicit unresolved qualification gates. See [Stage 3 results](research/stage-3-results.md). Both Stage 3 and Stage 4 plans were prepared before implementation. Stage 4 is complete: [core specification](core-spec.md), [validated draft schemas](spec/project.sql), and [Stage 5 backlog/requirements map](stage-5-plan.md). [Stage 3.5 macOS checks](research/stage-3.5-results.md) are also complete: basic runtime behavior passed, but both harnesses left writers after abrupt loss and strict production containment remains unsupported.
 
 ## Resume here
 
-Follow-up [Stage 5.1 validation](research/stage-5.1-astra-review.md) confirms R1–R4 are resolved. The [Stage 5.2 review](research/stage-5.2-astra-review.md) requested six P1 and three P2 corrections. Independent re-review closes R1–R5, R7 and R9, but left R6 (budget exhaustion bypass at outcome/reconciliation) and R8 (active await deadline included proven waits) open. Commit `d34f894` adds atomic final budget enforcement, wait-aware await timing and non-vacuous regressions; Linux and native macOS full/race/build checks pass. Stage 5.2 remains unaccepted until Astra re-reviews this follow-up. Production dispatch stays disabled.
+Follow-up [Stage 5.1 validation](research/stage-5.1-astra-review.md) confirms R1–R4 are resolved. The [Stage 5.2 follow-up review](research/stage-5.2-astra-review.md#independent-follow-up-acceptance-of-d34f894) closes R6/R8 at `d34f894`, with R1–R5, R7 and R9 remaining closed. The offline implementation review is accepted. Independent Linux full/race/build/cross-build and retained budget/wait reproductions pass. Production dispatch stays disabled pending live qualification.
 
-The next action is independent Astra re-review of `d34f894` against the retained R6/R8 reproductions. After acceptance, continue Stage 5.3's independent recovery/control work in disposable fixtures. The joint live gate remains open: safe contained Codex, independent provider-idle proof, shared Mac/WSL capacity authority and live recovery evidence for both harnesses/platforms. Do not enable production dispatch from synthetic evidence.
+The next action is Stage 5.3 recovery/control work in disposable fixtures, using the reviewed Stage 5.2 contracts. The joint live gate remains open: safe contained Codex, independent provider-idle proof, shared Mac/WSL capacity authority and live recovery evidence for both harnesses/platforms. Do not enable production dispatch from synthetic evidence.
 
 The user has answered the setup questions for 5.1–5.3: existing Codex included subscription usage is authorized after verifying no additional charges (otherwise defer live Codex); use existing local llama; demonstrate repository execution only in disposable repositories; and perform destructive recovery tests only in agent-owned disposable fixtures. Preserve real checkout changes and defer ambiguous real recovery. See the confirmed decisions in each plan and [pending decisions](pending-decisions.md); do not ask for these permissions again.
 
@@ -20,7 +20,7 @@ The user has answered the setup questions for 5.1–5.3: existing Codex included
 
 Suggested handoff prompt:
 
-> Re-review Stage 5.2 follow-up commit `d34f894` against the R6/R8 findings and `docs/research/stage-5.2-review/rereview_test.go.txt`. Confirm final outcome/reconciliation cannot bypass an exhausted persisted budget, the submission regression reaches its driver, and await suspends/resumes active timing across proven waits. Preserve the seven previously closed findings. Production dispatch remains disabled and synthetic tests are not live qualification.
+> Implement Stage 5.3 from `docs/stage-5/5.3-recovery-and-controls.md`. Read the independent Stage 5.2 follow-up acceptance at the end of `docs/research/stage-5.2-astra-review.md`; R1–R9 are closed at `d34f894`. Preserve those invariants and regression coverage. Perform stop/resume/checkpoint/save/restore and destructive recovery tests only in agent-owned disposable fixtures. Preserve real work, defer ambiguous real recovery, and keep production dispatch disabled pending live qualification.
 
 ## Current state
 
@@ -144,6 +144,6 @@ Acceptance: run the [agreed milestone](mvp-acceptance.md), including actual exec
 - Record the next concrete action and any input needed from the user.
 - Preserve unfinished work and running-session identities; stop experimental processes before ending the session.
 
-Next concrete action: ask Astra to re-review `d34f894` against the retained R6/R8 reproductions and permanent regression tests. If accepted, begin [5.3](stage-5/5.3-recovery-and-controls.md) with stop/resume/checkpoint/save/restore work only in agent-owned disposable fixtures, reusing Stage 5.2 identities, effect journals, fingerprints and cumulative ledgers. Close the shared 5.1/5.2 live gate only after the safe Codex route, provider-idle proof, shared capacity authority and real runtime crash matrix exist; do not substitute paid API access, unrestricted egress or synthetic evidence.
+Next concrete action: with all R1–R9 review findings closed, begin [5.3](stage-5/5.3-recovery-and-controls.md) with stop/resume/checkpoint/save/restore work only in agent-owned disposable fixtures, reusing Stage 5.2 identities, effect journals, fingerprints and cumulative ledgers. Close the shared 5.1/5.2 live gate only after the safe Codex route, provider-idle proof, shared capacity authority and real runtime crash matrix exist; do not substitute paid API access, unrestricted egress or synthetic evidence.
 
 Away-time constraints and deferred user decisions: [pending decisions](pending-decisions.md).

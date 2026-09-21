@@ -1,0 +1,148 @@
+package supervisor
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+)
+
+type rereviewWaitingDriver struct{ *FixtureDriver }
+
+func (d *rereviewWaitingDriver) Await(ctx context.Context, p PreparedRun) (Observation, error) {
+	<-ctx.Done()
+	return Observation{}, ctx.Err()
+}
+func TestRereviewHumanWaitAwaitDeadline(t *testing.T) {
+	f := setupFixture(t)
+	f.prepared.ActiveLimitMS = 100
+	r := Runner{Engine: f.engine, Owner: f.owner, Driver: &rereviewWaitingDriver{f.driver}}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if err := r.startSegment(ctx, f.prepared); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.BeginHumanWait(ctx, f.prepared, true); err != nil {
+		t.Fatal(err)
+	}
+	began := time.Now()
+	_, err := r.awaitWithLease(ctx, f.prepared)
+	if ctx.Err() == nil {
+		t.Fatalf("proven human wait aborted by active deadline after %s: %v", time.Since(began), err)
+	}
+}
+func TestRereviewSubmissionRegressionReachesDriver(t *testing.T) {
+	f := setupFixtureWithLimits(t, 1000, 5000)
+	r := Runner{Engine: f.engine, Owner: f.owner, Driver: &delayedSubmitDriver{FixtureDriver: f.driver, delay: 1200 * time.Millisecond}}
+	_, err := r.Run(context.Background(), f.prepared, f.reservation, "write result")
+	if f.driver.Calls["submit"] != 1 {
+		t.Fatalf("submitted slow-budget regression never reaches Submit: %v", err)
+	}
+}
+func TestRereviewBudgetAtOutcomeCommit(t *testing.T) {
+	f := setupFixture(t)
+	r := Runner{Engine: f.engine, Owner: f.owner, Driver: f.driver, Fault: func(point string) error {
+		if point == "before_outcome_commit" {
+			time.Sleep(time.Duration(f.prepared.ActiveLimitMS+100) * time.Millisecond)
+		}
+		return nil
+	}}
+	result, err := r.Run(context.Background(), f.prepared, f.reservation, "write result")
+	if err == nil {
+		t.Fatalf("completed after persisted active limit expired before outcome commit: %s", result.Status)
+	}
+	if errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+}
+
+type rereviewSlowSubmit struct{ *FixtureDriver }
+
+func (d *rereviewSlowSubmit) Submit(_ context.Context, p PreparedRun, s string) (string, string, error) {
+	time.Sleep(time.Duration(p.ActiveLimitMS+100) * time.Millisecond)
+	return d.FixtureDriver.Submit(context.Background(), p, s)
+}
+func TestRereviewReconcileAfterBudgetExhaustion(t *testing.T) {
+	f := setupFixture(t)
+	r := Runner{Engine: f.engine, Owner: f.owner, Driver: &rereviewSlowSubmit{f.driver}}
+	result, err := r.Run(context.Background(), f.prepared, f.reservation, "write result")
+	if err == nil {
+		t.Fatalf("overbudget Run succeeded: %+v", result)
+	}
+	if f.driver.Calls["submit"] != 1 {
+		t.Fatalf("did not reach Submit: %v", err)
+	}
+	view, err := r.Reconcile(context.Background(), f.prepared)
+	if err == nil {
+		t.Fatal("reconciliation must report budget exhaustion")
+	}
+	view, inspectErr := r.Inspect(context.Background(), f.prepared)
+	if inspectErr != nil {
+		t.Fatal(inspectErr)
+	}
+	if view.RunState == "completed" || view.TaskState == "checking" {
+		t.Fatalf("reconcile converted budget failure to success: run=%s task=%s", view.RunState, view.TaskState)
+	}
+}
+
+func TestFollowupBudgetEvidenceRetained(t *testing.T) {
+	f := setupFixtureWithLimits(t, 1000, 5000)
+	r := Runner{Engine: f.engine, Owner: f.owner, Driver: &delayedSubmitDriver{FixtureDriver: f.driver, delay: 1200 * time.Millisecond}}
+	_, err := r.Run(context.Background(), f.prepared, f.reservation, "write result")
+	if err == nil || f.driver.Calls["submit"] != 1 {
+		t.Fatalf("did not exercise budget failure: calls=%v err=%v", f.driver.Calls, err)
+	}
+	if _, err := r.Reconcile(context.Background(), f.prepared); err == nil {
+		t.Fatal("exhausted outcome accepted")
+	}
+	var results, artifacts, terminal int
+	if err := f.engine.DB.SQL.QueryRow("SELECT count(*) FROM execution_results WHERE run_id=?", f.prepared.RunID).Scan(&results); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.engine.DB.SQL.QueryRow("SELECT count(*) FROM artifacts WHERE kind='execution-result'").Scan(&artifacts); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.engine.DB.SQL.QueryRow("SELECT count(*) FROM execution_effects WHERE run_id=? AND kind='terminal_observe' AND state='reconciled'", f.prepared.RunID).Scan(&terminal); err != nil {
+		t.Fatal(err)
+	}
+	view, err := r.Inspect(context.Background(), f.prepared)
+	if err != nil || results != 0 || artifacts != 1 || terminal != 1 || view.TaskState == "checking" || view.SubmissionState != "delivered" || view.RunState != "interrupted" {
+		t.Fatalf("lost evidence or unauthorized progression: results=%d artifacts=%d terminal=%d view=%+v err=%v", results, artifacts, terminal, view, err)
+	}
+}
+
+func TestFollowupCumulativeWaitResume(t *testing.T) {
+	f := setupFixtureWithLimits(t, 300, 2000)
+	d := &controlledAwaitDriver{FixtureDriver: f.driver, entered: make(chan struct{}), release: make(chan struct{})}
+	r := Runner{Engine: f.engine, Owner: f.owner, Driver: d}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := r.startSegment(ctx, f.prepared); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, err := r.awaitWithLease(ctx, f.prepared); done <- err }()
+	<-d.entered
+	time.Sleep(200 * time.Millisecond)
+	if err := r.BeginHumanWait(ctx, f.prepared, true); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(350 * time.Millisecond)
+	select {
+	case err := <-done:
+		t.Fatalf("wait failed before resume: %v", err)
+	default:
+	}
+	if err := r.EndHumanWait(ctx, f.prepared); err != nil {
+		t.Fatal(err)
+	}
+	resumed := time.Now()
+	select {
+	case err := <-done:
+		if err == nil || time.Since(resumed) > 200*time.Millisecond {
+			t.Fatalf("cumulative allowance not enforced: %v after %s", err, time.Since(resumed))
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("resume reset allowance instead of preserving cumulative active time")
+	}
+}
