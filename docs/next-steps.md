@@ -1,6 +1,6 @@
 # Next steps and resumption plan
 
-Updated: 2026-09-21. Stages 3/3.5 investigations and Stage 4 specification are complete. Stage 5.1 offline qualification/review fixes and the independently accepted Stage 5.2 offline implementation are complete at their stated scope. Stage 5.3 recovery/control implementation is complete through `5617679` and awaits independent review; live production qualification remains pending.
+Updated: 2026-09-21. Stages 3/3.5 investigations and Stage 4 specification are complete. Stage 5.1 offline qualification/review fixes and the independently accepted Stage 5.2 offline implementation are complete at their stated scope. Stage 5.3 review remediation is implemented through `a0afb05`; independent follow-up acceptance and live production qualification remain pending.
 
 Status: Stage 3 Linux experiments and adapter improvements are complete, with explicit unresolved qualification gates. See [Stage 3 results](research/stage-3-results.md). Both Stage 3 and Stage 4 plans were prepared before implementation. Stage 4 is complete: [core specification](core-spec.md), [validated draft schemas](spec/project.sql), and [Stage 5 backlog/requirements map](stage-5-plan.md). [Stage 3.5 macOS checks](research/stage-3.5-results.md) are also complete: basic runtime behavior passed, but both harnesses left writers after abrupt loss and strict production containment remains unsupported.
 
@@ -8,7 +8,7 @@ Status: Stage 3 Linux experiments and adapter improvements are complete, with ex
 
 Follow-up [Stage 5.1 validation](research/stage-5.1-astra-review.md) confirms R1–R4 are resolved. The [Stage 5.2 follow-up review](research/stage-5.2-astra-review.md#independent-follow-up-acceptance-of-d34f894) closes R6/R8 at `d34f894`, with R1–R5, R7 and R9 remaining closed. The offline implementation review is accepted. Independent Linux full/race/build/cross-build and retained budget/wait reproductions pass. Production dispatch stays disabled pending live qualification.
 
-The next implementation action is [Stage 5.4 quality and acceptance](stage-5/5.4-quality-and-acceptance.md), using the Stage 5.3 preservation, retry and exhaustion contracts. In parallel, independently review `bf09f4d..5617679` against the [Stage 5.3 results](research/stage-5.3-results.md). The joint live gate remains open: safe contained Codex, independent provider-idle proof, shared Mac/WSL capacity authority and live recovery evidence for both harnesses/platforms. Do not enable production dispatch from synthetic evidence.
+The next action is independent follow-up review of Stage 5.3 R1–R7 against remediation commits `9d095fd` and `a0afb05`, retaining the original [review and disposable reproductions](research/stage-5.3-astra-review.md). Stage 5.3 is not accepted yet. Do not rely on its recovery contracts as accepted Stage 5.4 prerequisites; unaffected quality/check design can proceed independently. The joint live gate remains open: safe contained Codex, independent provider-idle proof, shared Mac/WSL capacity authority and live recovery evidence for both harnesses/platforms. Production dispatch stays disabled.
 
 The user has answered the setup questions for 5.1–5.3: existing Codex included subscription usage is authorized after verifying no additional charges (otherwise defer live Codex); use existing local llama; demonstrate repository execution only in disposable repositories; and perform destructive recovery tests only in agent-owned disposable fixtures. Preserve real checkout changes and defer ambiguous real recovery. See the confirmed decisions in each plan and [pending decisions](pending-decisions.md); do not ask for these permissions again.
 
@@ -20,7 +20,7 @@ The user has answered the setup questions for 5.1–5.3: existing Codex included
 
 Suggested handoff prompt:
 
-> Independently review Vigil Stage 5.3 from baseline `bf09f4d` through implementation `5617679`. Read `docs/stage-5/5.3-recovery-and-controls.md` and `docs/research/stage-5.3-results.md`; reproduce the checkpoint, clear/restore, exact/fresh recovery, retry and cumulative-budget failure tests. Preserve the accepted Stage 5.1/5.2 invariants. Do not treat synthetic recovery or completed-session recall as live interrupted-session qualification, and do not enable production dispatch.
+> Independently follow up Stage 5.3 review R1–R7. Start from baseline `bf09f4d`, initial implementation through `5617679`, `docs/research/stage-5.3-astra-review.md`, and remediation commits `9d095fd` and `a0afb05`. Re-run the retained concepts and permanent regressions for stop retirement, current recovery claims/writer proof, result-bound ownership, descriptor-relative apply, pruned staged objects, retry writer safety and partial-work exact resume. Verify migration history, full/race/build/cross-build and exact-commit Mac evidence. Keep implementation completion, independent acceptance and live qualification distinct; do not push or enable production dispatch.
 
 ## Current state
 
@@ -145,6 +145,6 @@ Acceptance: run the [agreed milestone](mvp-acceptance.md), including actual exec
 - Record the next concrete action and any input needed from the user.
 - Preserve unfinished work and running-session identities; stop experimental processes before ending the session.
 
-Next concrete action: with all R1–R9 review findings closed, begin [5.3](stage-5/5.3-recovery-and-controls.md) with stop/resume/checkpoint/save/restore work only in agent-owned disposable fixtures, reusing Stage 5.2 identities, effect journals, fingerprints and cumulative ledgers. Close the shared 5.1/5.2 live gate only after the safe Codex route, provider-idle proof, shared capacity authority and real runtime crash matrix exist; do not substitute paid API access, unrestricted egress or synthetic evidence.
+Next concrete action: independently re-review the seven remediated Stage 5.3 findings before treating recovery as an accepted prerequisite for Stage 5.4. Use only agent-owned disposable fixtures and preserve the previously accepted Stage 5.2 invariants. Close the shared 5.1/5.2 live gate only after the safe Codex route, provider-idle proof, shared capacity authority and real runtime crash matrix exist; do not substitute paid API access, unrestricted egress or synthetic evidence.
 
 Away-time constraints and deferred user decisions: [pending decisions](pending-decisions.md).

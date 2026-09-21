@@ -1,6 +1,20 @@
 # Stage 5.3 — recovery, checkpoints and execution controls
 
-Implementation completed 2026-09-21 from accepted Stage 5.2 baseline `bf09f4d`. The implementation commits are `b0e1c16`, `0bc3b92`, `2df4ecd`, `7c227a8` and `5617679`. This is an implementation handoff, not independent acceptance or live interrupted-session qualification. Production dispatch remains disabled.
+Independent review, 2026-09-21: **changes requested; five P1 and two P2 findings**. Remediation is implemented in `9d095fd` and `a0afb05` and awaits independent follow-up review. Stage 5.3 remains unaccepted. The claims below are an implementation handoff, not independent acceptance. See the [independent review and retained reproductions](stage-5.3-astra-review.md).
+
+Implementation started from accepted Stage 5.2 baseline `bf09f4d`. The initial implementation ends at `5617679`; review remediation ends at `a0afb05`. This is an implementation handoff, not independent acceptance or live interrupted-session qualification. Production dispatch remains disabled.
+
+## Independent-review remediation
+
+| Finding | Implemented correction | Permanent evidence |
+| --- | --- | --- |
+| R1 stop/dispatch race | Stop atomically fences every new effect and outcome commit, cancels a same-controller dispatcher, and waits boundedly until all non-containment effects retire; an older run cannot overwrite stop | `TestStopFencesRunBlockedInCreate`, stop replay/uncertainty tests |
+| R2 missing destructive authority | Clear/restore require a live owner, full-set claims, fencing generations and reserved endpoint ticket for the checkpoint run, plus a current terminal `contained_stopped` writer observation on initial call and replay | `TestClearRequiresCoreOwnershipEvidenceAndLiveAuthority`, coordinator reservation tests |
+| R3 caller-declared ownership | Caller-owned paths are rejected. Clear derives paths from the persisted validated result, matches its exact repository fingerprint, and binds the baseline to immutable pre-attempt bytes/index/HEAD | ownership and post-result concurrent-edit tests |
+| R4 pathname escape | Worktree, Git index and loose-object traversal/apply use held directory descriptors with `O_NOFOLLOW`; Git index replacement holds `index.lock`; final expected state is rechecked at the descriptor boundary | deterministic parent replacement and outside-sentinel test |
+| R5 missing staged objects | Every staged object is reconstructed from private bytes, object-format hashed, descriptor-relatively installed and verified before the raw index is exposed | prune/restore test plus SHA-1, SHA-256 and conflict-stage object tests |
+| R6 unsafe infrastructure retry | All repair/infrastructure/fresh follow-ups require and transactionally recheck a terminal, independently contained source writer | unresolved-writer infrastructure regression |
+| R7 unusable exact resume | Exact eligibility binds the current verified checkpoint; migration 008 stores an immutable generation recovery baseline; preparation and dispatch recheck workspace and native-history identity | partial-edit exact resume/reload and changed-history dispatch tests |
 
 ## Delivered behavior
 
@@ -18,7 +32,7 @@ Implementation completed 2026-09-21 from accepted Stage 5.2 baseline `bf09f4d`. 
 | State | Captured representation | Verification / recovery behavior |
 | --- | --- | --- |
 | HEAD and branch | Commit OID, symbolic ref, raw HEAD bytes and readable Git bundle | Bundle heads must contain the recorded commit; clear refuses ref/OID changes and restore never rewrites unrelated refs |
-| Index | Exact raw index blob plus path/mode/OID/stage entries and staged object bytes | Raw bytes and every blob digest are verified; clear restores the whole index only when every changed entry is agent-owned |
+| Index | Exact raw index blob plus path/mode/OID/stage entries and staged object bytes | Raw bytes and every blob digest are verified; SHA-1/SHA-256 and conflict-stage objects are installed and verified before an index is exposed; clear restores the whole index only when every changed path is result-proven |
 | Mixed staged/unstaged file | Staged blob in index record; current worktree bytes in path record | Permanent test proves both distinct byte sequences survive capture and exact-baseline round-trip |
 | Tracked modification/deletion | Bounded bytes/mode or explicit `deleted` entry | Compare-and-swap checks captured destination before clear/restore |
 | Scoped untracked file/binary | Exact bytes, size, mode and `untracked` source | Only nonignored paths admitted by the immutable task scope are captured |
@@ -28,7 +42,7 @@ Implementation completed 2026-09-21 from accepted Stage 5.2 baseline `bf09f4d`. 
 | Nested participating repositories | One repository manifest per immutable participant; parent excludes enrolled child boundary | Whole set verifies before mutation; corruption in child prevents clearing parent |
 | Unsupported/special entry | Capture or apply fails closed | No cleanup is authorized and incomplete evidence remains inspectable |
 
-Checkpoint publication writes blobs and manifests to private state, fsyncs them, verifies digests and Git readability, then commits database verification. Failure before that point cannot create a verified set. Historical migration digests remain unchanged; migrations 005–007 only extend the installed schema.
+Checkpoint publication writes blobs and manifests to private state, fsyncs them, verifies digests and Git readability, then commits database verification. Failure before that point cannot create a verified set. Historical migration digests remain unchanged; migrations 005–008 only extend the installed schema. Migration 008 adds immutable generation-scoped recovery workspace authority without rewriting prior history.
 
 ## Clear and restore failure matrix
 
@@ -37,6 +51,8 @@ Checkpoint publication writes blobs and manifests to private state, fsyncs them,
 | Repository B capture/write failure | No set is published; repository A is not cleared; incomplete failure evidence is retained |
 | Blob or manifest corruption | Full-set verification fails before clear/restore intent or filesystem mutation |
 | Concurrent manual edit after capture | Preflight compare-and-swap rejects the operation; manual bytes remain unchanged |
+| Manual edit after validated result but before capture | Exact result fingerprint mismatch rejects clear; path names alone confer no ownership |
+| Missing coordinator claim or unresolved source writer | Clear/restore reject before creating or replaying a destructive operation |
 | Parent replaced by symlink after preflight | Descriptor-relative apply rejects at the intended apply boundary; outside target is unchanged |
 | Unowned index entry mixed with an owned change | Broad raw-index clear is refused as ambiguous |
 | Interruption after a clear apply | Per-path states identify applied versus prepared work; replay reconciles only the recorded desired/current states |
@@ -54,6 +70,7 @@ All destructive cases ran only in `t.TempDir` repositories carrying fixture stat
 | Pause repeated with the same command | Same durable receipt; no new dispatch |
 | Stop with pending request | Request is cancelled before interrupt; a late answer cannot authorize work |
 | Stop repeated after observed containment | Same receipt; interrupt and stop counts remain one |
+| Stop while runtime create is blocked | Persisted stop cancels/contains and retires the in-flight effect; no start/native-create/submit can begin afterward |
 | Stop/foreground shutdown with failed termination | Control/effect stay uncertain; no replay; continue is refused |
 | Controller/owner death | Existing coordinator quarantine and live-owner/fence tests reject dispatch; PID/container absence does not release authority |
 | Persistence/event write failure | Already-journaled execution is boundedly contained; no result or `checking` transition is written |
@@ -91,9 +108,9 @@ Operational recovery order is: pause; stop and independently prove writer safety
 
 Linux x86_64, Go 1.27.1:
 
-- focused `go test ./internal/store ./internal/checkpoint ./internal/supervisor ./internal/cli`; pass;
+- remediation-focused checkpoint/supervisor tests, including all seven review contracts; pass;
 - `make check` (`go vet ./...` and `go test ./...`); pass outside the restricted sandbox, which does not permit the boundary test's loopback listener;
-- `make check-race`; pass, including `internal/supervisor` in 32.510 seconds on the final implementation;
+- `make check-race`; pass, now including `internal/checkpoint` in the standard target;
 - `make build`, `make build-boundary`; pass;
 - `make cross-build`; pass for Linux/macOS amd64/arm64.
 
@@ -103,7 +120,8 @@ Native macOS 26.6.2 arm64, Go 1.27.1:
 - `5617679` normalizes a supplied root through current physical/Git identity, checks it against the immutable participant and canonicalizes command authority. It also permanently rejects preservation-scope substitution.
 - Exact bundle SHA-256 `c890d1e3de294fabf77330e91617d011a3107f5f6d6d97cebde4525b29e48074` passed native `make check` (`internal/checkpoint` 14.574 seconds, `internal/supervisor` 43.780 seconds), `make check-race` (`internal/supervisor` 64.427 seconds), and `make build`.
 - Two repetitions of the high-risk checkpoint round-trip, nested partial restore, scope substitution, stop idempotency, exact no-prompt resume and independent-writer-safety tests passed.
-- Both isolated Mac checkouts and bundles were removed after making downloaded read-only module caches owner-writable. The normal Mac checkout was not accessed or changed.
+- Remediation commit `a0afb05` was transferred as exact bundle SHA-256 `553df7b6db5cf7e4707eaa0d052a08099dbb964f2f4f3c4456fc958f622f0dc2`. Native `make check`, `make check-race` (including checkpoint), and `make build` passed. Two focused repetitions passed for blocked-create stop, partial-work exact resume, parent replacement, pruned staged-object restore, and SHA-1/SHA-256/conflict-stage object recovery.
+- All isolated Mac checkouts and bundles were removed. The normal Mac checkout was not accessed or changed.
 
 No Docker flag, model, provider, credential, Codex subscription turn, llama.cpp turn, push, publish, purchase or production dispatch was used.
 
@@ -116,8 +134,10 @@ No Docker flag, model, provider, credential, Codex subscription turn, llama.cpp 
 | `2df4ecd` | Clear/restore | Per-path journals, scoped CAS clear, destination-bound three-way restore and partial-failure recovery |
 | `7c227a8` | Recovery/budgets | Exact versus fresh identity, retry kinds, shared ledgers, exhaustion evidence and recovery CLI |
 | `5617679` | Native portability/scope | Physical-root alias normalization and immutable preservation-scope enforcement |
+| `9d095fd` | Supervisor review remediation | Stop/effect retirement fence, contained follow-ups, checkpoint-bound exact generation baseline and dispatch-time native-history revalidation |
+| `a0afb05` | Checkpoint review remediation | Live recovery reservation, result-derived ownership, descriptor-relative apply/index lock/object recovery and checkpoint race coverage |
 
-Independent review should diff `bf09f4d..5617679`, inspect migrations 005–007 without changing earlier migration bytes, and concentrate on `internal/checkpoint`, `internal/supervisor/control.go`, `recovery.go`, `followup.go`, `budget.go`, CLI authority construction, and their failure tests. Stage 5.2 invariants remain part of the review surface.
+Independent follow-up should start with the original baseline `bf09f4d`, initial implementation through `5617679`, review findings in `stage-5.3-astra-review.md`, and remediation commits `9d095fd..a0afb05`. Inspect migration 008 while verifying that migrations 001–007 retain their historical digests. Re-run the seven retained concepts against the permanent tests in `internal/checkpoint` and `internal/supervisor`; ensure negative cases reach the named operation. Stage 5.2 invariants remain part of the review surface.
 
 ## Remaining gates and limitations
 

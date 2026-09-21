@@ -198,7 +198,7 @@ Save is non-destructive and always includes every immutable participating reposi
   --command-id clear-001 --expected-revision 11
 ```
 
-Clear derives agent-owned paths only from the validated execution result; there is no arbitrary path flag. It verifies both complete sets before changing any repository. Mixed or concurrent edits fail closed.
+Clear derives agent-owned paths only from the validated execution result; there is no arbitrary path flag. It verifies the exact post-result repository fingerprint and immutable pre-attempt baseline, then acquires live fenced claims for the complete set and rechecks terminal writer containment before changing any repository. Mixed, later or concurrent edits fail closed.
 
 Restore additionally requires a checkpoint of the current destination. The restore command is the explicit human approval bound to all three set IDs and the current project revision:
 
@@ -209,7 +209,7 @@ Restore additionally requires a checkpoint of the current destination. The resto
   --command-id restore-001 --expected-revision 13
 ```
 
-If restore reports conflicts or is interrupted, do not discard any checkpoint. Inspect the persisted operation/path journal and repeat the identical command only after destination state still matches an expected or already-applied state.
+Restore acquires the same live full-set authority and rechecks writer containment. Worktree/index/object apply is descriptor-relative; staged objects are verified before the Git index is exposed. If restore reports conflicts or is interrupted, do not discard any checkpoint. Inspect the persisted operation/path journal and repeat the identical command only after destination state still matches an expected or already-applied state.
 
 ## Exact resume and new attempts
 
