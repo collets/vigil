@@ -1,6 +1,6 @@
 # Persisted planning CLI
 
-Stage 5's first slice persists definitions and decisions. It does not launch production agents, accept tasks, or deliver changes. `dashboard PROJECT_ID` provides read-only persisted views; `spike` remains a separate diagnostic runner.
+Stage 5 persists definitions, repository setup and a journaled execution lifecycle. Production agents remain qualification-gated; the only CLI execution driver in Stage 5.2 is an explicitly selected, marker-gated synthetic driver for disposable repositories. Execution can move a task to `checking`, never acceptance or delivery. `dashboard PROJECT_ID` remains read-only and `spike` remains a separate diagnostic runner with no production fallback.
 
 ## Initialize and inspect
 
@@ -92,11 +92,84 @@ At revision 3, `kind: "plan.put"` accepts:
 }
 ```
 
-Plan import validates dependency graphs and retains immutable revisions. Existing tasks cannot be silently removed. Criteria changes require an explicit human flag. `plan.reorder` takes `{"plan_id":"first-plan","tasks":["first-task"]}` and preserves the exact task set and task revisions. Readiness reports missing profiles, unapproved specifications, unresolved questions, dependencies and policy constraints. Repository definitions and actual check/manual-result execution are still pending; production eligibility remains false.
+Plan import validates dependency graphs and retains immutable revisions. Existing tasks cannot be silently removed. Criteria changes require an explicit human flag. `plan.reorder` takes `{"plan_id":"first-plan","tasks":["first-task"]}` and preserves the exact task set and task revisions. Readiness reports missing profiles, unapproved specifications, unresolved questions, dependencies and policy constraints. Actual check/manual-result execution remains pending Stage 5.4; production eligibility remains false until an exact trusted launch/recovery qualification exists.
+
+## Repository enrollment and branch preparation
+
+Discovery is read-only. Enrollment is an explicit versioned command:
+
+```json
+{
+  "command_id": "repository-001",
+  "expected_revision": 4,
+  "kind": "repository.enroll",
+  "payload": {
+    "id": "primary",
+    "plan_id": "first-plan",
+    "root": "/tmp/vigil-disposable/work",
+    "base_ref": "refs/heads/main",
+    "plan_branch": "vigil/first-plan",
+    "dirty_choice": "clean",
+    "nested_boundaries": []
+  }
+}
+```
+
+`dirty_choice` is `clean`, `include` with exact `included_paths`, or `postpone`. `save` is rejected until Stage 5.3 supplies preservation. Included/postponed work is recorded but cannot be executed by this slice. `nested_boundaries` names repository-relative ordinary nested Git roots excluded from the parent fingerprint; enroll each participating nested repository separately. Remote identity is optional and credential-bearing URLs are rejected.
+
+Inspect and prepare with explicit receipts:
+
+```sh
+./bin/vigil project repository PROJECT_ID primary
+./bin/vigil project prepare-repository PROJECT_ID primary \
+  --command-id branch-001 --expected-revision 5
+```
+
+Preparation requires the exact clean fingerprint and selected base. It creates/reuses only the recorded ref and symbolic HEAD; it never checks out over edits. A crash is reconciled from the observed exact ref.
+
+## One disposable persisted execution
+
+The repository must contain a committed regular `.vigil-disposable-fixture` marker. The disposable profile's `endpoint_id` must be `fixture-endpoint`. Register that synthetic capacity identity; this URL is never contacted by the fixture driver:
+
+```sh
+./bin/vigil resources endpoint fixture-endpoint \
+  http://127.0.0.1:1/v1 --capacity 1 --single-host
+```
+
+Persist preparation without launch, using the current revision after branch preparation:
+
+```sh
+./bin/vigil project execution-prepare PROJECT_ID first-task \
+  --command-id run-001 --expected-revision 6 \
+  --wall-limit-ms 60000 --synthetic-fixture
+```
+
+Then start explicitly with the returned run ID:
+
+```sh
+./bin/vigil project execution-start PROJECT_ID RUN_ID \
+  --command-id start-001 --synthetic-fixture \
+  --repository primary --path src/result.txt \
+  --content 'persisted fixture execution' \
+  --prompt 'Create the deterministic fixture result.'
+```
+
+The start command owns every participating root before endpoint capacity, journals each effect, validates actual changed paths and releases fixture resources only after contained-stop proof. It returns `accepted: false`; successful completion leaves the task in `checking`.
+
+Inspection is read-only. Reconciliation requires its own receipt and cannot submit a prompt:
+
+```sh
+./bin/vigil project execution-inspect PROJECT_ID RUN_ID
+./bin/vigil project execution-reconcile PROJECT_ID RUN_ID \
+  --command-id reconcile-001 --synthetic-fixture \
+  --repository primary --path src/result.txt
+```
+
+An uncertain submission exposes only inspect/reconcile/stop as allowed next commands. Neither start nor reconcile automatically replays it. These fixture commands are not model dispatch and never fall back to `spike`. Production runtime drivers must supply an exact supported Stage 5.1 eligibility record and the complete recovery-class set; none is enabled by these examples.
 
 ## Permissions and artifacts
 
-`operation.request` records intent using `category`, `resource_digest`, `arguments_digest`, `plan_id`, `task_id`, and `task_revision`. Digests must identify exact resources/arguments; this command performs no external effect. The inbox returns a request ID. `permission.grant` takes `request_id`, `decision` (`allow`/`deny`), `scope` (`once`/`task`/`plan`/`project_permanent`) and optional `expires_at` in Unix milliseconds. `permission.revoke` takes `grant_id`. All use the same command envelope and expected revision. Global scope is rejected until coordinator authorization is connected. Effect start is internal-only and performs no external action in this slice.
+`operation.request` records intent using `category`, `resource_digest`, `arguments_digest`, `plan_id`, `task_id`, and `task_revision`. Digests must identify exact resources/arguments; this command performs no external effect. The inbox returns a request ID. `permission.grant` takes `request_id`, `decision` (`allow`/`deny`), `scope` (`once`/`task`/`plan`/`project_permanent`) and optional `expires_at` in Unix milliseconds. `permission.revoke` takes `grant_id`. All use the same command envelope and expected revision. Project commands still reject global scope; trusted coordinator APIs now serialize separately created explicit global grants and effect-start reservations with revocation. There is no user-facing global-grant command yet.
 
 ```sh
 ./bin/vigil project artifact PROJECT_ID evidence.txt --command-id evidence-001 --kind test-report
@@ -148,7 +221,7 @@ The dashboard reads one consistent database snapshot for readiness, tasks, the f
 
 ## Resource intent inspection
 
-`vigil project reservation PROJECT_ID OPERATION_ID` reads a trusted core reservation journal: owning instance, intended run, registered primary-root identity, observed claim/ticket generations and phase. It neither acquires nor releases resources. Acquisition is currently an internal API for the future dispatcher, not a production execution command. A retired intent is explicitly `uncertain`; its coordinator quarantine remains separate. The journal supports same-live-owner recovery across project/coordinator persistence gaps, not adoption by a new owner after a crash.
+`vigil project reservation PROJECT_ID OPERATION_ID` reads a trusted core reservation journal: owning instance, intended run, all registered/enrolled participating roots, observed claim/ticket generations and phase. It neither acquires nor releases resources. The explicit synthetic start command acquires through this journal; production acquisition remains qualification-gated. A retired intent is explicitly `uncertain`; its coordinator quarantine remains separate. The journal supports same-live-owner recovery across project/coordinator persistence gaps, not adoption by a new owner after a crash.
 
 
 ## Check definitions and manual setup prerequisites
