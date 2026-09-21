@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"vigil/internal/store"
+	"vigil/internal/workspace"
 )
 
 // FixtureDriver is deliberately not a production fallback. It performs one
@@ -40,42 +41,46 @@ func (d *FixtureDriver) count(name string) {
 	}
 	d.Calls[name]++
 }
-func (d *FixtureDriver) validate(prepared PreparedRun) error {
+func (d *FixtureDriver) validate(ctx context.Context, prepared PreparedRun) (string, error) {
 	clean := filepath.Clean(d.RelativePath)
 	if prepared.RuntimeKind != "synthetic" || d.RepositoryID == "" || d.RelativePath == "" || len(d.Content) > 65536 || filepath.IsAbs(d.RelativePath) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-		return errors.New("invalid synthetic fixture driver")
+		return "", errors.New("invalid synthetic fixture driver")
 	}
-	marker := filepath.Join(d.Root, ".vigil-disposable-fixture")
+	identity, err := workspace.Inspect(ctx, d.Root)
+	if err != nil {
+		return "", errors.New("synthetic fixture repository identity is unavailable")
+	}
+	marker := filepath.Join(identity.Root, ".vigil-disposable-fixture")
 	info, err := os.Lstat(marker)
 	if err != nil || !info.Mode().IsRegular() {
-		return errors.New("synthetic execution requires a marked disposable fixture repository")
+		return "", errors.New("synthetic execution requires a marked disposable fixture repository")
 	}
 	known := false
 	for _, repository := range prepared.Repositories {
-		if repository.ID == d.RepositoryID && repository.Root == d.Root {
+		if repository.ID == d.RepositoryID && repository.Root == identity.Root && repository.Identity.Key == identity.Key && repository.Identity.CommonGit == identity.CommonGit {
 			known = true
 		}
 	}
 	if !known {
-		return errors.New("fixture driver targets an unenrolled repository")
+		return "", errors.New("fixture driver targets an unenrolled repository")
 	}
-	return nil
+	return identity.Root, nil
 }
 
-func (d *FixtureDriver) Inspect(_ context.Context, prepared PreparedRun) (Observation, error) {
+func (d *FixtureDriver) Inspect(ctx context.Context, prepared PreparedRun) (Observation, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.count("inspect")
-	if err := d.validate(prepared); err != nil {
+	if _, err := d.validate(ctx, prepared); err != nil {
 		return Observation{}, err
 	}
 	return d.observation, nil
 }
-func (d *FixtureDriver) Create(_ context.Context, prepared PreparedRun) error {
+func (d *FixtureDriver) Create(ctx context.Context, prepared PreparedRun) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.count("create")
-	if err := d.validate(prepared); err != nil {
+	if _, err := d.validate(ctx, prepared); err != nil {
 		return err
 	}
 	d.observation.Exists = true
@@ -86,11 +91,11 @@ func (d *FixtureDriver) Create(_ context.Context, prepared PreparedRun) error {
 	}
 	return nil
 }
-func (d *FixtureDriver) Start(_ context.Context, prepared PreparedRun) error {
+func (d *FixtureDriver) Start(ctx context.Context, prepared PreparedRun) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.count("start")
-	if err := d.validate(prepared); err != nil {
+	if _, err := d.validate(ctx, prepared); err != nil {
 		return err
 	}
 	if !d.observation.Exists {
@@ -99,11 +104,11 @@ func (d *FixtureDriver) Start(_ context.Context, prepared PreparedRun) error {
 	d.observation.Started = true
 	return nil
 }
-func (d *FixtureDriver) Attach(_ context.Context, prepared PreparedRun) error {
+func (d *FixtureDriver) Attach(ctx context.Context, prepared PreparedRun) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.count("attach")
-	if err := d.validate(prepared); err != nil {
+	if _, err := d.validate(ctx, prepared); err != nil {
 		return err
 	}
 	if !d.observation.Started {
@@ -112,11 +117,11 @@ func (d *FixtureDriver) Attach(_ context.Context, prepared PreparedRun) error {
 	d.observation.Attached = true
 	return nil
 }
-func (d *FixtureDriver) CreateNative(_ context.Context, prepared PreparedRun) (string, error) {
+func (d *FixtureDriver) CreateNative(ctx context.Context, prepared PreparedRun) (string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.count("native_create")
-	if err := d.validate(prepared); err != nil {
+	if _, err := d.validate(ctx, prepared); err != nil {
 		return "", err
 	}
 	if !d.observation.Attached {
@@ -125,11 +130,12 @@ func (d *FixtureDriver) CreateNative(_ context.Context, prepared PreparedRun) (s
 	d.observation.NativeSessionID = "fixture-session-" + prepared.GenerationID
 	return d.observation.NativeSessionID, nil
 }
-func (d *FixtureDriver) Submit(_ context.Context, prepared PreparedRun, _ string) (string, string, error) {
+func (d *FixtureDriver) Submit(ctx context.Context, prepared PreparedRun, _ string) (string, string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.count("submit")
-	if err := d.validate(prepared); err != nil {
+	root, err := d.validate(ctx, prepared)
+	if err != nil {
 		return "proven_not_delivered", "", err
 	}
 	if d.observation.NativeSessionID == "" {
@@ -141,10 +147,10 @@ func (d *FixtureDriver) Submit(_ context.Context, prepared PreparedRun, _ string
 		return "uncertain", d.observation.NativeTurnID, errors.New("fixture injected ambiguous submission response")
 	}
 	d.observation.SubmissionState = "delivered"
-	if err := os.MkdirAll(filepath.Dir(filepath.Join(d.Root, d.RelativePath)), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(root, d.RelativePath)), 0700); err != nil {
 		return "delivered", d.observation.NativeTurnID, err
 	}
-	if err := os.WriteFile(filepath.Join(d.Root, d.RelativePath), d.Content, 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, d.RelativePath), d.Content, 0600); err != nil {
 		return "delivered", d.observation.NativeTurnID, err
 	}
 	result := Result{SchemaVersion: 1, Status: "completed", Summary: "deterministic fixture edit completed", ChangedPaths: []string{d.RepositoryID + ":" + filepath.ToSlash(d.RelativePath)}}
@@ -161,17 +167,18 @@ func (d *FixtureDriver) Submit(_ context.Context, prepared PreparedRun, _ string
 func (d *FixtureDriver) Await(_ context.Context, prepared PreparedRun) (Observation, error) {
 	return d.Inspect(context.Background(), prepared)
 }
-func (d *FixtureDriver) RenewLease(_ context.Context, prepared PreparedRun) error {
+func (d *FixtureDriver) RenewLease(ctx context.Context, prepared PreparedRun) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.count("renew_lease")
-	return d.validate(prepared)
+	_, err := d.validate(ctx, prepared)
+	return err
 }
-func (d *FixtureDriver) Stop(_ context.Context, prepared PreparedRun) (Observation, error) {
+func (d *FixtureDriver) Stop(ctx context.Context, prepared PreparedRun) (Observation, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.count("stop")
-	if err := d.validate(prepared); err != nil {
+	if _, err := d.validate(ctx, prepared); err != nil {
 		return Observation{}, err
 	}
 	d.observation.WriterState = "contained_stopped"

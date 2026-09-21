@@ -117,6 +117,11 @@ func setupFixture(t *testing.T) fixture {
 
 func TestOnePersistedSyntheticExecutionStopsAtChecking(t *testing.T) {
 	fixture := setupFixture(t)
+	alias := filepath.Join(filepath.Dir(fixture.driver.Root), "work-alias")
+	if err := os.Symlink(fixture.driver.Root, alias); err != nil {
+		t.Fatal(err)
+	}
+	fixture.driver.Root = alias
 	loaded, err := LoadPrepared(context.Background(), fixture.engine, fixture.prepared.RunID)
 	if err != nil || loaded.GenerationID != fixture.prepared.GenerationID || loaded.EndpointID != fixture.prepared.EndpointID {
 		t.Fatal(loaded, err)
