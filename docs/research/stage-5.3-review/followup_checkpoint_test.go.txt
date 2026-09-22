@@ -1,0 +1,65 @@
+package checkpoint
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestStage53FollowupClearRecoveryAfterMutation(t *testing.T) {
+	for _, interrupt := range []bool{true, false} {
+		name := "completed_receipt"
+		if interrupt {
+			name = "interrupted_after_apply"
+		}
+		t.Run(name, func(t *testing.T) {
+			f := recoverySetup(t)
+			baseline := saveRun(t, f, "review-baseline")
+			mutateRecoveryFixture(t, f)
+			captured := saveRun(t, f, "review-captured")
+			recordValidatedResult(t, f)
+			req := ClearRequest{CommandID: "review-clear", ExpectedRevision: revision(t, f.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID}
+			injected := errors.New("interrupted after actual apply")
+			fired := false
+			if interrupt {
+				f.recovery.Fault = func(point string) error {
+					if !fired && strings.HasPrefix(point, "after_apply:") {
+						fired = true
+						return injected
+					}
+					return nil
+				}
+			}
+			first, err := f.recovery.Clear(context.Background(), req)
+			if interrupt {
+				if !fired || !errors.Is(err, injected) {
+					t.Fatalf("did not reach post-write crash: %v", err)
+				}
+			} else if err != nil || first.State != "saved" {
+				t.Fatalf("initial clear: %+v %v", first, err)
+			}
+			f.recovery.Fault = nil
+			repeated, err := f.recovery.Clear(context.Background(), req)
+			if err != nil || repeated.State != "saved" || !repeated.Repeated {
+				t.Fatalf("journal/receipt replay failed: %+v %v", repeated, err)
+			}
+		})
+	}
+}
+
+func TestStage53FollowupClearDeletedDirectory(t *testing.T) {
+	f := recoverySetup(t)
+	baseline := saveRun(t, f, "directory-base")
+	if err := os.RemoveAll(filepath.Join(f.root, "dir")); err != nil {
+		t.Fatal(err)
+	}
+	captured := saveRun(t, f, "directory-captured")
+	recordValidatedResult(t, f)
+	receipt, err := f.recovery.Clear(context.Background(), ClearRequest{CommandID: "directory-clear", ExpectedRevision: revision(t, f.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID})
+	if err != nil || receipt.State != "saved" {
+		t.Fatalf("cannot undo agent-owned directory deletion: %+v %v", receipt, err)
+	}
+}

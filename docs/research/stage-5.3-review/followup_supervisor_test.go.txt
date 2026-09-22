@@ -1,0 +1,45 @@
+package supervisor
+
+import (
+	"context"
+	"testing"
+)
+
+func TestStage53FollowupRepeatedExactResumeUnchangedWorkspace(t *testing.T) {
+	f := setupFixture(t)
+	prepareInterruptedRecovery(t, f)
+	history := exactHistory(f)
+	f.driver.History = &history
+	r := Runner{Engine: f.engine, Driver: f.driver}
+	choice, err := r.ChooseRecovery(context.Background(), RecoveryChoiceRequest{CommandID: "review-choice-1", ExpectedRevision: projectRevision(t, f), RunID: f.prepared.RunID, Mode: "exact_resume"}, f.driver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := r.PrepareExactResume(context.Background(), ExactResumeRequest{CommandID: "review-prepare-1", ExpectedRevision: projectRevision(t, f), ChoiceID: choice.ChoiceID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Model a second contained interruption before any workspace changes.
+	if _, err := f.engine.DB.SQL.Exec("UPDATE run_generations SET state='contained' WHERE id=?", resumed.GenerationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.engine.DB.SQL.Exec("UPDATE runs SET state='interrupted',writer_state='contained_stopped' WHERE id=?", resumed.RunID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.engine.DB.SQL.Exec("UPDATE tasks SET state='blocked' WHERE id=?", resumed.TaskID); err != nil {
+		t.Fatal(err)
+	}
+	// History belongs to the latest synthetic transport while durable native identity stays the same.
+	history.TransportGeneration = resumed.TransportGeneration
+	if _, err := f.engine.DB.SQL.Exec("UPDATE sessions SET generation=? WHERE run_id=?", resumed.TransportGeneration, resumed.RunID); err != nil {
+		t.Fatal(err)
+	}
+	choice, err = r.ChooseRecovery(context.Background(), RecoveryChoiceRequest{CommandID: "review-choice-2", ExpectedRevision: projectRevision(t, f), RunID: resumed.RunID, Mode: "exact_resume"}, f.driver)
+	if err != nil || !choice.Eligibility.ExactResume {
+		t.Fatalf("second choice: %+v %v", choice, err)
+	}
+	_, err = r.PrepareExactResume(context.Background(), ExactResumeRequest{CommandID: "review-prepare-2", ExpectedRevision: projectRevision(t, f), ChoiceID: choice.ChoiceID})
+	if err != nil {
+		t.Fatalf("unchanged workspace cannot resume twice: %v", err)
+	}
+}

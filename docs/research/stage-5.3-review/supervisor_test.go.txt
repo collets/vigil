@@ -1,0 +1,63 @@
+package supervisor
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestStage53ReviewStopDuringCreate(t *testing.T) {
+	f := setupFixture(t)
+	d := &blockingCreateDriver{FixtureDriver: f.driver, entered: make(chan struct{}), release: make(chan struct{})}
+	r := Runner{Engine: f.engine, Owner: f.owner, Driver: d}
+	done := make(chan error, 1)
+	go func() { _, err := r.Run(context.Background(), f.prepared, f.reservation, "write result"); done <- err }()
+	<-d.entered
+	receipt, err := r.Stop(context.Background(), f.prepared, "review-stop", 0, time.Second)
+	if err != nil {
+		close(d.release)
+		<-done
+		t.Fatal(err)
+	}
+	close(d.release)
+	runErr := <-done
+	if d.Calls["submit"] != 0 {
+		t.Fatalf("submission occurred after stop returned %s: calls=%v runErr=%v", receipt.State, d.Calls, runErr)
+	}
+}
+
+func TestStage53ReviewExactResumeWithPreservedEdits(t *testing.T) {
+	f := setupFixture(t)
+	if err := os.WriteFile(filepath.Join(f.driver.Root, "src", "result.txt"), []byte("partial agent work\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	prepareInterruptedRecovery(t, f)
+	h := exactHistory(f)
+	f.driver.History = &h
+	r := Runner{Engine: f.engine, Owner: f.owner, Driver: f.driver}
+	choice, err := r.ChooseRecovery(context.Background(), RecoveryChoiceRequest{CommandID: "review-choice", ExpectedRevision: projectRevision(t, f), RunID: f.prepared.RunID, Mode: "exact_resume"}, f.driver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := r.PrepareExactResume(context.Background(), ExactResumeRequest{CommandID: "review-prepare", ExpectedRevision: projectRevision(t, f), ChoiceID: choice.ChoiceID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Driver = &completedResumeDriver{FixtureDriver: &FixtureDriver{RepositoryID: f.driver.RepositoryID, Root: f.driver.Root, RelativePath: f.driver.RelativePath, Content: f.driver.Content}}
+	_, err = r.Run(context.Background(), p, f.reservation, "")
+	if err != nil {
+		t.Fatalf("eligible exact resume with checkpointed partial work cannot dispatch: %v", err)
+	}
+}
+func TestStage53ReviewInfrastructureNeedsContainedWriter(t *testing.T) {
+	f := setupFixture(t)
+	if _, err := f.engine.DB.SQL.Exec("UPDATE runs SET state='failed',writer_state='unconfirmed' WHERE id=?", f.prepared.RunID); err != nil {
+		t.Fatal(err)
+	}
+	p, err := PrepareFollowup(context.Background(), f.engine, FollowupRequest{CommandID: "review-infra", ExpectedRevision: projectRevision(t, f), SourceRunID: f.prepared.RunID, Kind: "infrastructure", WallLimitMS: 60000})
+	if err == nil {
+		t.Fatalf("created new %s attempt %s while source remains failed/unconfirmed", p.AttemptKind, p.RunID)
+	}
+}
