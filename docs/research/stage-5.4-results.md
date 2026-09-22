@@ -4,7 +4,7 @@ Date: 2026-09-22
 
 Scope: offline implementation and fixture validation only
 
-Status: independent follow-up of `0993a24` requests further changes: **R2/R5 remain P1, R8 remains P2 for populated upgrades, and new R10 is P2**. R1/R3/R4/R6/R7/R9 are closed for their reported offline defects. Stage 5.4 remains unaccepted. See the [follow-up findings and retained probes](stage-5.4-astra-review.md#independent-follow-up-of-0993a24). Implementation claims below are subject to these findings.
+Status: R2/R5/R8/R10 follow-up remediation is implemented through `253efd2`; R1/R3/R4/R6/R7/R9 remain closed at their reported offline scope. Stage 5.4 remains unaccepted pending independent review. See the [follow-up findings and retained probes](stage-5.4-astra-review.md#independent-follow-up-of-0993a24). This document reports implementing-agent evidence, not self-acceptance.
 
 Production dispatch: disabled
 
@@ -26,24 +26,30 @@ Stage 5.4 was implemented as these local commits:
 | `872be1a` | Close R1–R9 with migration 013, permanent probes and extended failure-path coverage |
 | `9558b3e` | Add project-state authority and transaction-local project/plan acceptance fences |
 | `0993a24` | Persist rejected/raced acceptance attempts for concurrent state changes |
+| `959818e` | First follow-up implementation handoff |
+| `ff0d9c0` | Preserve the independent R2/R5/R8/R10 follow-up and inert retained probe separately |
+| `f3057aa` | Add terminal budget accounting, migration 014, permission fidelity and descendant tracking |
+| `9c31eaa` | Add pre-exec Darwin fork observation |
+| `253efd2` | Fail closed when a Darwin fork cannot be tied to a contained group or observed PID |
 
-Initial review range: `4b48737..03f65e8`. Follow-up remediation range: `c224826..0993a24`. No commit was pushed and no publication or production activation occurred.
+Initial review range: `4b48737..03f65e8`. First remediation range: `c224826..0993a24`. Second follow-up remediation range: `ff0d9c0..253efd2`. No commit was pushed and no publication or production activation occurred.
 
 ## Independent-review remediation
 
 | Finding | Implemented correction |
 | --- | --- |
 | R1 | Core check admission now accepts only marked disposable fixtures. `qualified_runtime` fails closed until a real qualified execution boundary exists; actor strings cannot substitute for qualification. |
-| R2 | Checks run in a dedicated Unix process group with bounded pipe draining and TERM/KILL retirement proof. Claims are released only after terminal persistence and containment; uncertain paths retain them. |
+| R2 | Linux tracks the process group, observed ancestry and a per-effect inherited process identity. Darwin stops a fixed wrapper before approved code executes and registers fork observation. Same-group/observed descendants are retired; an unaccounted detached fork is explicit uncertainty, never completion proof. Uncertain paths charge unknown time, retain claims and block downstream gates. |
 | R3 | The isolated source tree is digested before and after copying and after execution, with only declared required-output paths excluded. A copied-source mutation records `source_mutated`; the original enrolled set is still re-observed. |
 | R4 | Review and assessment terminal state changes are conditional on the exact task revision and allowed in-progress state. Late pass/failure results persist without overwriting stop, request-changes or criteria authority. |
-| R5 | Migration 013 adds durable per-effect quality budget segments. Effect start and segment reservation are atomic; every terminal path charges the full interval, uncertain recovery charges unknown time, and unresolved effects block fresh target dispatch across scopes. |
+| R5 | Durable per-effect budget segments now close from current time inside the terminal transaction after source re-observation and artifact persistence. Check, review and assessment pass/action enforcement uses that same transaction-local ledger state; uncertainty charges through its own terminal write. |
 | R6 | Migration 013 adds a comprehensive quality-authority epoch advanced by every relevant mutator. Acceptance binds the final gate manifest, compares the epoch before/after reads and inside its immediate write transaction, and records a raced attempt on concurrent evidence changes. |
 | R7 | Staleness explicitly invalidates current acceptances. Plan gates re-observe every child scope, require a compatible current acceptance, recursively revalidate child gates/artifacts, and refuse stale children. A later task check can reopen an invalidated accepted task without discarding harmless evidence. |
-| R8 | The exact task/exhaustion source is reserved before assessment dispatch, independently of command ID. Observed or uncertain sources cannot call the assessor again; failures are charged and non-replayable. |
+| R8 | Forward migration 014 backfills task-wide source consumption from populated v12 assessments and reserves legacy executing/uncertain sources. It creates conservative unknown segments and marks legacy executing effects uncertain, so empty v13 tables cannot imply no prior invocation. |
 | R9 | Exact baseline authorization reconciles `needs_repair` back to `checking` only when no already-observed current check is blocking. Missing required checks still have to run and any new failure remains blocking. |
+| R10 | Isolated copies preserve the exact regular-file permission bits (including 0600, 0644 and 0755); private temporary parents still provide isolation. Source equality no longer fails solely because the copy narrowed ordinary modes. |
 
-Migration 013 is forward-only. It adds immutable single-close budget segments, single-resolution assessment-source reservations and the acceptance authority epoch without changing migrations 001–012 or their recorded digests.
+Migrations 013 and 014 are forward-only. Migration 014 reconciles populated legacy authority without changing migrations 001–013 or their recorded digests.
 
 ## Implemented authority model
 
@@ -63,7 +69,7 @@ Migration 011 replaces the inherited global uniqueness of `execution_results.res
 
 ### Checks and effect recovery
 
-`internal/checks` executes an approved argv directly, without a shell, in an agent-owned isolated source copy. It uses only the runner-owned home/temp/locale plus sorted approved variables, the approved relative cwd, a bounded timeout/output ceiling and required output paths. Bare executable lookup requires an explicitly approved absolute canonical `PATH`; ambient lookup is rejected. The live owner capability and exact repository fences remain held from effect start through copy, subprocess containment, source re-observation and result persistence. The managed source is re-fingerprinted after execution. Result/output artifacts and required-output digests are durable evidence; missing, corrupt or truncated evidence cannot satisfy a gate.
+`internal/checks` executes an approved argv without user-supplied shell interpretation in an agent-owned isolated source copy. Darwin uses a fixed internal stop/exec wrapper solely to register fork observation before approved code runs. The runner uses only its owned home/temp/locale plus sorted approved variables, the approved relative cwd, a bounded timeout/output ceiling and required output paths. Bare executable lookup requires an explicitly approved absolute canonical `PATH`; ambient lookup is rejected. The live owner capability and exact repository fences remain held from effect start through copy, subprocess containment, source re-observation and result persistence. The managed source is re-fingerprinted after execution. Result/output artifacts and required-output digests are durable evidence; missing, corrupt or truncated evidence cannot satisfy a gate.
 
 Terminal check statuses are `pass`, `fail`, `timeout`, `interrupted`, `error`, `source_mutated`, `missing_output` and `output_overflow`. A baseline exception is explicit immutable fixture-human/human authority bound to the check definition, base fingerprint and exact normalized failure identities. It classifies only those known identities as `accepted_baseline`; an additional identity still blocks.
 
@@ -100,7 +106,7 @@ The default suite requires no model, Docker, hosting service or credential. It c
 - pause denial for new check and reviewer dispatch, and live-owner release blocked for the complete check interval;
 - a database restart inside a complete failure → Stage 5.3 repair → fresh passing check → distinct fresh review → fixture manual/human task acceptance → plan-wide gates → `finalizing` cycle;
 - an assertion that the completed acceptance cycle creates no delivery.
-- all nine independent R1–R9 reproductions as permanent tests, plus inherited-output descendant retirement, late failing-review stop preservation and failed-assessment charge/non-replay coverage.
+- all ten independent R1–R10 reproductions as permanent tests, including detached-session fail-closed behavior, post-process budget exhaustion, ordinary file modes and populated-v12 observed/executing/uncertain assessment upgrades.
 
 The fixture actors `fixture`, `fixture_human` and `fixture_core` are deliberately closed and accepted only for repositories carrying the disposable-fixture marker. They are not real check qualification, review or human acceptance.
 
@@ -108,7 +114,7 @@ The fixture actors `fixture`, `fixture_human` and `fixture_core` are deliberatel
 
 ### Linux/WSL
 
-The pre-remediation baseline `make check` passed after the review-artifact commit `c224826`. At exact final remediation commit `0993a24776404dac00df39ca8d25d2c2c1c2f68f`, the following gates passed:
+The pre-remediation suites were reported passing at `0993a24`. At exact final remediation commit `253efd2a6cb1210009dbe290f083507c4363052e`, the following gates passed:
 
 ```text
 make check
@@ -127,18 +133,19 @@ The previously authorized host was available. An isolated temporary checkout was
 
 | Item | Exact value |
 | --- | --- |
-| Commit | `0993a24776404dac00df39ca8d25d2c2c1c2f68f` |
-| Bundle SHA-256 | `5e0cb97c4b9ea9a6c5a209af502075b648e010aecf6bee8704a55eaf8d3bb874` |
+| Commit | `253efd2a6cb1210009dbe290f083507c4363052e` |
+| Bundle SHA-256 | `d7f606d316d05e56c22e9a5e84badeb6088c54497cafe164daedec73e86dcc7a` |
 | Host | Darwin 25.6.0 arm64 |
 | Go | `go1.27.1 darwin/arm64` |
-| Commands | `make check` (including permanent R1–R9 probes); `make check-race`; `make build` |
+| Commands | `make check` (including permanent R1–R10 probes); `make check-race`; `make build` |
 | Result | all passed |
 
-The final temporary Mac directory `/tmp/vigil-stage54-0993a24.rnP5qK` and remote bundle were removed and verified absent; the local bundle was also removed. The earlier `872be1a` validation checkout/bundle was likewise removed after making only its disposable module cache writable. The normal Mac checkout was not accessed or changed.
+The temporary Mac directory `/tmp/vigil-stage54-f3057aa.VvWBtx`, all remote bundles/checkouts and all three local diagnostic/final bundles were removed and verified absent. Only disposable module caches were made writable to permit their removal. The normal Mac checkout was not accessed or changed.
 
 ## Deferred gates and limitations
 
-- Stage 5.4 remediation requires independent follow-up acceptance; this implementation report is not self-acceptance and does not close R1–R9 by assertion.
+- Stage 5.4 remediation requires independent follow-up acceptance; this implementation report is not self-acceptance and does not close R2/R5/R8/R10 by assertion.
+- Darwin 25 rejects kernel `NOTE_TRACK`. Vigil registers `NOTE_FORK` before approved code executes; an otherwise unaccounted fork makes the effect uncertain instead of passing. This is intentionally fail-closed and can reject a legitimate forking check until a qualified production containment boundary exists.
 - Production check/model/reviewer dispatch remains disabled. No real fresh model review was attempted.
 - Safe contained Codex subscription routing, effective Luna/low selection, provider-idle proof, shared Mac/WSL capacity authority and live recovery across advertised harness/platform combinations remain pending. No paid fallback or larger-model fallback is authorized.
 - Real project repository/base/branch/check choices, baseline exceptions, criteria changes, manual functional verification and task/plan human acceptance remain explicit user gates. No such evidence was fabricated.
@@ -147,11 +154,11 @@ The final temporary Mac directory `/tmp/vigil-stage54-0993a24.rnP5qK` and remote
 
 ## Independent review instructions
 
-Review remediation range `c224826..0993a24` against the original findings in `docs/research/stage-5.4-astra-review.md`. The initial implementation range remains `4b48737..03f65e8`. Begin from the accepted Stage 5.3 contracts and explicitly preserve R1–R10.
+Review second follow-up remediation range `ff0d9c0..253efd2` against R2/R5/R8/R10 in `docs/research/stage-5.4-astra-review.md`. The first remediation range remains `c224826..0993a24`. Begin from the accepted Stage 5.3 contracts and explicitly preserve every previously closed finding.
 
-1. Verify migrations 010–013 on both a fresh database and populated older databases. Confirm historical migration bytes/digests are unchanged, migration 013 rollback is atomic, its segment/reservation guards hold, duplicate result content remains allowed, and assessment sources are unique per exact task/exhaustion across scope changes.
+1. Verify migrations 010–014 on both a fresh database and populated older databases. Confirm historical migration bytes/digests are unchanged and migration 014 preserves observed source consumption while conservatively reconciling failed/executing legacy assessment effects and their ledger charge.
 2. Audit `internal/quality/scope.go` field by field. Reproduce repository, task/plan revision, criteria/definition, configuration/check-set, reviewer profile/instruction and artifact invalidation. Confirm a harmless plan reorder does not stale task evidence but an enclosing restriction change does.
-3. Audit `internal/checks/runner.go` for fixture-only admission before effects, argv/cwd/environment authority, copy equivalence, post-check source integrity, process-group retirement, bounded inherited-output draining, required outputs, owner-release proof and restart uncertainty. Verify unsupported `qualified_runtime` dispatch starts no child and an exact baseline exception cannot cover a new failure.
+3. Audit `internal/checks/runner.go` and platform trackers for fixture-only admission before effects, argv/cwd/environment authority, exact copied modes, post-check source integrity, detached-session handling, bounded inherited-output draining, required outputs, owner-release proof and restart uncertainty. On Darwin, verify an unaccounted fork produces uncertainty and cannot issue a result/release proof. Verify unsupported `qualified_runtime` dispatch starts no child.
 4. Audit `internal/review/review.go` for distinct identities, exact manifests, closed decoding, deterministic thresholds, owner fences and write denial. Confirm suggestions cannot block and reviewer output cannot grant acceptance or publishing authority.
 5. Trace rejection into the existing Stage 5.3 repair path. Confirm repair counters and ledgers never reset, changed source requires fresh checks/review, and migration 011 does not weaken run identity.
 6. Audit `internal/quality/assessment.go`. Confirm exact source reservation precedes invocation, second/failed/uncertain requests cannot invoke again, every failure is charged, the task remains blocked and no action can weaken criteria or spending limits.
