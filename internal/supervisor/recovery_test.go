@@ -183,6 +183,50 @@ func TestExactResumeUsesCheckpointedPartialWorkspace(t *testing.T) {
 	}
 }
 
+func TestRepeatedExactResumeAllowsUnchangedCheckpointWorkspace(t *testing.T) {
+	fixture := setupFixture(t)
+	prepareInterruptedRecovery(t, fixture)
+	history := exactHistory(fixture)
+	fixture.driver.History = &history
+	runner := Runner{Engine: fixture.engine, Driver: fixture.driver}
+	choice, err := runner.ChooseRecovery(context.Background(), RecoveryChoiceRequest{CommandID: "choose-exact-first", ExpectedRevision: projectRevision(t, fixture), RunID: fixture.prepared.RunID, Mode: "exact_resume"}, fixture.driver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := runner.PrepareExactResume(context.Background(), ExactResumeRequest{CommandID: "prepare-exact-first", ExpectedRevision: projectRevision(t, fixture), ChoiceID: choice.ChoiceID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.engine.DB.SQL.Exec("UPDATE run_generations SET state='contained' WHERE id=?", resumed.GenerationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.engine.DB.SQL.Exec("UPDATE runs SET state='interrupted',writer_state='contained_stopped' WHERE id=?", resumed.RunID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.engine.DB.SQL.Exec("UPDATE tasks SET state='blocked' WHERE id=?", resumed.TaskID); err != nil {
+		t.Fatal(err)
+	}
+	history.TransportGeneration = resumed.TransportGeneration
+	if _, err := fixture.engine.DB.SQL.Exec("UPDATE sessions SET generation=? WHERE run_id=?", resumed.TransportGeneration, resumed.RunID); err != nil {
+		t.Fatal(err)
+	}
+	choice, err = runner.ChooseRecovery(context.Background(), RecoveryChoiceRequest{CommandID: "choose-exact-second", ExpectedRevision: projectRevision(t, fixture), RunID: resumed.RunID, Mode: "exact_resume"}, fixture.driver)
+	if err != nil || !choice.Eligibility.ExactResume {
+		t.Fatalf("second choice: %+v %v", choice, err)
+	}
+	second, err := runner.PrepareExactResume(context.Background(), ExactResumeRequest{CommandID: "prepare-exact-second", ExpectedRevision: projectRevision(t, fixture), ChoiceID: choice.ChoiceID})
+	if err != nil {
+		t.Fatalf("unchanged workspace cannot resume twice: %v", err)
+	}
+	var snapshots, distinctDigests int
+	if err := fixture.engine.DB.SQL.QueryRow("SELECT count(*),count(DISTINCT digest) FROM generation_recovery_snapshots WHERE generation_id IN(?,?)", resumed.GenerationID, second.GenerationID).Scan(&snapshots, &distinctDigests); err != nil {
+		t.Fatal(err)
+	}
+	if snapshots != 2 || distinctDigests != 1 {
+		t.Fatal("repeated exact resumes did not retain generation-specific equal-content authority", snapshots, distinctDigests)
+	}
+}
+
 func TestExactResumeRevalidatesNativeHistoryAtDispatch(t *testing.T) {
 	fixture := setupFixture(t)
 	prepareInterruptedRecovery(t, fixture)

@@ -205,7 +205,7 @@ func (m *Manager) manifestContentDigest(repository RepositoryManifest) (string, 
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func (m *Manager) clearOwnership(ctx context.Context, baseline, captured SetManifest) (map[string]map[string]bool, error) {
+func (m *Manager) clearOwnership(ctx context.Context, baseline, captured SetManifest, verifyResultState bool) (map[string]map[string]bool, error) {
 	if len(baseline.Repositories) != len(captured.Repositories) {
 		return nil, errors.New("clear checkpoint repository sets differ")
 	}
@@ -265,12 +265,18 @@ func (m *Manager) clearOwnership(ctx context.Context, baseline, captured SetMani
 		return nil, err
 	}
 	for _, repository := range captured.Repositories {
+		expected, ok := fingerprints[repository.RepositoryID]
+		if !ok {
+			return nil, fmt.Errorf("validated result lacks repository %s", repository.RepositoryID)
+		}
+		if !verifyResultState {
+			continue
+		}
 		current, err := workspace.Fingerprint(ctx, repository.Identity.Root, repository.Exclusions)
 		if err != nil {
 			return nil, fmt.Errorf("cannot bind clear ownership for repository %s: %w", repository.RepositoryID, err)
 		}
-		expected, ok := fingerprints[repository.RepositoryID]
-		if !ok || !snapshotEqual(current, expected) {
+		if !snapshotEqual(current, expected) {
 			return nil, fmt.Errorf("repository %s changed after validated execution result", repository.RepositoryID)
 		}
 	}
@@ -307,6 +313,9 @@ func (m *Manager) loadRecoverySet(ctx context.Context, id string) (SetManifest, 
 
 func currentPath(root, relative, source string) (*PathEntry, error) {
 	parent, base, closeParent, err := confinedParent(root, "", relative, false)
+	if errors.Is(err, errRecoveryPathAbsent) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -403,11 +412,22 @@ func (m *Manager) clearActions(ctx context.Context, baseline, captured SetManife
 			return nil, errors.New("clear index compare-and-swap rejected destination drift")
 		}
 		basePaths, postPaths := pathMap(base), pathMap(post)
+		observed, _, err := m.Store.captureRepository(ctx, RepositorySpec{ID: post.RepositoryID, Root: post.Identity.Root, Identity: post.Identity, Exclusions: post.Exclusions, UntrackedScope: post.UntrackedScope})
+		if err != nil {
+			return nil, fmt.Errorf("cannot reconcile current repository %s: %w", id, err)
+		}
+		if observed.HeadOID != post.HeadOID || observed.HeadRef != post.HeadRef || observed.IndexDigest != indexDigest {
+			return nil, fmt.Errorf("repository %s changed during clear reconciliation", id)
+		}
+		currentPaths := pathMap(observed)
 		all := map[string]bool{}
 		for path := range basePaths {
 			all[path] = true
 		}
 		for path := range postPaths {
+			all[path] = true
+		}
+		for path := range currentPaths {
 			all[path] = true
 		}
 		for path := range owned[id] {
@@ -417,14 +437,12 @@ func (m *Manager) clearActions(ctx context.Context, baseline, captured SetManife
 		}
 		for path := range all {
 			before, after := entryPointer(basePaths, path), entryPointer(postPaths, path)
+			current := entryPointer(currentPaths, path)
 			if pathState(before) == pathState(after) || !owned[id][path] {
+				if pathState(current) != pathState(after) {
+					return nil, fmt.Errorf("clear compare-and-swap rejected unrelated edit at %s", path)
+				}
 				continue
-			}
-			expectedSource := "untracked"
-			if after != nil {
-				expectedSource = after.Source
-			} else if before != nil {
-				expectedSource = before.Source
 			}
 			progress := "prepared"
 			if operationID != "" {
@@ -432,10 +450,9 @@ func (m *Manager) clearActions(ctx context.Context, baseline, captured SetManife
 					return nil, err
 				}
 			}
-			current, err := currentPath(post.Identity.Root, path, expectedSource)
 			currentState := pathState(current)
 			valid := progress == "applied" && currentState == pathState(before) || progress != "applied" && (currentState == pathState(after) || currentState == pathState(before))
-			if err != nil || !valid {
+			if !valid {
 				return nil, fmt.Errorf("clear compare-and-swap rejected concurrent or mixed edit at %s", path)
 			}
 			action := "delete"
@@ -449,6 +466,24 @@ func (m *Manager) clearActions(ctx context.Context, baseline, captured SetManife
 				}
 			}
 			actions = append(actions, recoveryAction{repository: post, path: path, action: action, expected: after, desired: before})
+		}
+	}
+	if operationID != "" {
+		var persisted int
+		if err := m.Engine.DB.SQL.QueryRowContext(ctx, "SELECT count(*) FROM checkpoint_path_progress WHERE operation_id=?", operationID).Scan(&persisted); err != nil {
+			return nil, err
+		}
+		if persisted != len(actions) {
+			return nil, errors.New("clear recovery journal differs from its authorized action set")
+		}
+		for _, action := range actions {
+			var recordedAction, expectedDigest, desiredDigest string
+			if err := m.Engine.DB.SQL.QueryRowContext(ctx, "SELECT action,expected_digest,desired_digest FROM checkpoint_path_progress WHERE operation_id=? AND repository_id=? AND path=?", operationID, action.repository.RepositoryID, action.path).Scan(&recordedAction, &expectedDigest, &desiredDigest); err != nil {
+				return nil, err
+			}
+			if recordedAction != action.action || expectedDigest != actionExpectedDigest(action, captured) || desiredDigest != actionDesiredDigest(action, baseline) {
+				return nil, errors.New("clear recovery journal authority does not match the immutable checkpoints")
+			}
 		}
 	}
 	sort.Slice(actions, func(i, j int) bool {
@@ -492,10 +527,6 @@ func (m *Manager) clearAuthorized(ctx context.Context, request ClearRequest) (Re
 	if err != nil {
 		return receipt, err
 	}
-	owned, err := m.clearOwnership(ctx, baseline, captured)
-	if err != nil {
-		return receipt, err
-	}
 	args, _ := json.Marshal(request)
 	command := store.Command{ID: request.CommandID, Actor: string(core.Human), Kind: "checkpoint.clear", Args: args}
 	commandReceipt, repeated, err := m.Engine.DB.Receipt(ctx, command)
@@ -506,6 +537,10 @@ func (m *Manager) clearAuthorized(ctx context.Context, request ClearRequest) (Re
 		if err := json.Unmarshal(commandReceipt, &receipt); err != nil {
 			return receipt, err
 		}
+	}
+	owned, err := m.clearOwnership(ctx, baseline, captured, !repeated)
+	if err != nil {
+		return receipt, err
 	}
 	actions, err := m.clearActions(ctx, baseline, captured, owned, receipt.OperationID)
 	if err != nil {
@@ -602,6 +637,9 @@ func (m *Manager) clearAuthorized(ctx context.Context, request ClearRequest) (Re
 		}); err != nil {
 			return receipt, err
 		}
+		if err := m.checkpoint("after_progress:" + action.repository.RepositoryID + ":" + action.path); err != nil {
+			return receipt, err
+		}
 		receipt.Applied++
 	}
 	err = m.Engine.DB.Write(ctx, func(tx *store.Tx) error {
@@ -674,6 +712,8 @@ func (m *Manager) readBlob(digest string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
+var errRecoveryPathAbsent = errors.New("recovery path is absent beneath the enrolled root")
+
 func confinedParent(root, identityKey, relative string, create bool) (int, string, func(), error) {
 	clean := filepath.Clean(filepath.FromSlash(relative))
 	if clean == "." || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
@@ -697,6 +737,13 @@ func confinedParent(root, identityKey, relative string, create bool) (int, strin
 			continue
 		}
 		next, openErr := unix.Openat(parentFD, component, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		if errors.Is(openErr, unix.ENOENT) && !create {
+			if parentFD != rootFD {
+				_ = unix.Close(parentFD)
+			}
+			closeAll()
+			return -1, "", func() {}, errRecoveryPathAbsent
+		}
 		if errors.Is(openErr, unix.ENOENT) && create {
 			if mkdirErr := unix.Mkdirat(parentFD, component, 0700); mkdirErr != nil && !errors.Is(mkdirErr, unix.EEXIST) {
 				if parentFD != rootFD {

@@ -194,7 +194,7 @@ func TestSaveAndClearRoundTripWithPerPathRecovery(t *testing.T) {
 	injected := errors.New("controller interrupted after apply")
 	fired := false
 	fixture.recovery.Fault = func(point string) error {
-		if !fired {
+		if point == "after_apply:repo:binary.dat" && !fired {
 			fired = true
 			return injected
 		}
@@ -202,6 +202,9 @@ func TestSaveAndClearRoundTripWithPerPathRecovery(t *testing.T) {
 	}
 	if _, err := fixture.recovery.Clear(context.Background(), request); !errors.Is(err, injected) {
 		t.Fatal("apply interruption not reached", err)
+	}
+	if !fired {
+		t.Fatal("post-apply interruption boundary was not reached")
 	}
 	fixture.recovery.Fault = nil
 	receipt, err := fixture.recovery.Clear(context.Background(), request)
@@ -231,6 +234,91 @@ func TestSaveAndClearRoundTripWithPerPathRecovery(t *testing.T) {
 	if err := fixture.engine.DB.SQL.QueryRow("SELECT count(*),sum(state='applied') FROM checkpoint_path_progress WHERE operation_id=?", receipt.OperationID).Scan(&progress, &applied); err != nil || progress == 0 || progress != applied {
 		t.Fatal("per-path journal incomplete", progress, applied, err)
 	}
+}
+
+func TestClearRecoversAppliedWriteAndReplaysCompletedReceipt(t *testing.T) {
+	for _, faultPoint := range []string{"after_apply:repo:binary.dat", "after_progress:repo:binary.dat", ""} {
+		name := "completed_receipt"
+		if faultPoint == "after_apply:repo:binary.dat" {
+			name = "interrupted_after_apply"
+		} else if faultPoint != "" {
+			name = "interrupted_after_progress"
+		}
+		t.Run(name, func(t *testing.T) {
+			fixture := recoverySetup(t)
+			baseline := saveRun(t, fixture, "replay-baseline")
+			mutateRecoveryFixture(t, fixture)
+			captured := saveRun(t, fixture, "replay-captured")
+			recordValidatedResult(t, fixture)
+			request := ClearRequest{CommandID: "replay-clear", ExpectedRevision: revision(t, fixture.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID}
+			injected := errors.New("interrupted after actual apply")
+			fired := false
+			if faultPoint != "" {
+				fixture.recovery.Fault = func(point string) error {
+					if point == faultPoint && !fired {
+						fired = true
+						return injected
+					}
+					return nil
+				}
+			}
+			first, err := fixture.recovery.Clear(context.Background(), request)
+			if faultPoint != "" {
+				if !fired || !errors.Is(err, injected) {
+					t.Fatalf("did not reach post-write crash: %v", err)
+				}
+			} else if err != nil || first.State != "saved" {
+				t.Fatalf("initial clear: %+v %v", first, err)
+			}
+			fixture.recovery.Fault = nil
+			repeated, err := fixture.recovery.Clear(context.Background(), request)
+			if err != nil || repeated.State != "saved" || !repeated.Repeated {
+				t.Fatalf("journal/receipt replay failed: %+v %v", repeated, err)
+			}
+		})
+	}
+}
+
+func TestClearAndRestoreCreateMissingTrackedParents(t *testing.T) {
+	t.Run("clear", func(t *testing.T) {
+		fixture := recoverySetup(t)
+		baseline := saveRun(t, fixture, "directory-base")
+		if err := os.RemoveAll(filepath.Join(fixture.root, "dir")); err != nil {
+			t.Fatal(err)
+		}
+		captured := saveRun(t, fixture, "directory-captured")
+		recordValidatedResult(t, fixture)
+		receipt, err := fixture.recovery.Clear(context.Background(), ClearRequest{CommandID: "directory-clear", ExpectedRevision: revision(t, fixture.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID})
+		if err != nil || receipt.State != "saved" {
+			t.Fatalf("cannot undo agent-owned directory deletion: %+v %v", receipt, err)
+		}
+		content, err := os.ReadFile(filepath.Join(fixture.root, "dir", "item.txt"))
+		if err != nil || string(content) != "base item\n" {
+			t.Fatalf("tracked file beneath deleted directory was not restored: %q %v", content, err)
+		}
+	})
+
+	t.Run("restore", func(t *testing.T) {
+		fixture := recoverySetup(t)
+		baseline := saveRun(t, fixture, "nested-base")
+		write(t, filepath.Join(fixture.root, "new", "nested", "item.txt"), []byte("target\n"), 0600)
+		git(t, "-C", fixture.root, "add", "new/nested/item.txt")
+		target := saveRun(t, fixture, "nested-target")
+		recordValidatedResult(t, fixture)
+		clearCaptured(t, fixture, baseline, target, "nested-clear")
+		if err := os.RemoveAll(filepath.Join(fixture.root, "new")); err != nil {
+			t.Fatal(err)
+		}
+		destination := saveRun(t, fixture, "nested-destination")
+		receipt, err := fixture.recovery.Restore(context.Background(), RestoreRequest{CommandID: "nested-restore", ExpectedRevision: revision(t, fixture.engine), CheckpointID: target.CheckpointID, BaselineCheckpointID: baseline.CheckpointID, DestinationCheckpointID: destination.CheckpointID})
+		if err != nil || receipt.State != "restored" {
+			t.Fatalf("restore into absent nested parents failed: %+v %v", receipt, err)
+		}
+		content, err := os.ReadFile(filepath.Join(fixture.root, "new", "nested", "item.txt"))
+		if err != nil || string(content) != "target\n" {
+			t.Fatalf("nested target was not restored: %q %v", content, err)
+		}
+	})
 }
 
 func TestSaveRejectsPreservationScopeSubstitution(t *testing.T) {
@@ -263,6 +351,35 @@ func TestClearRejectsConcurrentEditBeforeAnyApply(t *testing.T) {
 	var operations int
 	if err := fixture.engine.DB.SQL.QueryRow("SELECT count(*) FROM recovery_operations WHERE kind='clear'").Scan(&operations); err != nil || operations != 0 {
 		t.Fatal("failed preflight began a clear", operations, err)
+	}
+}
+
+func TestClearReplayRejectsUnrelatedEditAfterPartialApply(t *testing.T) {
+	fixture := recoverySetup(t)
+	baseline := saveRun(t, fixture, "unrelated-base")
+	mutateRecoveryFixture(t, fixture)
+	captured := saveRun(t, fixture, "unrelated-captured")
+	recordValidatedResult(t, fixture)
+	request := ClearRequest{CommandID: "unrelated-clear", ExpectedRevision: revision(t, fixture.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID}
+	injected := errors.New("interrupted after apply")
+	fixture.recovery.Fault = func(point string) error {
+		if point == "after_apply:repo:binary.dat" {
+			return injected
+		}
+		return nil
+	}
+	if _, err := fixture.recovery.Clear(context.Background(), request); !errors.Is(err, injected) {
+		t.Fatal("post-apply interruption was not reached", err)
+	}
+	fixture.recovery.Fault = nil
+	manual := filepath.Join(fixture.root, ".vigil-disposable-fixture")
+	write(t, manual, []byte("manual edit during recovery\n"), 0600)
+	if _, err := fixture.recovery.Clear(context.Background(), request); err == nil || !strings.Contains(err.Error(), "unrelated edit") {
+		t.Fatal("unrelated edit did not block journal replay", err)
+	}
+	content, err := os.ReadFile(manual)
+	if err != nil || string(content) != "manual edit during recovery\n" {
+		t.Fatal("unrelated edit was not preserved", string(content), err)
 	}
 }
 
@@ -593,6 +710,41 @@ func TestCorruptRepositoryInSetPreventsEveryClear(t *testing.T) {
 	var clearOperations int
 	if err := fixture.engine.DB.SQL.QueryRow("SELECT count(*) FROM recovery_operations WHERE kind='clear'").Scan(&clearOperations); err != nil || clearOperations != 0 {
 		t.Fatal("corrupt set reached clear intent", clearOperations, err)
+	}
+}
+
+func TestMultiRepositoryClearReconcilesPostApplyInterruption(t *testing.T) {
+	fixture := multiRecoverySetup(t)
+	baseline := saveAll(t, fixture, "multi-replay-base")
+	mutateAll(t, fixture)
+	captured := saveAll(t, fixture, "multi-replay-captured")
+	recordValidatedResult(t, fixture)
+	request := ClearRequest{CommandID: "multi-replay-clear", ExpectedRevision: revision(t, fixture.engine), CheckpointID: captured.CheckpointID, BaselineCheckpointID: baseline.CheckpointID}
+	injected := errors.New("interrupt child after apply")
+	fired := false
+	fixture.recovery.Fault = func(point string) error {
+		if point == "after_apply:child:child.bin" && !fired {
+			fired = true
+			return injected
+		}
+		return nil
+	}
+	if _, err := fixture.recovery.Clear(context.Background(), request); !fired || !errors.Is(err, injected) {
+		t.Fatal("multi-repository post-apply interruption was not reached", fired, err)
+	}
+	fixture.recovery.Fault = nil
+	receipt, err := fixture.recovery.Clear(context.Background(), request)
+	if err != nil || receipt.State != "saved" || !receipt.Repeated {
+		t.Fatal("multi-repository clear did not reconcile", receipt, err)
+	}
+	for _, repository := range fixture.prepared.Repositories {
+		content, err := os.ReadFile(filepath.Join(repository.Root, "same.txt"))
+		if err != nil || string(content) != repository.ID+" base\n" {
+			t.Fatal("repository did not return to baseline", repository.ID, string(content), err)
+		}
+		if _, err := os.Lstat(filepath.Join(repository.Root, repository.ID+".bin")); !os.IsNotExist(err) {
+			t.Fatal("agent-created path survived clear", repository.ID, err)
+		}
 	}
 }
 

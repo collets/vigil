@@ -26,7 +26,7 @@ func TestProjectV6UpgradeAndRollback(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err = db.SQL.Exec("DELETE FROM schema_migrations WHERE version IN(7,8)"); err != nil {
+	if _, err = db.SQL.Exec("DELETE FROM schema_migrations WHERE version IN(7,8,9)"); err != nil {
 		t.Fatal(err)
 	}
 	if err = db.Close(); err != nil {
@@ -72,11 +72,100 @@ func TestProjectV6UpgradeAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer upgraded.Close()
-	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 8 {
+	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 9 {
 		t.Fatal("v6 database was not upgraded", versions, err)
 	}
 	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM config_snapshots WHERE id='existing'").Scan(&existing); err != nil || existing != 1 {
 		t.Fatal("upgrade lost populated data", existing, err)
+	}
+}
+
+func TestProjectV8UpgradePreservesRecoverySnapshotsAndPermitsEqualDigests(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "private", "state.sqlite")
+	db, err := Open(ctx, path, "project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixtureStatements := []string{
+		"INSERT INTO config_snapshots VALUES('config','config-digest',1,'{}','{}',1)",
+		"INSERT INTO profiles VALUES('profile',1,'config','{}')",
+		"INSERT INTO plans(id,revision,queue_rank,state,service_limit_ms,created_at) VALUES('plan',1,1,'paused',1,1)",
+		"INSERT INTO plan_revisions VALUES('plan',1,'spec','{}','human',1)",
+		"INSERT INTO tasks(id,plan_id,revision,kind,state,rank,active_limit_ms,repair_limit,infra_limit) VALUES('task','plan',1,'implementation','blocked',1,1,0,0)",
+		"INSERT INTO task_revisions VALUES('task',1,'{}','criteria','definition','human',NULL)",
+		`INSERT INTO runs(id,plan_id,plan_revision,task_id,task_revision,config_id,profile_id,profile_revision,role,attempt_kind,state,writer_state,active_limit_ms,wall_limit_ms,created_at)
+ VALUES('run','plan',1,'task',1,'config','profile',1,'implementation','initial','interrupted','contained_stopped',1,1,1)`,
+		`INSERT INTO run_generations(id,run_id,ordinal,runtime_kind,runtime_resource_id,transport_generation,state,submission_state,qualification_request_json,checkout_plan_digest,expected_routes_json,created_at)
+ VALUES('generation-one','run',1,'synthetic','runtime-one','transport-one','contained','delivered','{}','checkout','{}',1)`,
+		`INSERT INTO run_generations(id,run_id,ordinal,runtime_kind,runtime_resource_id,transport_generation,state,submission_state,qualification_request_json,checkout_plan_digest,expected_routes_json,created_at)
+ VALUES('generation-two','run',2,'synthetic','runtime-two','transport-two','contained','delivered','{}','checkout','{}',2)`,
+		"INSERT INTO operations VALUES('operation-one','checkpoint_save','resource','args',1,'observed','plan','task','run','{}',1)",
+		"INSERT INTO operations VALUES('operation-two','checkpoint_save','resource-two','args-two',1,'observed','plan','task','run','{}',2)",
+		"INSERT INTO checkpoint_sets(id,run_id,operation_id,state,created_at) VALUES('checkpoint-one','run','operation-one','incomplete',1)",
+		"INSERT INTO checkpoint_sets(id,run_id,operation_id,state,created_at) VALUES('checkpoint-two','run','operation-two','incomplete',2)",
+	}
+	for _, statement := range fixtureStatements {
+		if _, err = db.SQL.Exec(statement); err != nil {
+			db.Close()
+			t.Fatal(err)
+		}
+	}
+	if err = db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statements := []string{
+		"PRAGMA foreign_keys=OFF",
+		"DROP TRIGGER generation_recovery_snapshot_no_update",
+		"DROP TRIGGER generation_recovery_snapshot_no_delete",
+		"ALTER TABLE generation_recovery_snapshots RENAME TO generation_recovery_snapshots_v9",
+		`CREATE TABLE generation_recovery_snapshots (
+ generation_id TEXT PRIMARY KEY REFERENCES run_generations(id),
+ checkpoint_id TEXT NOT NULL REFERENCES checkpoint_sets(id),
+ repository_snapshot_json TEXT NOT NULL CHECK(json_valid(repository_snapshot_json)),
+ digest TEXT NOT NULL UNIQUE,
+ created_at INTEGER NOT NULL
+) STRICT`,
+		"INSERT INTO generation_recovery_snapshots VALUES('generation-one','checkpoint-one','[]','same-digest',1)",
+		"DROP TABLE generation_recovery_snapshots_v9",
+		`CREATE TRIGGER generation_recovery_snapshot_no_update BEFORE UPDATE ON generation_recovery_snapshots
+ BEGIN SELECT RAISE(ABORT,'generation recovery workspace authority is immutable'); END`,
+		`CREATE TRIGGER generation_recovery_snapshot_no_delete BEFORE DELETE ON generation_recovery_snapshots
+ BEGIN SELECT RAISE(ABORT,'generation recovery workspace authority is recovery evidence'); END`,
+		"DELETE FROM schema_migrations WHERE version=9",
+	}
+	for _, statement := range statements {
+		if _, err = raw.Exec(statement); err != nil {
+			raw.Close()
+			t.Fatal(err)
+		}
+	}
+	if err = raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	upgraded, err := Open(ctx, path, "project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer upgraded.Close()
+	var generation, checkpoint, snapshot, digest string
+	if err = upgraded.SQL.QueryRow("SELECT generation_id,checkpoint_id,repository_snapshot_json,digest FROM generation_recovery_snapshots WHERE generation_id='generation-one'").Scan(&generation, &checkpoint, &snapshot, &digest); err != nil {
+		t.Fatal("populated v8 snapshot was not preserved", err)
+	}
+	if generation != "generation-one" || checkpoint != "checkpoint-one" || snapshot != "[]" || digest != "same-digest" {
+		t.Fatal("populated v8 snapshot changed", generation, checkpoint, snapshot, digest)
+	}
+	if _, err = upgraded.SQL.Exec("INSERT INTO generation_recovery_snapshots VALUES('generation-two','checkpoint-two','[]','same-digest',2)"); err != nil {
+		t.Fatal("equal content digest remained globally unique", err)
+	}
+	if _, err = upgraded.SQL.Exec("UPDATE generation_recovery_snapshots SET checkpoint_id='checkpoint-two' WHERE generation_id='generation-one'"); err == nil {
+		t.Fatal("upgraded generation recovery authority became mutable")
 	}
 }
 
