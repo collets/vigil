@@ -421,6 +421,7 @@ func runContained(ctx context.Context, command *exec.Cmd, output io.Writer) (err
 		}
 	}
 	tracker.stop()
+	groupHadDescendants := syscall.Kill(-pid, 0) == nil
 	// A successful direct parent may have children in its process group or in
 	// detached sessions. Signal both sets and prove that both are gone.
 	tracker.signal(syscall.SIGTERM)
@@ -433,12 +434,23 @@ func runContained(ctx context.Context, command *exec.Cmd, output io.Writer) (err
 	for tracker.alive() && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	contained := !tracker.alive() && tracker.reliable()
+	lifecycleStopped := !tracker.alive()
+	reliable := tracker.reliable() && (!unresolvedProcessFork(pid) || groupHadDescendants || tracker.hasDescendants())
+	contained := lifecycleStopped && reliable
 	_ = reader.Close()
+	drainedOutput := true
 	select {
 	case <-drained:
 	case <-time.After(time.Second):
 		contained = false
+		drainedOutput = false
+	}
+	if !contained {
+		containmentErr := tracker.failure()
+		if runErr != nil {
+			containmentErr = errors.Join(runErr, containmentErr)
+		}
+		runErr = fmt.Errorf("check containment failed (lifecycle_stopped=%t reliable=%t output_drained=%t): %w", lifecycleStopped, reliable, drainedOutput, containmentErr)
 	}
 	return runErr, contained
 }
@@ -713,7 +725,7 @@ func (r *Runner) runHeld(ctx context.Context, effectID string, scope quality.Sco
 		status = "output_overflow"
 	}
 	if !contained {
-		return result, errors.New("check descendant containment could not be proven")
+		return result, fmt.Errorf("check descendant containment could not be proven: %w", runErr)
 	}
 	evaluatedAfter, digestErr := treeDigest(work, check.RequiredOutputs)
 	if digestErr != nil || evaluatedAfter != copyDigest {

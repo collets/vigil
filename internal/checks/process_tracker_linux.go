@@ -14,6 +14,7 @@ import (
 func prepareProcessContainment(_ *exec.Cmd) error { return nil }
 func activateProcessContainment(_ int) error      { return nil }
 func closeProcessContainment(_ int)               {}
+func unresolvedProcessFork(_ int) bool            { return false }
 
 func discoverCheckProcesses(known map[int]bool, marker string) ([]int, error) {
 	entries, err := os.ReadDir("/proc")

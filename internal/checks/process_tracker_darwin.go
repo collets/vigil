@@ -3,8 +3,8 @@
 package checks
 
 import (
-	"bytes"
 	"errors"
+	"fmt"
 	"os/exec"
 	"sync"
 
@@ -12,8 +12,9 @@ import (
 )
 
 type darwinProcessBoundary struct {
-	kqueue   int
-	reliable bool
+	kqueue       int
+	reliable     bool
+	forkObserved bool
 }
 
 var darwinBoundaries = struct {
@@ -31,29 +32,35 @@ func prepareProcessContainment(command *exec.Cmd) error {
 	return nil
 }
 
-// The fixed wrapper stops before exec. NOTE_TRACK is therefore registered
-// before approved code can fork, and the kernel follows every descendant even
-// if it creates a new process group/session or is re-parented.
+// The fixed wrapper stops before exec, so NOTE_FORK is registered before
+// approved code can fork. Current Darwin kernels do not support NOTE_TRACK;
+// an observed fork that cannot be tied to a live group or discovered PID is
+// therefore explicit containment uncertainty, never a completion proof.
 func activateProcessContainment(pid int) error {
 	var status unix.WaitStatus
 	for {
-		_, err := unix.Wait4(pid, &status, unix.WUNTRACED, nil)
+		waited, err := unix.Wait4(pid, &status, unix.WUNTRACED, nil)
 		if err == unix.EINTR {
 			continue
 		}
 		if err != nil {
 			return err
 		}
+		if waited != pid {
+			return fmt.Errorf("Darwin check boundary wait returned pid %d for %d", waited, pid)
+		}
 		break
 	}
-	if !status.Stopped() {
-		return errors.New("Darwin check boundary did not stop before exec")
+	// x/sys intentionally reports SIGSTOP as not Stopped on BSD. The kernel
+	// wait encoding (low seven bits all set) is the authority we need here.
+	if uint32(status)&0x7f != 0x7f {
+		return fmt.Errorf("Darwin check boundary did not stop before exec (status=%#x exited=%t signaled=%t)", uint32(status), status.Exited(), status.Signaled())
 	}
 	kqueue, err := unix.Kqueue()
 	if err != nil {
 		return err
 	}
-	change := unix.Kevent_t{Ident: uint64(pid), Filter: unix.EVFILT_PROC, Flags: unix.EV_ADD | unix.EV_ENABLE | unix.EV_CLEAR, Fflags: unix.NOTE_FORK | unix.NOTE_TRACK | unix.NOTE_EXIT}
+	change := unix.Kevent_t{Ident: uint64(pid), Filter: unix.EVFILT_PROC, Flags: unix.EV_ADD | unix.EV_ENABLE | unix.EV_CLEAR, Fflags: unix.NOTE_FORK | unix.NOTE_EXIT}
 	if _, err := unix.Kevent(kqueue, []unix.Kevent_t{change}, nil, nil); err != nil {
 		_ = unix.Close(kqueue)
 		return err
@@ -98,8 +105,8 @@ func trackedDarwinProcesses(known map[int]bool) ([]int, error) {
 				return found, err
 			}
 			for _, event := range events[:n] {
-				if event.Fflags&unix.NOTE_TRACKERR != 0 {
-					boundary.reliable = false
+				if event.Fflags&unix.NOTE_FORK != 0 {
+					boundary.forkObserved = true
 				}
 				if int(event.Ident) > 1 {
 					found = append(found, int(event.Ident))
@@ -116,7 +123,14 @@ func trackedDarwinProcesses(known map[int]bool) ([]int, error) {
 	return found, nil
 }
 
-func discoverCheckProcesses(known map[int]bool, marker string) ([]int, error) {
+func unresolvedProcessFork(pid int) bool {
+	darwinBoundaries.Lock()
+	defer darwinBoundaries.Unlock()
+	boundary := darwinBoundaries.items[pid]
+	return boundary != nil && boundary.forkObserved
+}
+
+func discoverCheckProcesses(known map[int]bool, _ string) ([]int, error) {
 	processes, err := unix.SysctlKinfoProcSlice("kern.proc.all")
 	if err != nil {
 		return nil, err
@@ -133,24 +147,13 @@ func discoverCheckProcesses(known map[int]bool, marker string) ([]int, error) {
 	for pid := range known {
 		parents[pid] = true
 	}
-	marked := append([]byte(marker), 0)
-	for _, process := range processes {
-		pid := int(process.Proc.P_pid)
-		if pid <= 1 {
-			continue
-		}
-		arguments, readErr := unix.SysctlRaw("kern.procargs2", pid)
-		if readErr == nil && bytes.Contains(arguments, marked) {
-			parents[pid] = true
-			found[pid] = true
-		}
-	}
 	for changed := true; changed; {
 		changed = false
 		for _, process := range processes {
 			pid := int(process.Proc.P_pid)
 			parent := int(process.Eproc.Ppid)
-			if pid > 1 && parents[parent] && !parents[pid] {
+			originalParent := int(process.Proc.P_oppid)
+			if pid > 1 && (parents[parent] || parents[originalParent]) && !parents[pid] {
 				parents[pid] = true
 				found[pid] = true
 				changed = true

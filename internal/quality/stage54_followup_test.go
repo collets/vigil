@@ -55,8 +55,17 @@ func TestStage54FollowupEscapedSession(t *testing.T) {
 	}
 	alive := syscall.Kill(pid, 0) == nil
 	_ = syscall.Kill(pid, syscall.SIGKILL)
-	if alive {
+	if alive && runErr == nil {
 		t.Fatalf("detached descendant alive after terminal %s (error %v)", result.Status, runErr)
+	}
+	if runErr != nil {
+		var effectState, segmentState string
+		if err := f.engine.DB.SQL.QueryRow(`SELECT e.state,b.state FROM quality_effects_v2 e JOIN quality_budget_segments_v2 b ON b.effect_id=e.id WHERE e.kind='check' ORDER BY e.prepared_at DESC LIMIT 1`).Scan(&effectState, &segmentState); err != nil {
+			t.Fatal(err)
+		}
+		if effectState != "uncertain" || segmentState != "uncertain" {
+			t.Fatalf("unavailable containment did not remain uncertain: effect=%s segment=%s", effectState, segmentState)
+		}
 	}
 }
 

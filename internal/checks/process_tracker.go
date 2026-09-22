@@ -1,6 +1,7 @@
 package checks
 
 import (
+	"errors"
 	"sync"
 	"syscall"
 	"time"
@@ -100,6 +101,21 @@ func (t *processTracker) reliable() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.scanErr == nil
+}
+
+func (t *processTracker) failure() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.scanErr != nil {
+		return t.scanErr
+	}
+	return errors.New("tracked check processes did not reach a provably absent state")
+}
+
+func (t *processTracker) hasDescendants() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.pids) > 1
 }
 
 func (t *processTracker) close() {
