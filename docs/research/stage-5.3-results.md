@@ -1,8 +1,8 @@
 # Stage 5.3 — recovery, checkpoints and execution controls
 
-Independent review, 2026-09-21: **changes requested; five P1 and two P2 findings**. Remediation is implemented in `9d095fd` and `a0afb05` and awaits independent follow-up review. Stage 5.3 remains unaccepted. The claims below are an implementation handoff, not independent acceptance. See the [independent review and retained reproductions](stage-5.3-astra-review.md).
+Independent follow-up, 2026-09-21: original R1–R7 defects are addressed; the three resulting P2 regressions R8–R10 were reproduced and corrected in `a182152`. A further independent follow-up is required, so Stage 5.3 remains unaccepted. See the [review findings and retained probes](stage-5.3-astra-review.md#independent-follow-up-of-9d095fd-and-a0afb05).
 
-Implementation started from accepted Stage 5.2 baseline `bf09f4d`. The initial implementation ends at `5617679`; review remediation ends at `a0afb05`. This is an implementation handoff, not independent acceptance or live interrupted-session qualification. Production dispatch remains disabled.
+Implementation started from accepted Stage 5.2 baseline `bf09f4d`. The initial implementation ends at `5617679`; review remediation currently ends at `a182152`. This is an implementation handoff, not independent acceptance or live interrupted-session qualification. Production dispatch remains disabled.
 
 ## Independent-review remediation
 
@@ -15,13 +15,16 @@ Implementation started from accepted Stage 5.2 baseline `bf09f4d`. The initial i
 | R5 missing staged objects | Every staged object is reconstructed from private bytes, object-format hashed, descriptor-relatively installed and verified before the raw index is exposed | prune/restore test plus SHA-1, SHA-256 and conflict-stage object tests |
 | R6 unsafe infrastructure retry | All repair/infrastructure/fresh follow-ups require and transactionally recheck a terminal, independently contained source writer | unresolved-writer infrastructure regression |
 | R7 unusable exact resume | Exact eligibility binds the current verified checkpoint; migration 008 stores an immutable generation recovery baseline; preparation and dispatch recheck workspace and native-history identity | partial-edit exact resume/reload and changed-history dispatch tests |
+| R8 clear cannot replay after mutation | New clear authority still requires the exact validated-result fingerprint; replay first resolves the immutable command receipt, then reconciles the current repository only against the exact captured/desired states in its persisted action journal. Unrelated paths, substituted actions/digests and drift remain rejected | post-apply, post-progress, completed-receipt, unrelated-edit and multi-repository replay tests |
+| R9 absent parent treated as conflict | Descriptor traversal distinguishes a missing intermediate beneath the verified root from symlink, non-directory or root replacement; comparison models it as an absent leaf and authorized apply recreates parents through held descriptors | tracked-directory clear and nested-parent restore tests plus retained symlink/root replacement negatives |
+| R10 repeated exact snapshot collision | Forward migration 009 removes only global digest uniqueness; generation identity remains the immutable primary authority and equal workspace content is valid across generations | two unchanged-workspace exact resumes and populated v8-to-v9 migration preservation/immutability tests |
 
 ## Delivered behavior
 
 - `project pause` durably disables later dispatch. `project continue` is revisioned and refuses unresolved writers, checkpoint recovery and exhausted cumulative ledgers.
 - Stop and foreground shutdown persist project/plan/request/run/control/effect intent before interrupt or termination. Interrupt and termination have independent bounds; repeated commands return the same receipt and never repeat an uncertain external effect. Writer and inference observations remain separate. A failed containment observation stays uncertain and retains coordinator quarantine.
 - Checkpoint sets are private, content-addressed and all-repository atomic. A set contains the exact HEAD/ref and HEAD bytes, a Git bundle, original index bytes, parsed index entries and staged blobs, tracked worktree bytes/deletions, scoped nonignored untracked bytes, modes, symlink targets, exclusions and physical repository identity.
-- Save, clear and restore are separate commands. Clear accepts only paths from a validated execution result, verifies the complete captured/baseline sets before any mutation, refuses branch/HEAD drift and ambiguous mixed index changes, then applies per-path compare-and-swap operations. Restore is bound to target, baseline and a separately verified destination checkpoint, journals every path, and uses three-way classification. Divergence is preserved as conflict.
+- Save, clear and restore are separate commands. Clear accepts only paths from a validated execution result, verifies the complete captured/baseline sets before any mutation, refuses branch/HEAD drift and ambiguous mixed index changes, then applies per-path compare-and-swap operations. A repeated command reconciles only its immutable receipt and exact persisted action journal, accepting captured or already-desired states while rejecting unrelated edits. Restore is bound to target, baseline and a separately verified destination checkpoint, journals every path, and uses three-way classification. Divergence is preserved as conflict.
 - Recovery classifies exact native continuation from fresh-context reconstruction. Exact resume requires matching native home, durable session, immutable profile, workspace identity, transport generation, qualified history class, no automatic queued work and independently contained writers. It creates a new generation of the same run, submits no replacement prompt and retains the remaining wall and task allowance. Missing, corrupt, unsupported or mismatched history cannot become exact resume.
 - Fresh context is an explicitly new run/attempt. Its artifact includes the task criteria, current repository fingerprints, prior run/writer/submission uncertainty, checks/findings counts, history observation and cumulative budget. The selected checkpoint ID is immutable recovery authority and is re-verified before preparation.
 - Repair, infrastructure and continuation attempts have distinct durable kinds and limits. Infrastructure retry requires proof of no delivered prompt and no normalized tool events. All attempts reuse the task ledger; crash gaps remain charged/unknown. Exhaustion creates immutable evidence plus a pending supervisor request and blocks progression without accepting the task.
@@ -42,7 +45,7 @@ Implementation started from accepted Stage 5.2 baseline `bf09f4d`. The initial i
 | Nested participating repositories | One repository manifest per immutable participant; parent excludes enrolled child boundary | Whole set verifies before mutation; corruption in child prevents clearing parent |
 | Unsupported/special entry | Capture or apply fails closed | No cleanup is authorized and incomplete evidence remains inspectable |
 
-Checkpoint publication writes blobs and manifests to private state, fsyncs them, verifies digests and Git readability, then commits database verification. Failure before that point cannot create a verified set. Historical migration digests remain unchanged; migrations 005–008 only extend the installed schema. Migration 008 adds immutable generation-scoped recovery workspace authority without rewriting prior history.
+Checkpoint publication writes blobs and manifests to private state, fsyncs them, verifies digests and Git readability, then commits database verification. Failure before that point cannot create a verified set. Historical migration digests remain unchanged; migrations 005–009 only extend the installed schema. Migration 008 adds immutable generation-scoped recovery workspace authority; forward migration 009 preserves populated rows while permitting the same content digest for distinct generations.
 
 ## Clear and restore failure matrix
 
@@ -56,6 +59,8 @@ Checkpoint publication writes blobs and manifests to private state, fsyncs them,
 | Parent replaced by symlink after preflight | Descriptor-relative apply rejects at the intended apply boundary; outside target is unchanged |
 | Unowned index entry mixed with an owned change | Broad raw-index clear is refused as ambiguous |
 | Interruption after a clear apply | Per-path states identify applied versus prepared work; replay reconciles only the recorded desired/current states |
+| Interruption after clear progress persistence or completed receipt replay | The identical command returns to the same journal/receipt; no new authority or operation is created |
+| Tracked file beneath a deleted directory | Missing intermediate directories compare as an absent leaf and are recreated descriptor-relatively only during authorized apply |
 | Exact-baseline restore | Index/worktree bytes, deletion, mode and symlink state round-trip |
 | Divergent destination | Three-way restore records conflicts and preserves destination bytes plus both verified recovery copies |
 | Interruption after repository A restore | Target and destination checkpoint sets remain verified; retry resumes per-path progress and restores repository B |
@@ -76,6 +81,7 @@ All destructive cases ran only in `t.TempDir` repositories carrying fixture stat
 | Persistence/event write failure | Already-journaled execution is boundedly contained; no result or `checking` transition is written |
 | Native history missing/corrupt/unsupported/mismatched | Exact resume disabled; fresh reconstruction is offered only with contained writer and re-verified checkpoint |
 | Exact history and identity match | New generation of the same run resumes the durable native session; `native_create` and submit are never called |
+| A later exact resume sees identical workspace content | A distinct immutable generation snapshot may reuse the content digest; cumulative limits and native identity checks remain unchanged |
 | Replacement prompt supplied to exact resume | Rejected before dispatch |
 | Fresh reconstruction | New continuation run linked to the explicit choice and checkpoint; warning states that this is not native resume |
 | Delivered prompt proposed as infrastructure retry | Rejected before attempt creation |
@@ -108,7 +114,7 @@ Operational recovery order is: pause; stop and independently prove writer safety
 
 Linux x86_64, Go 1.27.1:
 
-- remediation-focused checkpoint/supervisor tests, including all seven review contracts; pass;
+- remediation-focused store/checkpoint/supervisor tests, including R1–R10, post-apply/post-progress replay and populated migration upgrade; pass;
 - `make check` (`go vet ./...` and `go test ./...`); pass outside the restricted sandbox, which does not permit the boundary test's loopback listener;
 - `make check-race`; pass, now including `internal/checkpoint` in the standard target;
 - `make build`, `make build-boundary`; pass;
@@ -121,6 +127,7 @@ Native macOS 26.6.2 arm64, Go 1.27.1:
 - Exact bundle SHA-256 `c890d1e3de294fabf77330e91617d011a3107f5f6d6d97cebde4525b29e48074` passed native `make check` (`internal/checkpoint` 14.574 seconds, `internal/supervisor` 43.780 seconds), `make check-race` (`internal/supervisor` 64.427 seconds), and `make build`.
 - Two repetitions of the high-risk checkpoint round-trip, nested partial restore, scope substitution, stop idempotency, exact no-prompt resume and independent-writer-safety tests passed.
 - Remediation commit `a0afb05` was transferred as exact bundle SHA-256 `553df7b6db5cf7e4707eaa0d052a08099dbb964f2f4f3c4456fc958f622f0dc2`. Native `make check`, `make check-race` (including checkpoint), and `make build` passed. Two focused repetitions passed for blocked-create stop, partial-work exact resume, parent replacement, pruned staged-object restore, and SHA-1/SHA-256/conflict-stage object recovery.
+- Follow-up commit `a182152` was transferred as exact bundle SHA-256 `799d46aa24427b4f557cbe5de0265dfa15afad233668599652b891983d8fe50b`. Native `make check`, `make check-race` (including checkpoint), and `make build` passed. Two focused race repetitions passed for clear post-apply/post-progress/receipt replay, unrelated-edit rejection, multi-repository reconciliation, absent-parent clear/restore, populated v8-to-v9 upgrade and repeated unchanged-workspace exact resume.
 - All isolated Mac checkouts and bundles were removed. The normal Mac checkout was not accessed or changed.
 
 No Docker flag, model, provider, credential, Codex subscription turn, llama.cpp turn, push, publish, purchase or production dispatch was used.
@@ -136,8 +143,9 @@ No Docker flag, model, provider, credential, Codex subscription turn, llama.cpp 
 | `5617679` | Native portability/scope | Physical-root alias normalization and immutable preservation-scope enforcement |
 | `9d095fd` | Supervisor review remediation | Stop/effect retirement fence, contained follow-ups, checkpoint-bound exact generation baseline and dispatch-time native-history revalidation |
 | `a0afb05` | Checkpoint review remediation | Live recovery reservation, result-derived ownership, descriptor-relative apply/index lock/object recovery and checkpoint race coverage |
+| `a182152` | Follow-up review remediation | Journal-bound clear replay, absent-parent recovery and forward migration for repeated equal-content exact resumes |
 
-Independent follow-up should start with the original baseline `bf09f4d`, initial implementation through `5617679`, review findings in `stage-5.3-astra-review.md`, and remediation commits `9d095fd..a0afb05`. Inspect migration 008 while verifying that migrations 001–007 retain their historical digests. Re-run the seven retained concepts against the permanent tests in `internal/checkpoint` and `internal/supervisor`; ensure negative cases reach the named operation. Stage 5.2 invariants remain part of the review surface.
+Independent follow-up should start with baseline `bf09f4d`, initial implementation through `5617679`, both review sections in `stage-5.3-astra-review.md`, and remediation commits `9d095fd`, `a0afb05` and `a182152`. Inspect forward migration 009 and its populated-upgrade test while verifying migrations 001–008 retain their historical digests. Re-run retained R1–R10 probes and permanent tests in `internal/store`, `internal/checkpoint` and `internal/supervisor`; ensure negative cases reach the named operation. Stage 5.2 invariants remain part of the review surface.
 
 ## Remaining gates and limitations
 

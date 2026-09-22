@@ -198,7 +198,7 @@ Save is non-destructive and always includes every immutable participating reposi
   --command-id clear-001 --expected-revision 11
 ```
 
-Clear derives agent-owned paths only from the validated execution result; there is no arbitrary path flag. It verifies the exact post-result repository fingerprint and immutable pre-attempt baseline, then acquires live fenced claims for the complete set and rechecks terminal writer containment before changing any repository. Mixed, later or concurrent edits fail closed.
+Clear derives agent-owned paths only from the validated execution result; there is no arbitrary path flag. A new command verifies the exact post-result repository fingerprint and immutable pre-attempt baseline, then acquires live fenced claims for the complete set and rechecks terminal writer containment before changing any repository. Repeating the identical command reconciles only its immutable receipt and exact per-path journal; captured or already-desired states are accepted, while substituted authority and unrelated edits fail closed.
 
 Restore additionally requires a checkpoint of the current destination. The restore command is the explicit human approval bound to all three set IDs and the current project revision:
 
@@ -209,7 +209,7 @@ Restore additionally requires a checkpoint of the current destination. The resto
   --command-id restore-001 --expected-revision 13
 ```
 
-Restore acquires the same live full-set authority and rechecks writer containment. Worktree/index/object apply is descriptor-relative; staged objects are verified before the Git index is exposed. If restore reports conflicts or is interrupted, do not discard any checkpoint. Inspect the persisted operation/path journal and repeat the identical command only after destination state still matches an expected or already-applied state.
+Restore acquires the same live full-set authority and rechecks writer containment. Worktree/index/object apply is descriptor-relative; staged objects are verified before the Git index is exposed. Missing intermediate directories beneath the verified root are recreated through held descriptors only when an authorized write requires them; symlink, non-directory and root replacement still fail closed. If restore reports conflicts or is interrupted, do not discard any checkpoint. Inspect the persisted operation/path journal and repeat the identical command only after destination state still matches an expected or already-applied state.
 
 ## Exact resume and new attempts
 
@@ -223,6 +223,8 @@ The current CLI history inspector is intentionally synthetic-only. Record an exp
 ```
 
 `--mode fresh_context` accepts `missing`, `corrupt` or `unsupported` history only when writer containment and a full verified checkpoint are available. `--mode remain_blocked` records the safe decision without creating an attempt.
+
+Each exact resume creates immutable generation-scoped workspace authority. Distinct generations may have the same content digest when the workspace is unchanged; this does not reuse attempt identity or reset cumulative allowances.
 
 For eligible exact resume, prepare a new generation and invoke `execution-start` without `--prompt`; a replacement prompt is rejected:
 
