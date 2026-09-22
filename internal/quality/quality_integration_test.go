@@ -54,6 +54,12 @@ func (f reviewFunc) Review(ctx context.Context, manifest review.Manifest) ([]byt
 	return f(ctx, manifest)
 }
 
+type assessorFunc func(context.Context, quality.Scope) ([]byte, error)
+
+func (f assessorFunc) Assess(ctx context.Context, scope quality.Scope) ([]byte, error) {
+	return f(ctx, scope)
+}
+
 type fixture struct {
 	t                 *testing.T
 	base, root, state string
@@ -577,6 +583,51 @@ func TestDefinitionProfileFreshnessAndUncertainRestart(t *testing.T) {
 			t.Fatal("uncertain check effect replayed")
 		}
 	})
+}
+
+func TestBoundedSupervisorAssessmentCannotAcceptOrOverspend(t *testing.T) {
+	f := setupQuality(t, "fail", func(d *policy.CheckDefinition) {
+		control := filepath.Join(t.TempDir(), "control")
+		_ = os.WriteFile(control, []byte("failure\n"), 0600)
+		d.Environment = append(d.Environment, policy.EnvironmentVariable{Name: "VIGIL_CONTROL", Value: control})
+	})
+	if _, err := f.runCheck(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	// A labeled fixture simulates persisted repair-count exhaustion; the real
+	// path derives this state from completed Stage 5.3 repair attempts.
+	if _, err := f.engine.DB.SQL.Exec("UPDATE tasks SET repair_limit=0 WHERE id='task'"); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(quality.AssessmentDocument{SchemaVersion: 1, Action: "revise_or_split", Rationale: "fixture assessment only"})
+	assessment, err := quality.RunAssessment(context.Background(), f.engine, f.owner, assessorFunc(func(context.Context, quality.Scope) ([]byte, error) { return raw, nil }), quality.AssessmentRequest{CommandID: store.ID(), Target: f.target(), SourceKind: "repair_exhaustion", Actor: "fixture"})
+	if err != nil || assessment.Action != "revise_or_split" {
+		t.Fatal(assessment, err)
+	}
+	var state string
+	_ = f.engine.DB.SQL.QueryRow("SELECT state FROM tasks WHERE id='task'").Scan(&state)
+	if state != "blocked" {
+		t.Fatal("assessment changed task beyond blocked", state)
+	}
+	var accepted int
+	_ = f.engine.DB.SQL.QueryRow("SELECT count(*) FROM quality_acceptances_v2").Scan(&accepted)
+	if accepted != 0 {
+		t.Fatal("assessment accepted partial work")
+	}
+	// Once the same task ledger is exhausted, no assessment effect may start.
+	if _, err = f.engine.DB.SQL.Exec("UPDATE budget_ledgers SET charged_ms=active_limit_ms WHERE scope='task' AND task_id='task'"); err != nil {
+		t.Fatal(err)
+	}
+	before := 0
+	_ = f.engine.DB.SQL.QueryRow("SELECT count(*) FROM quality_effects_v2 WHERE kind='supervisor_assessment'").Scan(&before)
+	if _, err = quality.RunAssessment(context.Background(), f.engine, f.owner, assessorFunc(func(context.Context, quality.Scope) ([]byte, error) { return raw, nil }), quality.AssessmentRequest{CommandID: store.ID(), Target: f.target(), SourceKind: "repair_exhaustion", Actor: "fixture"}); err == nil {
+		t.Fatal("assessment overspent exhausted ledger")
+	}
+	after := 0
+	_ = f.engine.DB.SQL.QueryRow("SELECT count(*) FROM quality_effects_v2 WHERE kind='supervisor_assessment'").Scan(&after)
+	if after != before {
+		t.Fatal("exhausted assessment created another effect")
+	}
 }
 
 func containsString(values []string, want string) bool {
