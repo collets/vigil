@@ -223,7 +223,14 @@ func TestActualCheckOutcomesAndTamper(t *testing.T) {
 		name, action, want string
 		mutate             func(*policy.CheckDefinition)
 		cancel             bool
-	}{{"pass", "pass", "pass", nil, false}, {"failure", "fail", "fail", func(d *policy.CheckDefinition) {
+	}{{"pass", "pass", "pass", nil, false}, {"approved-path", "pass", "pass", func(d *policy.CheckDefinition) {
+		d.Environment = append([]policy.EnvironmentVariable{{Name: "PATH", Value: filepath.Dir(d.Argv[0])}}, d.Environment...)
+		d.Argv[0] = filepath.Base(d.Argv[0])
+	}, false}, {"ambient-path-denied", "pass", "error", func(d *policy.CheckDefinition) {
+		d.Argv[0] = filepath.Base(d.Argv[0])
+	}, false}, {"missing-executable", "pass", "error", func(d *policy.CheckDefinition) {
+		d.Argv[0] = filepath.Join(t.TempDir(), "absent-check")
+	}, false}, {"failure", "fail", "fail", func(d *policy.CheckDefinition) {
 		control := filepath.Join(t.TempDir(), "control")
 		_ = os.WriteFile(control, []byte("failure-a\n"), 0600)
 		d.Environment = append(d.Environment, policy.EnvironmentVariable{Name: "VIGIL_CONTROL", Value: control})
@@ -292,6 +299,32 @@ func TestSourceMutationAndPausePreventDispatch(t *testing.T) {
 	if _, err = f2.runReview(reviewer, "paused-review"); err == nil {
 		t.Fatal("paused project dispatched reviewer")
 	}
+	t.Run("owner-fence-held-through-check", func(t *testing.T) {
+		f := setupQuality(t, "pass", nil)
+		releaseReturned := make(chan error, 1)
+		result, err := f.runCheck(context.Background(), func(stage string) error {
+			if stage != "after_effect_start" {
+				return nil
+			}
+			go func() {
+				releaseReturned <- f.owner.Release(context.Background(), f.reservation.Claims[0], "contained_stopped")
+			}()
+			select {
+			case err := <-releaseReturned:
+				return fmt.Errorf("owner fence released during check: %v", err)
+			case <-time.After(50 * time.Millisecond):
+				return nil
+			}
+		})
+		if err != nil || result.Status != "pass" {
+			t.Fatal(result, err)
+		}
+		select {
+		case <-releaseReturned:
+		case <-time.After(time.Second):
+			t.Fatal("release did not resume after check containment")
+		}
+	})
 }
 
 func TestBaselineExceptionDoesNotCoverNewFailure(t *testing.T) {

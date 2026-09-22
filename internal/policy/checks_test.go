@@ -14,6 +14,11 @@ func TestCheckDefinitionsAreBoundedAndRelative(t *testing.T) {
 			t.Fatal("unsafe check definition accepted", c)
 		}
 	}
+	reserved := valid
+	reserved.Environment = []EnvironmentVariable{{Name: "HOME", Value: "/tmp/outside"}}
+	if reserved.Validate(2000) == nil {
+		t.Fatal("check environment replaced isolated HOME")
+	}
 }
 
 func TestManualPrerequisitesNeedExplicitEvidence(t *testing.T) {

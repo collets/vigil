@@ -254,6 +254,54 @@ func requiredOutputs(root string, paths []string) ([]OutputObservation, bool) {
 	return result, true
 }
 
+func checkEnvironment(check policy.CheckDefinition, home, temporary string) ([]string, string) {
+	environment := []string{"HOME=" + home, "TMPDIR=" + temporary, "LANG=C", "LC_ALL=C"}
+	searchPath := ""
+	for _, variable := range check.Environment {
+		environment = append(environment, variable.Name+"="+variable.Value)
+		if variable.Name == "PATH" {
+			searchPath = variable.Value
+		}
+	}
+	return environment, searchPath
+}
+
+func resolveExecutable(name, cwd, searchPath string) (string, error) {
+	if filepath.IsAbs(name) {
+		info, err := os.Stat(name)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
+			return "", errors.New("approved absolute check executable is missing or not executable")
+		}
+		return name, nil
+	}
+	if strings.ContainsAny(name, `/\`) {
+		clean := filepath.Clean(filepath.FromSlash(name))
+		if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			return "", errors.New("check executable escapes isolated workspace")
+		}
+		candidate := filepath.Join(cwd, clean)
+		info, err := os.Stat(candidate)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
+			return "", errors.New("approved workspace check executable is missing or not executable")
+		}
+		return candidate, nil
+	}
+	if searchPath == "" {
+		return "", errors.New("bare check executable requires an explicitly approved PATH")
+	}
+	for _, directory := range filepath.SplitList(searchPath) {
+		if !filepath.IsAbs(directory) || filepath.Clean(directory) != directory {
+			return "", errors.New("approved PATH entries must be absolute and canonical")
+		}
+		candidate := filepath.Join(directory, name)
+		info, err := os.Stat(candidate)
+		if err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0111 != 0 {
+			return candidate, nil
+		}
+	}
+	return "", errors.New("check executable is absent from the explicitly approved PATH")
+}
+
 func failureIdentities(output []byte, status string, exitCode *int) []string {
 	if status == "pass" {
 		return []string{}
@@ -328,6 +376,8 @@ func (r *Runner) Run(ctx context.Context, request Request) (Result, error) {
 			}
 		}
 	}()
+	var heldResult Result
+	var effectErr error
 	err = r.Owner.HoldClaims(ctx, r.Engine.ProjectID, roots, claims, func() error {
 		current, err := quality.Observe(ctx, r.Engine, request.Target)
 		if err != nil {
@@ -336,7 +386,7 @@ func (r *Runner) Run(ctx context.Context, request Request) (Result, error) {
 		if len(quality.StaleReasons(scope, current)) != 0 {
 			return errors.New("quality scope changed before check start")
 		}
-		return r.Engine.DB.Write(ctx, func(tx *store.Tx) error {
+		if err := r.Engine.DB.Write(ctx, func(tx *store.Tx) error {
 			var state, projectState string
 			if err := tx.QueryRowContext(ctx, "SELECT state FROM quality_effects_v2 WHERE id=?", effectID).Scan(&state); err != nil {
 				return err
@@ -349,12 +399,24 @@ func (r *Runner) Run(ctx context.Context, request Request) (Result, error) {
 			}
 			_, err := tx.ExecContext(ctx, "UPDATE quality_effects_v2 SET state='executing',started_at=? WHERE id=?", store.Now(), effectID)
 			return err
-		})
+		}); err != nil {
+			return err
+		}
+		releaseProof = "contained_stopped"
+		heldResult, effectErr = r.runHeld(ctx, effectID, scope, check, definitionDigest)
+		return nil
 	})
 	if err != nil {
 		return result, err
 	}
-	releaseProof = "contained_stopped"
+	return heldResult, effectErr
+}
+
+// runHeld executes while Owner.HoldClaims retains the live owner capability.
+// No sibling operation can release or replace the fences between durable
+// effect start, source copy, subprocess containment and terminal observation.
+func (r *Runner) runHeld(ctx context.Context, effectID string, scope quality.Scope, check policy.CheckDefinition, definitionDigest string) (Result, error) {
+	var result Result
 	if r.Hook != nil {
 		if err := r.Hook("after_effect_start"); err != nil {
 			return result, err
@@ -388,17 +450,21 @@ func (r *Runner) Run(ctx context.Context, request Request) (Result, error) {
 	}
 	checkCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMS)*time.Millisecond)
 	defer cancel()
-	command := exec.CommandContext(checkCtx, check.Argv[0], check.Argv[1:]...)
-	command.Dir = filepath.Join(work, filepath.FromSlash(check.Cwd))
-	command.Stdout, command.Stderr = output, output
+	commandDir := filepath.Join(work, filepath.FromSlash(check.Cwd))
 	home := filepath.Join(isolated, "home")
 	tmp := filepath.Join(isolated, "tmp")
 	_ = os.Mkdir(home, 0700)
 	_ = os.Mkdir(tmp, 0700)
-	command.Env = []string{"HOME=" + home, "TMPDIR=" + tmp, "PATH=" + os.Getenv("PATH"), "LANG=C", "LC_ALL=C"}
-	for _, variable := range check.Environment {
-		command.Env = append(command.Env, variable.Name+"="+variable.Value)
+	environment, searchPath := checkEnvironment(check, home, tmp)
+	resolved, resolveErr := resolveExecutable(check.Argv[0], commandDir, searchPath)
+	if resolveErr != nil {
+		ended := store.Now()
+		return r.finishError(ctx, effectID, scope, check, definitionDigest, nil, nil, "error", resolveErr.Error(), started, ended)
 	}
+	command := exec.CommandContext(checkCtx, resolved, check.Argv[1:]...)
+	command.Dir = commandDir
+	command.Stdout, command.Stderr = output, output
+	command.Env = environment
 	runErr := command.Run()
 	ended := store.Now()
 	status := "pass"
@@ -428,7 +494,7 @@ func (r *Runner) Run(ctx context.Context, request Request) (Result, error) {
 	}
 	observedDigest := scope.RepositorySetDigest
 	if ctx.Err() == nil {
-		current, observeErr := quality.Observe(ctx, r.Engine, request.Target)
+		current, observeErr := quality.Observe(ctx, r.Engine, scope.Target)
 		if observeErr != nil {
 			status = "error"
 		} else {

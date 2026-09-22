@@ -66,7 +66,7 @@ func (c CheckDefinition) Validate(ceiling int64) error {
 	}
 	last := ""
 	for _, variable := range c.Environment {
-		if !environmentName(variable.Name) || variable.Name <= last || len(variable.Value) > 4096 || strings.ContainsRune(variable.Value, 0) {
+		if !environmentName(variable.Name) || variable.Name <= last || len(variable.Value) > 4096 || strings.ContainsRune(variable.Value, 0) || variable.Name == "HOME" || variable.Name == "TMPDIR" || variable.Name == "TMP" || variable.Name == "TEMP" {
 			return errors.New("check environment must be unique, sorted and bounded")
 		}
 		last = variable.Name
