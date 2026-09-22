@@ -21,7 +21,12 @@ func TestProjectV6UpgradeAndRollback(t *testing.T) {
 	if _, err = db.SQL.Exec("INSERT INTO config_snapshots VALUES('existing','digest',1,'{}','{}',1)"); err != nil {
 		t.Fatal(err)
 	}
-	for _, object := range []string{"supervisor_assessments_v2", "quality_acceptances_v2", "quality_acceptance_attempts_v2", "evidence_staleness_v2", "human_decisions_v2", "manual_results_v2", "quality_findings_v2", "review_results_v2", "baseline_exceptions_v2", "check_results_v2", "quality_effects_v2", "quality_scopes_v2", "generation_recovery_snapshots", "budget_exhaustions", "recovery_choice_checkpoints", "recovery_attempt_links"} {
+	for _, trigger := range qualityAuthorityTriggers {
+		if _, err = db.SQL.Exec("DROP TRIGGER " + trigger); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, object := range []string{"quality_assessment_sources_v2", "quality_authority_v2", "quality_budget_segments_v2", "supervisor_assessments_v2", "quality_acceptances_v2", "quality_acceptance_attempts_v2", "evidence_staleness_v2", "human_decisions_v2", "manual_results_v2", "quality_findings_v2", "review_results_v2", "baseline_exceptions_v2", "check_results_v2", "quality_effects_v2", "quality_scopes_v2", "generation_recovery_snapshots", "budget_exhaustions", "recovery_choice_checkpoints", "recovery_attempt_links"} {
 		if _, err = db.SQL.Exec("DROP TABLE " + object); err != nil {
 			t.Fatal(err)
 		}
@@ -72,7 +77,7 @@ func TestProjectV6UpgradeAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer upgraded.Close()
-	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 12 {
+	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 13 {
 		t.Fatal("v6 database was not upgraded", versions, err)
 	}
 	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM config_snapshots WHERE id='existing'").Scan(&existing); err != nil || existing != 1 {
@@ -121,6 +126,34 @@ func TestProjectV8UpgradePreservesRecoverySnapshotsAndPermitsEqualDigests(t *tes
 	}
 	statements := []string{
 		"PRAGMA foreign_keys=OFF",
+		"DROP TRIGGER quality_authority_config_v2",
+		"DROP TRIGGER quality_authority_profile_v2",
+		"DROP TRIGGER quality_authority_plan_revision_v2",
+		"DROP TRIGGER quality_authority_task_revision_v2",
+		"DROP TRIGGER quality_authority_effect_insert_v2",
+		"DROP TRIGGER quality_authority_effect_update_v2",
+		"DROP TRIGGER quality_authority_check_v2",
+		"DROP TRIGGER quality_authority_baseline_v2",
+		"DROP TRIGGER quality_authority_review_v2",
+		"DROP TRIGGER quality_authority_finding_v2",
+		"DROP TRIGGER quality_authority_manual_v2",
+		"DROP TRIGGER quality_authority_human_v2",
+		"DROP TRIGGER quality_authority_staleness_v2",
+		"DROP TRIGGER quality_authority_acceptance_insert_v2",
+		"DROP TRIGGER quality_authority_acceptance_update_v2",
+		"DROP TRIGGER quality_authority_budget_v2",
+		"DROP TRIGGER quality_authority_assessment_v2",
+		"DROP TRIGGER quality_authority_budget_segment_insert_v2",
+		"DROP TRIGGER quality_authority_budget_segment_update_v2",
+		"DROP TRIGGER quality_authority_assessment_source_insert_v2",
+		"DROP TRIGGER quality_authority_assessment_source_update_v2",
+		"DROP TRIGGER quality_budget_segment_no_delete_v2",
+		"DROP TRIGGER quality_budget_segment_update_guard_v2",
+		"DROP TRIGGER quality_assessment_source_no_delete_v2",
+		"DROP TRIGGER quality_assessment_source_update_guard_v2",
+		"DROP TABLE quality_assessment_sources_v2",
+		"DROP TABLE quality_authority_v2",
+		"DROP TABLE quality_budget_segments_v2",
 		"DROP TABLE supervisor_assessments_v2",
 		"DROP TABLE quality_acceptances_v2",
 		"DROP TABLE quality_acceptance_attempts_v2",
@@ -179,6 +212,22 @@ func TestProjectV8UpgradePreservesRecoverySnapshotsAndPermitsEqualDigests(t *tes
 	if _, err = upgraded.SQL.Exec("UPDATE generation_recovery_snapshots SET checkpoint_id='checkpoint-two' WHERE generation_id='generation-one'"); err == nil {
 		t.Fatal("upgraded generation recovery authority became mutable")
 	}
+}
+
+var qualityAuthorityTriggers = []string{
+	"quality_authority_config_v2", "quality_authority_profile_v2",
+	"quality_authority_plan_revision_v2", "quality_authority_task_revision_v2",
+	"quality_authority_effect_insert_v2", "quality_authority_effect_update_v2",
+	"quality_authority_check_v2", "quality_authority_baseline_v2",
+	"quality_authority_review_v2", "quality_authority_finding_v2",
+	"quality_authority_manual_v2", "quality_authority_human_v2",
+	"quality_authority_staleness_v2", "quality_authority_acceptance_insert_v2",
+	"quality_authority_acceptance_update_v2", "quality_authority_budget_v2",
+	"quality_authority_assessment_v2",
+	"quality_authority_budget_segment_insert_v2", "quality_authority_budget_segment_update_v2",
+	"quality_authority_assessment_source_insert_v2", "quality_authority_assessment_source_update_v2",
+	"quality_budget_segment_no_delete_v2", "quality_budget_segment_update_guard_v2",
+	"quality_assessment_source_no_delete_v2", "quality_assessment_source_update_guard_v2",
 }
 
 func TestDurableCommandsAndMigrations(t *testing.T) {

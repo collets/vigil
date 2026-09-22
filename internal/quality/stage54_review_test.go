@@ -1,0 +1,326 @@
+package quality_test
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+
+	"vigil/internal/checks"
+	"vigil/internal/policy"
+	"vigil/internal/quality"
+	"vigil/internal/review"
+	"vigil/internal/store"
+)
+
+func TestStage54ReviewUnqualifiedCheck(t *testing.T) {
+	for _, actor := range []string{"fixture", "qualified_runtime"} {
+		t.Run(actor, func(t *testing.T) {
+			f := setupQuality(t, "pass", nil)
+			if err := os.Remove(filepath.Join(f.root, ".vigil-disposable-fixture")); err != nil {
+				t.Fatal(err)
+			}
+			r, err := (&checks.Runner{Engine: f.engine, Owner: f.owner}).Run(context.Background(), checks.Request{CommandID: store.ID(), Target: f.target(), CheckID: "quality-check", Actor: actor})
+			if err == nil {
+				t.Fatalf("unmarked unqualified repository executed a check: %s", r.Status)
+			}
+		})
+	}
+}
+
+func TestStage54ReviewCheckLeavesDescendant(t *testing.T) {
+	pidfile := filepath.Join(t.TempDir(), "pid")
+	f := setupQuality(t, "pass", func(d *policy.CheckDefinition) {
+		d.Argv = []string{"/bin/sh", "-c", "/bin/sleep 30 >/dev/null 2>&1 & echo $! > \"$1\"", "review", pidfile}
+		d.RequiredOutputs = nil
+	})
+	result, err := f.runCheck(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(pidfile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	alive := syscall.Kill(pid, 0) == nil
+	_ = syscall.Kill(pid, syscall.SIGKILL)
+	if alive {
+		t.Fatalf("check returned %s while descendant %d remained alive", result.Status, pid)
+	}
+}
+
+func TestStage54ReviewCheckDrainsInheritedOutputDescendant(t *testing.T) {
+	f := setupQuality(t, "pass", func(d *policy.CheckDefinition) {
+		d.Argv = []string{"/bin/sh", "-c", "/bin/sleep 30 &"}
+		d.RequiredOutputs = nil
+		d.TimeoutMS = 5000
+	})
+	started := time.Now()
+	result, err := f.runCheck(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed > 4*time.Second {
+		t.Fatalf("inherited output pipe escaped bounded containment: %s", elapsed)
+	}
+	if result.Status != "pass" {
+		t.Fatalf("contained inherited-output descendant changed result to %s", result.Status)
+	}
+}
+
+func TestStage54ReviewMutatedEvaluatedCopy(t *testing.T) {
+	f := setupQuality(t, "pass", func(d *policy.CheckDefinition) {
+		d.Argv = []string{"/bin/sh", "-c", "printf replaced > src/input.txt"}
+		d.RequiredOutputs = nil
+	})
+	result, err := f.runCheck(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status == "pass" {
+		t.Fatal("source in evaluated copy changed but original fingerprint received a pass")
+	}
+}
+
+func TestStage54ReviewLateReviewOverwritesStop(t *testing.T) {
+	f := setupQuality(t, "pass", nil)
+	if _, err := f.runCheck(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	_, err := f.runReview(reviewFunc(func(context.Context, review.Manifest) ([]byte, error) {
+		_, e := quality.RecordHumanDecision(context.Background(), f.engine, quality.HumanDecisionRequest{CommandID: store.ID(), Target: f.target(), Action: "stop", Rationale: "stop this task", Actor: "fixture_human"})
+		if e != nil {
+			return nil, e
+		}
+		return reviewDocument("pass", nil), nil
+	}), "stop-review")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	if err = f.engine.DB.SQL.QueryRow("SELECT state FROM tasks WHERE id='task'").Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != "stopped" {
+		t.Fatalf("late review replaced human stop with %s", state)
+	}
+}
+
+func TestStage54ReviewLateFailureCannotOverwriteStop(t *testing.T) {
+	f := setupQuality(t, "pass", nil)
+	if _, err := f.runCheck(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	_, err := f.runReview(reviewFunc(func(context.Context, review.Manifest) ([]byte, error) {
+		if _, decisionErr := quality.RecordHumanDecision(context.Background(), f.engine, quality.HumanDecisionRequest{CommandID: store.ID(), Target: f.target(), Action: "stop", Rationale: "stop before failed review completes", Actor: "fixture_human"}); decisionErr != nil {
+			return nil, decisionErr
+		}
+		return reviewDocument("request_changes", nil), nil
+	}), "stop-failed-review")
+	if err == nil {
+		t.Fatal("request-changes review unexpectedly returned success")
+	}
+	var state string
+	if err = f.engine.DB.SQL.QueryRow("SELECT state FROM tasks WHERE id='task'").Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != "stopped" {
+		t.Fatalf("late failing review replaced human stop with %s", state)
+	}
+}
+
+func TestStage54ReviewCrashBudgetAndRedispatch(t *testing.T) {
+	f := setupQuality(t, "pass", nil)
+	var before, after int64
+	if err := f.engine.DB.SQL.QueryRow("SELECT charged_ms+unknown_ms FROM budget_ledgers WHERE scope='task'").Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	_, err := f.runCheck(context.Background(), func(point string) error {
+		if point == "before_source_recheck" {
+			time.Sleep(60 * time.Millisecond)
+			return errors.New("crash after process")
+		}
+		return nil
+	})
+	if err == nil {
+		t.Fatal("crash hook missed")
+	}
+	if _, err = quality.RecoverUnfinished(context.Background(), f.engine); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.engine.DB.SQL.QueryRow("SELECT charged_ms+unknown_ms FROM budget_ledgers WHERE scope='task'").Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	r, err := f.runCheck(context.Background(), nil)
+	if after == before && err == nil {
+		t.Fatalf("crashed effect charged zero and fresh dispatch returned %s despite unresolved effect", r.Status)
+	}
+}
+
+func TestStage54ReviewAssessmentInvokedTwice(t *testing.T) {
+	f := setupQuality(t, "pass", nil)
+	if _, err := f.engine.DB.SQL.Exec("UPDATE tasks SET state='needs_repair',repair_limit=0 WHERE id='task'"); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	a := assessorFunc(func(context.Context, quality.Scope) ([]byte, error) {
+		calls++
+		return []byte(`{"schema_version":1,"action":"remain_blocked","rationale":"test"}`), nil
+	})
+	for i := 0; i < 2; i++ {
+		_, err := quality.RunAssessment(context.Background(), f.engine, f.owner, a, quality.AssessmentRequest{CommandID: store.ID(), Target: f.target(), SourceKind: "repair_exhaustion", Actor: "fixture"})
+		if i == 0 && err != nil {
+			t.Fatal(err)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("same exhaustion invoked assessor %d times before uniqueness enforcement", calls)
+	}
+}
+
+func TestStage54ReviewFailedAssessmentIsChargedAndNotReplayed(t *testing.T) {
+	f := setupQuality(t, "pass", nil)
+	if _, err := f.engine.DB.SQL.Exec("UPDATE tasks SET state='needs_repair',repair_limit=0 WHERE id='task'"); err != nil {
+		t.Fatal(err)
+	}
+	var before, after int64
+	if err := f.engine.DB.SQL.QueryRow("SELECT charged_ms+unknown_ms FROM budget_ledgers WHERE scope='task'").Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	a := assessorFunc(func(context.Context, quality.Scope) ([]byte, error) {
+		calls++
+		time.Sleep(20 * time.Millisecond)
+		return nil, errors.New("fixture assessor failed")
+	})
+	if _, err := quality.RunAssessment(context.Background(), f.engine, f.owner, a, quality.AssessmentRequest{CommandID: store.ID(), Target: f.target(), SourceKind: "repair_exhaustion", Actor: "fixture"}); err == nil {
+		t.Fatal("failed assessor was accepted")
+	}
+	if err := f.engine.DB.SQL.QueryRow("SELECT charged_ms+unknown_ms FROM budget_ledgers WHERE scope='task'").Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if after <= before {
+		t.Fatalf("failed assessment was not conservatively charged: before=%d after=%d", before, after)
+	}
+	if _, err := quality.RunAssessment(context.Background(), f.engine, f.owner, a, quality.AssessmentRequest{CommandID: store.ID(), Target: f.target(), SourceKind: "repair_exhaustion", Actor: "fixture"}); err == nil {
+		t.Fatal("uncertain assessment source was replayed")
+	}
+	if calls != 1 {
+		t.Fatalf("failed assessment invoked assessor %d times", calls)
+	}
+}
+
+func TestStage54ReviewPlanAcceptsStaleTask(t *testing.T) {
+	ctx := context.Background()
+	f := readyForAcceptance(t)
+	a := quality.Acceptor{Engine: f.engine, Owner: f.owner}
+	if _, err := a.Accept(ctx, quality.AcceptanceRequest{CommandID: store.ID(), Target: f.target(), Actor: "fixture_core"}); err != nil {
+		t.Fatal(err)
+	}
+	prior := mustScope(t, f)
+	profile := policy.Profile{ID: "local", Harness: "hermes", Version: "fixture", Model: "fixture-v2", Provider: "custom", CredentialRef: "env:FIXTURE_KEY", Roles: []string{"implementation", "review", "supervisor"}, EndpointID: "fixture-endpoint", LocalInference: true, AuxiliaryLocal: true, DelegationDisabled: true, InstructionDigests: []string{store.Digest([]byte("new instructions"))}}
+	command(t, f.engine, "profile.put", profile)
+	current := mustScope(t, f)
+	if len(quality.StaleReasons(prior, current)) == 0 {
+		t.Fatal("profile did not stale task scope")
+	}
+	if err := quality.DetectAndRecordStaleness(ctx, f.engine, current); err != nil {
+		t.Fatal(err)
+	}
+	plan := quality.Target{Kind: "plan", PlanID: "plan"}
+	if result, err := (&checks.Runner{Engine: f.engine, Owner: f.owner}).Run(ctx, checks.Request{CommandID: store.ID(), Target: plan, CheckID: "quality-check", Actor: "fixture"}); err != nil || result.Status != "pass" {
+		t.Fatal(result, err)
+	}
+	r := review.Runner{Engine: f.engine, Owner: f.owner, Reviewer: reviewFunc(func(context.Context, review.Manifest) ([]byte, error) { return reviewDocument("pass", nil), nil })}
+	if _, err := r.Run(ctx, review.Request{CommandID: store.ID(), Target: plan, Actor: "fixture", SessionID: "plan-fresh", NativeIdentity: "native-plan-fresh"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := quality.RecordManual(ctx, f.engine, quality.ManualRequest{CommandID: store.ID(), Target: plan, CriterionID: "plan-manual", State: "pass", Evaluator: "fixture", Notes: "plan only", Actor: "fixture_human"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := quality.RecordHumanDecision(ctx, f.engine, quality.HumanDecisionRequest{CommandID: store.ID(), Target: plan, Action: "accept", Rationale: "plan only", Actor: "fixture_human"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Accept(ctx, quality.AcceptanceRequest{CommandID: store.ID(), Target: plan, Actor: "fixture_core"}); err == nil {
+		t.Fatal("plan accepted after task evidence was explicitly recorded stale")
+	}
+}
+
+func TestStage54ReviewAcceptanceTransactionRace(t *testing.T) {
+	ctx := context.Background()
+	f := readyForAcceptance(t)
+	raw, err := sql.Open("sqlite", "file:"+f.engine.DB.Path+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	commitDone := make(chan error, 1)
+	a := quality.Acceptor{Engine: f.engine, Owner: f.owner, Hook: func(point string) error {
+		if point != "before_final_observation" {
+			return nil
+		}
+		conn, err := raw.Conn(ctx)
+		if err != nil {
+			return err
+		}
+		if _, err = conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+			conn.Close()
+			return err
+		}
+		_, err = conn.ExecContext(ctx, `INSERT INTO manual_results_v2(id,scope_id,criterion_id,state,evaluator,notes,actor,command_id,evaluated_at) SELECT ?,scope_id,criterion_id,'pending','fixture','manual verification withdrawn','fixture_human',?,? FROM manual_results_v2 ORDER BY evaluated_at DESC LIMIT 1`, store.ID(), store.ID(), store.Now()+1)
+		if err != nil {
+			conn.ExecContext(ctx, "ROLLBACK")
+			conn.Close()
+			return err
+		}
+		go func() {
+			time.Sleep(700 * time.Millisecond)
+			_, e := conn.ExecContext(ctx, "COMMIT")
+			conn.Close()
+			commitDone <- e
+		}()
+		return nil
+	}}
+	accepted, acceptErr := a.Accept(ctx, quality.AcceptanceRequest{CommandID: store.ID(), Target: f.target(), Actor: "fixture_core"})
+	if err := <-commitDone; err != nil {
+		t.Fatal(err)
+	}
+	gates, err := quality.EvaluateManual(ctx, f.engine, mustScope(t, f))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acceptErr == nil && !gates[0].Satisfied {
+		t.Fatalf("accepted %s while a pending manual gate committed before acceptance transaction", accepted.ID)
+	}
+}
+
+func TestStage54ReviewAuthorizedBaselineCannotAdvance(t *testing.T) {
+	f := setupQuality(t, "fail", nil)
+	ctx := context.Background()
+	result, err := f.runCheck(ctx, nil)
+	if err != nil || result.Status != "fail" {
+		t.Fatal(result, err)
+	}
+	_, err = quality.AuthorizeBaseline(ctx, f.engine, quality.BaselineRequest{CommandID: store.ID(), Target: f.target(), CheckID: "quality-check", FailureIdentities: result.FailureIdentities, Paths: []string{"src/input.txt"}, Rationale: "known fixture baseline failure", Actor: "fixture_human"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gates, err := quality.EvaluateChecks(ctx, f.engine, mustScope(t, f))
+	if err != nil || !gates.Satisfied {
+		t.Fatal(gates, err)
+	}
+	_, err = f.runReview(reviewFunc(func(context.Context, review.Manifest) ([]byte, error) { return reviewDocument("pass", nil), nil }), "baseline-review")
+	if err != nil {
+		t.Fatalf("accepted baseline satisfies check gates but cannot advance to review: %v", err)
+	}
+}

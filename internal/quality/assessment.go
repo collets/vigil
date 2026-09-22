@@ -3,6 +3,7 @@ package quality
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -83,6 +84,13 @@ func RunAssessment(ctx context.Context, engine *core.Engine, owner *coordinator.
 	if err = Persist(ctx, engine, scope); err != nil {
 		return result, err
 	}
+	effectID := store.Digest([]byte("quality.supervisor\x00" + request.CommandID))
+	var existingID string
+	if queryErr := engine.DB.SQL.QueryRowContext(ctx, "SELECT id FROM supervisor_assessments_v2 WHERE effect_id=?", effectID).Scan(&existingID); queryErr == nil {
+		return loadAssessment(ctx, engine, existingID)
+	} else if !errors.Is(queryErr, sql.ErrNoRows) {
+		return result, queryErr
+	}
 	roots := make([]workspace.Identity, 0, len(scope.Repositories))
 	for _, repository := range scope.Repositories {
 		roots = append(roots, repository.Identity)
@@ -96,17 +104,20 @@ func RunAssessment(ctx context.Context, engine *core.Engine, owner *coordinator.
 	if err != nil {
 		return result, err
 	}
+	releaseAllowed := true
 	defer func() {
-		if ownedForAssessment {
+		if ownedForAssessment && releaseAllowed {
 			for _, claim := range claims {
 				_ = owner.Release(context.Background(), claim, "contained_stopped")
 			}
 		}
 	}()
-	effectID := store.Digest([]byte("quality.supervisor\x00" + request.CommandID))
 	definitionID := request.SourceKind + ":" + sourceID
 	intent, _ := json.Marshal(request)
 	if err = engine.DB.Write(ctx, func(tx *store.Tx) error {
+		if err := EnsureTargetDispatchable(ctx, tx, scope.Target); err != nil {
+			return err
+		}
 		var projectState string
 		if err := tx.QueryRowContext(ctx, "SELECT state FROM project WHERE id=?", engine.ProjectID).Scan(&projectState); err != nil {
 			return err
@@ -114,11 +125,18 @@ func RunAssessment(ctx context.Context, engine *core.Engine, owner *coordinator.
 		if projectState != "ready" {
 			return errors.New("project state prevents supervisor dispatch")
 		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO quality_effects_v2(id,scope_id,kind,definition_id,definition_digest,actor,state,intent_json,prepared_at,started_at) VALUES(?,?,'supervisor_assessment',?,?,?,'executing',?,?,?)`, effectID, scope.ID, definitionID, store.Digest(intent), request.Actor, string(intent), store.Now(), store.Now())
-		return err
+		started := store.Now()
+		if _, err := tx.ExecContext(ctx, `INSERT INTO quality_effects_v2(id,scope_id,kind,definition_id,definition_digest,actor,state,intent_json,prepared_at,started_at) VALUES(?,?,'supervisor_assessment',?,?,?,'executing',?,?,?)`, effectID, scope.ID, definitionID, store.Digest(intent), request.Actor, string(intent), started, started); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO quality_assessment_sources_v2(scope_id,plan_id,task_id,source_kind,source_id,effect_id,command_id,state,reserved_at) VALUES(?,?,?,?,?,?,?,'reserved',?)`, scope.ID, scope.Target.PlanID, scope.Target.TaskID, request.SourceKind, sourceID, effectID, request.CommandID, started); err != nil {
+			return err
+		}
+		return StartBudgetSegment(ctx, tx, scope, effectID, started)
 	}); err != nil {
 		return result, err
 	}
+	releaseAllowed = false
 	remaining, err := RemainingBudgetMS(ctx, engine, scope)
 	if err != nil {
 		return result, err
@@ -129,7 +147,11 @@ func RunAssessment(ctx context.Context, engine *core.Engine, owner *coordinator.
 	}
 	assessmentCtx, cancel := context.WithTimeout(ctx, time.Duration(limit)*time.Millisecond)
 	defer cancel()
-	started := store.Now()
+	_, err = EffectStartedAt(ctx, engine, effectID)
+	if err != nil {
+		_ = MarkEffectUncertain(context.Background(), engine, effectID, err.Error())
+		return result, err
+	}
 	var raw []byte
 	var callErr error
 	err = owner.HoldClaims(ctx, engine.ProjectID, roots, claims, func() error {
@@ -138,21 +160,39 @@ func RunAssessment(ctx context.Context, engine *core.Engine, owner *coordinator.
 	})
 	ended := store.Now()
 	if err != nil {
+		_ = MarkEffectUncertain(context.Background(), engine, effectID, err.Error())
 		return result, err
 	}
 	if callErr != nil || assessmentCtx.Err() != nil {
-		return result, fmt.Errorf("supervisor assessment failed and cannot be replayed: %w", callErr)
+		reason := "supervisor assessment timed out or was interrupted"
+		if callErr != nil {
+			reason = callErr.Error()
+		}
+		_ = MarkEffectUncertain(context.Background(), engine, effectID, reason)
+		return result, errors.New("supervisor assessment failed and cannot be replayed: " + reason)
 	}
 	var document AssessmentDocument
 	if err = store.Decode(raw, &document); err != nil || document.SchemaVersion != 1 || !contains([]string{"clarify", "revise_or_split", "eligible_reassignment", "remain_blocked"}, document.Action) || document.Rationale == "" {
+		_ = MarkEffectUncertain(context.Background(), engine, effectID, "malformed supervisor assessment")
 		return result, errors.New("malformed supervisor assessment cannot change task state")
+	}
+	if exhausted, exhaustionErr := WouldExhaust(ctx, engine, effectID, ended); exhaustionErr != nil {
+		_ = MarkEffectUncertain(context.Background(), engine, effectID, exhaustionErr.Error())
+		return result, exhaustionErr
+	} else if exhausted {
+		document.Action = "remain_blocked"
+		document.Rationale = "cumulative quality budget exhausted; " + document.Rationale
+		raw, _ = json.Marshal(document)
+		raw, _ = store.Canonical(raw)
 	}
 	repository, err := artifacts.New(engine.DB)
 	if err != nil {
+		_ = MarkEffectUncertain(context.Background(), engine, effectID, err.Error())
 		return result, err
 	}
 	artifact, err := repository.PutCore(ctx, store.Digest([]byte(effectID+"\x00result")), "supervisor-assessment", "durable", bytes.NewReader(raw))
 	if err != nil {
+		_ = MarkEffectUncertain(context.Background(), engine, effectID, err.Error())
 		return result, err
 	}
 	result = Assessment{ID: store.ID(), EffectID: effectID, ScopeID: scope.ID, SourceKind: request.SourceKind, SourceID: sourceID, Action: document.Action, Rationale: document.Rationale, ArtifactID: artifact.ID, ArtifactDigest: artifact.Digest, AssessedAt: ended}
@@ -164,8 +204,10 @@ func RunAssessment(ctx context.Context, engine *core.Engine, owner *coordinator.
 		if _, err := tx.ExecContext(ctx, "UPDATE quality_effects_v2 SET state='observed',observation_json=?,observed_at=? WHERE id=? AND state='executing'", string(observation), ended, effectID); err != nil {
 			return err
 		}
-		duration := ended - started
-		if _, err := tx.ExecContext(ctx, "UPDATE budget_ledgers SET charged_ms=charged_ms+?,revision=revision+1,updated_at=? WHERE scope='task' AND task_id=?", duration, ended, scope.Target.TaskID); err != nil {
+		if _, err := FinishBudgetSegment(ctx, tx, effectID, ended); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE quality_assessment_sources_v2 SET state='observed',observed_at=? WHERE effect_id=? AND state='reserved'", ended, effectID); err != nil {
 			return err
 		}
 		if request.SourceKind == "budget_exhaustion" {
@@ -173,8 +215,20 @@ func RunAssessment(ctx context.Context, engine *core.Engine, owner *coordinator.
 				return err
 			}
 		}
-		_, err := tx.ExecContext(ctx, "UPDATE tasks SET state='blocked',block_reason=? WHERE id=?", "bounded supervisor assessment: "+result.Action, scope.Target.TaskID)
+		_, err := tx.ExecContext(ctx, "UPDATE tasks SET state='blocked',block_reason=? WHERE id=? AND revision=? AND state IN('needs_repair','blocked')", "bounded supervisor assessment: "+result.Action, scope.Target.TaskID, scope.TaskRevision)
 		return err
 	})
+	if err != nil {
+		_ = MarkEffectUncertain(context.Background(), engine, effectID, err.Error())
+	}
+	if err == nil {
+		releaseAllowed = true
+	}
+	return result, err
+}
+
+func loadAssessment(ctx context.Context, engine *core.Engine, id string) (Assessment, error) {
+	var result Assessment
+	err := engine.DB.SQL.QueryRowContext(ctx, `SELECT id,effect_id,scope_id,source_kind,source_id,action,rationale,result_artifact_id,result_artifact_digest,assessed_at FROM supervisor_assessments_v2 WHERE id=?`, id).Scan(&result.ID, &result.EffectID, &result.ScopeID, &result.SourceKind, &result.SourceID, &result.Action, &result.Rationale, &result.ArtifactID, &result.ArtifactDigest, &result.AssessedAt)
 	return result, err
 }

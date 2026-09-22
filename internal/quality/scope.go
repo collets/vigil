@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"vigil/internal/core"
 	"vigil/internal/policy"
@@ -395,6 +396,15 @@ func DetectAndRecordStaleness(ctx context.Context, engine *core.Engine, current 
 			for _, evidenceID := range evidenceIDs {
 				if err := RecordStaleness(ctx, engine, item.kind, evidenceID, prior, current, reasons); err != nil {
 					return err
+				}
+				if item.kind == "task_acceptance" || item.kind == "plan_acceptance" {
+					reason := "stale quality authority: " + strings.Join(reasons, ",")
+					if err := engine.DB.Write(ctx, func(tx *store.Tx) error {
+						_, updateErr := tx.ExecContext(ctx, "UPDATE quality_acceptances_v2 SET invalidated_at=?,invalidation_reason=? WHERE id=? AND invalidated_at IS NULL", store.Now(), reason, evidenceID)
+						return updateErr
+					}); err != nil {
+						return err
+					}
 				}
 			}
 		}

@@ -82,7 +82,7 @@ func EvaluateChecks(ctx context.Context, engine *core.Engine, scope Scope) (Chec
 			if queryErr != nil {
 				return result, queryErr
 			}
-			if ended > latest {
+			if ended > latest || ended == latest && candidate.ResultID > gate.ResultID {
 				latest = ended
 				gate.ResultID, gate.ResultDigest = candidate.ResultID, candidate.ResultDigest
 				status, failuresRaw, artifactID, artifactDigest, observedDigest = candidateStatus, candidateFailures, candidateArtifact, candidateArtifactDigest, candidateObserved
@@ -239,6 +239,32 @@ func AuthorizeBaseline(ctx context.Context, engine *core.Engine, request Baselin
 		return "", err
 	}
 	var result map[string]string
-	err = json.Unmarshal(receipt, &result)
-	return result["id"], err
+	if err = json.Unmarshal(receipt, &result); err != nil {
+		return "", err
+	}
+	// A narrowly authorized baseline resolves the check failure that moved the
+	// task to needs_repair. It may restore the checking workflow only when no
+	// already-observed current check remains blocking; missing checks must still
+	// run and no project-required definition is removed.
+	if scope.Target.Kind == "task" {
+		gates, gateErr := EvaluateChecks(ctx, engine, scope)
+		if gateErr != nil {
+			return "", gateErr
+		}
+		blockingObserved := false
+		for _, gate := range gates.Checks {
+			if gate.ResultID != "" && !gate.Satisfied {
+				blockingObserved = true
+			}
+		}
+		if !blockingObserved {
+			if err = engine.DB.Write(ctx, func(tx *store.Tx) error {
+				_, updateErr := tx.ExecContext(ctx, "UPDATE tasks SET state='checking',block_reason=NULL WHERE id=? AND revision=? AND state='needs_repair'", scope.Target.TaskID, scope.TaskRevision)
+				return updateErr
+			}); err != nil {
+				return "", err
+			}
+		}
+	}
+	return result["id"], nil
 }

@@ -208,7 +208,7 @@ func EvaluateReview(ctx context.Context, engine *core.Engine, scope Scope) (Revi
 		if err != nil {
 			return gate, err
 		}
-		if ended > latest {
+		if ended > latest || ended == latest && candidateID > gate.ResultID {
 			latest = ended
 			gate.ResultID, gate.ResultDigest = candidateID, candidateDigest
 			artifactID, artifactDigest, status, readOnly, blocking = candidateArtifact, candidateArtifactDigest, candidateStatus, candidateReadOnly, candidateBlocking
@@ -254,7 +254,7 @@ func EvaluateManual(ctx context.Context, engine *core.Engine, scope Scope) ([]Ma
 			if err != nil {
 				return nil, err
 			}
-			if at > latest {
+			if at > latest || at == latest && id > gate.ResultID {
 				latest = at
 				gate.ResultID, gate.State = id, state
 				artifactID, artifactDigest = candidateArtifact, candidateDigest
@@ -297,7 +297,7 @@ func EvaluateHuman(ctx context.Context, engine *core.Engine, scope Scope) (Human
 		if err != nil {
 			return gate, err
 		}
-		if at > latest {
+		if at > latest || at == latest && id > gate.DecisionID {
 			latest = at
 			gate.DecisionID = id
 			gate.Satisfied = action == "accept"
@@ -370,7 +370,7 @@ func (a *Acceptor) gates(ctx context.Context, scope Scope) (acceptanceManifest, 
 		reasons = append(reasons, "explicit human acceptance is missing")
 	}
 	var unresolved int
-	if err := a.Engine.DB.SQL.QueryRowContext(ctx, `SELECT count(*) FROM quality_effects_v2 WHERE scope_id=? AND state IN('prepared','executing','uncertain')`, scope.ID).Scan(&unresolved); err != nil {
+	if err := a.Engine.DB.SQL.QueryRowContext(ctx, `SELECT count(*) FROM quality_effects_v2 e JOIN quality_scopes_v2 s ON s.id=e.scope_id WHERE s.target_kind=? AND s.plan_id=? AND coalesce(s.task_id,'')=? AND e.state IN('prepared','executing','uncertain')`, scope.Target.Kind, scope.Target.PlanID, scope.Target.TaskID).Scan(&unresolved); err != nil {
 		return manifest, nil, err
 	}
 	if unresolved != 0 {
@@ -389,15 +389,15 @@ func (a *Acceptor) gates(ctx context.Context, scope Scope) (acceptanceManifest, 
 		reasons = append(reasons, "cumulative quality budget is exhausted")
 	}
 	if scope.Target.Kind == "plan" {
-		type taskAcceptance struct{ taskID, state, acceptanceID, manifestID, manifestDigest, repositoryDigest string }
+		type taskAcceptance struct{ taskID, state, acceptanceID, acceptanceScopeID, manifestID, manifestDigest, repositoryDigest string }
 		var acceptedTasks []taskAcceptance
-		rows, err := a.Engine.DB.SQL.QueryContext(ctx, `SELECT t.id,t.state,coalesce(a.id,''),coalesce(a.evidence_manifest_id,''),coalesce(a.evidence_manifest_digest,''),coalesce(s.repository_set_digest,'') FROM tasks t LEFT JOIN quality_acceptances_v2 a ON a.task_id=t.id AND a.invalidated_at IS NULL LEFT JOIN quality_scopes_v2 s ON s.id=a.scope_id WHERE t.plan_id=? ORDER BY t.rank,t.id`, scope.Target.PlanID)
+		rows, err := a.Engine.DB.SQL.QueryContext(ctx, `SELECT t.id,t.state,coalesce(a.id,''),coalesce(a.scope_id,''),coalesce(a.evidence_manifest_id,''),coalesce(a.evidence_manifest_digest,''),coalesce(s.repository_set_digest,'') FROM tasks t LEFT JOIN quality_acceptances_v2 a ON a.task_id=t.id AND a.invalidated_at IS NULL LEFT JOIN quality_scopes_v2 s ON s.id=a.scope_id WHERE t.plan_id=? ORDER BY t.rank,t.id`, scope.Target.PlanID)
 		if err != nil {
 			return manifest, nil, err
 		}
 		for rows.Next() {
 			var item taskAcceptance
-			if err := rows.Scan(&item.taskID, &item.state, &item.acceptanceID, &item.manifestID, &item.manifestDigest, &item.repositoryDigest); err != nil {
+			if err := rows.Scan(&item.taskID, &item.state, &item.acceptanceID, &item.acceptanceScopeID, &item.manifestID, &item.manifestDigest, &item.repositoryDigest); err != nil {
 				rows.Close()
 				return manifest, nil, err
 			}
@@ -415,6 +415,33 @@ func (a *Acceptor) gates(ctx context.Context, scope Scope) (acceptanceManifest, 
 		for _, item := range acceptedTasks {
 			if item.state != "accepted" || item.acceptanceID == "" || item.repositoryDigest != scope.RepositorySetDigest {
 				reasons = append(reasons, "task "+item.taskID+" is not authoritatively accepted")
+				continue
+			}
+			currentTask, observeErr := Observe(ctx, a.Engine, Target{Kind: "task", PlanID: scope.Target.PlanID, TaskID: item.taskID})
+			if observeErr != nil {
+				return manifest, nil, observeErr
+			}
+			compatible, compatibleErr := CompatibleScopeIDs(ctx, a.Engine, currentTask)
+			if compatibleErr != nil {
+				return manifest, nil, compatibleErr
+			}
+			currentAcceptance := false
+			for _, compatibleID := range compatible {
+				if compatibleID == item.acceptanceScopeID {
+					currentAcceptance = true
+					break
+				}
+			}
+			if !currentAcceptance {
+				reasons = append(reasons, "task "+item.taskID+" acceptance is stale")
+				continue
+			}
+			_, childReasons, childErr := a.gates(ctx, currentTask)
+			if childErr != nil {
+				return manifest, nil, childErr
+			}
+			if len(childReasons) != 0 {
+				reasons = append(reasons, "task "+item.taskID+" gates are no longer satisfied: "+strings.Join(childReasons, ", "))
 				continue
 			}
 			if artifactErr = repository.Verify(ctx, item.manifestID, item.manifestDigest, "acceptance-manifest"); artifactErr != nil {
@@ -444,20 +471,6 @@ func (a *Acceptor) Accept(ctx context.Context, request AcceptanceRequest) (Accep
 		return accepted, err
 	}
 	if err := DetectAndRecordStaleness(ctx, a.Engine, scope); err != nil {
-		return accepted, err
-	}
-	manifest, reasons, err := a.gates(ctx, scope)
-	if err != nil {
-		return accepted, err
-	}
-	manifestRaw, _ := json.Marshal(manifest)
-	manifestRaw, _ = store.Canonical(manifestRaw)
-	repository, err := artifacts.New(a.Engine.DB)
-	if err != nil {
-		return accepted, err
-	}
-	artifact, err := repository.PutCore(ctx, store.Digest([]byte("acceptance-manifest\x00"+request.CommandID)), "acceptance-manifest", "durable", bytes.NewReader(manifestRaw))
-	if err != nil {
 		return accepted, err
 	}
 	roots := make([]workspace.Identity, 0, len(scope.Repositories))
@@ -493,12 +506,21 @@ func (a *Acceptor) Accept(ctx context.Context, request AcceptanceRequest) (Accep
 			return err
 		}
 		outcome := "accepted"
-		finalReasons := append([]string(nil), reasons...)
+		var finalReasons []string
 		if stale := StaleReasons(scope, current); len(stale) != 0 || scope.ID != current.ID {
 			outcome = "raced"
 			finalReasons = append(finalReasons, "scope changed: "+strings.Join(stale, ","))
-		} else {
-			_, finalReasons, err = a.gates(ctx, current)
+		}
+		authorityRevision, err := AuthorityRevision(ctx, a.Engine)
+		if err != nil {
+			return err
+		}
+		manifest, gateReasons, err := a.gates(ctx, current)
+		if err != nil {
+			return err
+		}
+		if outcome == "accepted" {
+			finalReasons = gateReasons
 			if err != nil {
 				return err
 			}
@@ -506,7 +528,33 @@ func (a *Acceptor) Accept(ctx context.Context, request AcceptanceRequest) (Accep
 				outcome = "rejected"
 			}
 		}
+		afterGates, err := AuthorityRevision(ctx, a.Engine)
+		if err != nil {
+			return err
+		}
+		if afterGates != authorityRevision {
+			outcome = "raced"
+			finalReasons = append(finalReasons, "quality authority changed while evaluating gates")
+		}
+		manifestRaw, _ := json.Marshal(manifest)
+		manifestRaw, _ = store.Canonical(manifestRaw)
+		repository, err := artifacts.New(a.Engine.DB)
+		if err != nil {
+			return err
+		}
+		artifact, err := repository.PutCore(ctx, store.Digest([]byte("acceptance-manifest\x00"+request.CommandID)), "acceptance-manifest", "durable", bytes.NewReader(manifestRaw))
+		if err != nil {
+			return err
+		}
 		receipt, err := a.Engine.DB.Command(ctx, store.Command{ID: request.CommandID, Actor: "core", Kind: "quality.accept", Args: args}, func(tx *store.Tx) (any, error) {
+			var committedRevision int64
+			if err := tx.QueryRowContext(ctx, "SELECT revision FROM quality_authority_v2 WHERE singleton=1").Scan(&committedRevision); err != nil {
+				return nil, err
+			}
+			if committedRevision != afterGates {
+				outcome = "raced"
+				finalReasons = append(finalReasons, "quality authority changed before acceptance transaction")
+			}
 			attemptID := store.ID()
 			reasonRaw, _ := json.Marshal(finalReasons)
 			if _, err := tx.ExecContext(ctx, `INSERT INTO quality_acceptance_attempts_v2(id,scope_id,target_kind,outcome,reasons_json,command_id,attempted_at) VALUES(?,?,?,?,?,?,?)`, attemptID, scope.ID, scope.Target.Kind, outcome, string(reasonRaw), request.CommandID, store.Now()); err != nil {
@@ -531,8 +579,8 @@ func (a *Acceptor) Accept(ctx context.Context, request AcceptanceRequest) (Accep
 					return nil, errors.New("plan state changed before acceptance")
 				}
 			}
-			accepted = Acceptance{ID: store.ID(), ScopeID: scope.ID, TargetKind: scope.Target.Kind, ManifestID: artifact.ID, ManifestDigest: artifact.Digest, AcceptedAt: store.Now()}
-			_, err := tx.ExecContext(ctx, `INSERT INTO quality_acceptances_v2(id,scope_id,target_kind,plan_id,task_id,evidence_manifest_id,evidence_manifest_digest,actor,accepted_at) VALUES(?,?,?,?,?,?,?,?,?)`, accepted.ID, scope.ID, scope.Target.Kind, scope.Target.PlanID, nullable(scope.Target.TaskID), artifact.ID, artifact.Digest, request.Actor, accepted.AcceptedAt)
+			accepted = Acceptance{ID: store.ID(), ScopeID: current.ID, TargetKind: current.Target.Kind, ManifestID: artifact.ID, ManifestDigest: artifact.Digest, AcceptedAt: store.Now()}
+			_, err := tx.ExecContext(ctx, `INSERT INTO quality_acceptances_v2(id,scope_id,target_kind,plan_id,task_id,evidence_manifest_id,evidence_manifest_digest,actor,accepted_at) VALUES(?,?,?,?,?,?,?,?,?)`, accepted.ID, current.ID, current.Target.Kind, current.Target.PlanID, nullable(current.Target.TaskID), artifact.ID, artifact.Digest, request.Actor, accepted.AcceptedAt)
 			if err != nil {
 				return nil, err
 			}

@@ -156,6 +156,9 @@ func (r *Runner) prepare(ctx context.Context, request Request, scope quality.Sco
 	effectID := store.Digest([]byte("quality.review\x00" + request.CommandID))
 	args, _ := json.Marshal(request)
 	receipt, err := r.Engine.DB.Command(ctx, store.Command{ID: request.CommandID, Actor: "core", Kind: "quality.review.prepare", Args: args}, func(tx *store.Tx) (any, error) {
+		if err := quality.EnsureTargetDispatchable(ctx, tx, scope.Target); err != nil {
+			return nil, err
+		}
 		var projectState string
 		if err := tx.QueryRowContext(ctx, "SELECT state FROM project WHERE id=?", r.Engine.ProjectID).Scan(&projectState); err != nil {
 			return nil, err
@@ -279,8 +282,9 @@ func (r *Runner) Run(ctx context.Context, request Request) (Result, error) {
 	if err != nil {
 		return result, err
 	}
+	releaseAllowed := true
 	defer func() {
-		if ownedForReview {
+		if ownedForReview && releaseAllowed {
 			for _, claim := range claims {
 				_ = r.Owner.Release(context.Background(), claim, "contained_stopped")
 			}
@@ -296,7 +300,7 @@ func (r *Runner) Run(ctx context.Context, request Request) (Result, error) {
 	}
 	reviewCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMS)*time.Millisecond)
 	defer cancel()
-	started := store.Now()
+	var started int64
 	var raw []byte
 	var reviewErr error
 	err = r.Owner.HoldClaims(ctx, r.Engine.ProjectID, roots, claims, func() error {
@@ -311,11 +315,15 @@ func (r *Runner) Run(ctx context.Context, request Request) (Result, error) {
 			if state != "prepared" || projectState != "ready" {
 				return errors.New("review dispatch became unavailable")
 			}
-			_, err := tx.ExecContext(ctx, "UPDATE quality_effects_v2 SET state='executing',started_at=? WHERE id=?", store.Now(), effectID)
-			return err
+			started = store.Now()
+			if _, err := tx.ExecContext(ctx, "UPDATE quality_effects_v2 SET state='executing',started_at=? WHERE id=?", started, effectID); err != nil {
+				return err
+			}
+			return quality.StartBudgetSegment(ctx, tx, scope, effectID, started)
 		}); err != nil {
 			return err
 		}
+		releaseAllowed = false
 		if r.Hook != nil {
 			if err := r.Hook("after_effect_start"); err != nil {
 				return err
@@ -325,6 +333,7 @@ func (r *Runner) Run(ctx context.Context, request Request) (Result, error) {
 		return nil
 	})
 	if err != nil {
+		_ = quality.MarkEffectUncertain(context.Background(), r.Engine, effectID, err.Error())
 		return result, err
 	}
 	ended := store.Now()
@@ -347,8 +356,10 @@ func (r *Runner) Run(ctx context.Context, request Request) (Result, error) {
 	}
 	result, persistErr := r.finish(ctx, effectID, request, scope, manifestDigest, raw, document, status, readOnly, started, ended)
 	if persistErr != nil {
+		_ = quality.MarkEffectUncertain(context.Background(), r.Engine, effectID, persistErr.Error())
 		return result, persistErr
 	}
+	releaseAllowed = true
 	if status != "pass" {
 		return result, fmt.Errorf("%w: %s", ErrInvalidReview, status)
 	}
@@ -357,6 +368,11 @@ func (r *Runner) Run(ctx context.Context, request Request) (Result, error) {
 
 func (r *Runner) finish(ctx context.Context, effectID string, request Request, scope quality.Scope, manifestDigest string, raw []byte, document Document, status string, readOnly bool, started, ended int64) (Result, error) {
 	var result Result
+	if exhausted, err := quality.WouldExhaust(ctx, r.Engine, effectID, ended); err != nil {
+		return result, err
+	} else if exhausted && status == "pass" {
+		status = "error"
+	}
 	repository, err := artifacts.New(r.Engine.DB)
 	if err != nil {
 		return result, err
@@ -400,29 +416,14 @@ func (r *Runner) finish(ctx context.Context, effectID string, request Request, s
 		if _, err := tx.ExecContext(ctx, "UPDATE quality_effects_v2 SET state='observed',observation_json=?,observed_at=? WHERE id=? AND state='executing'", string(observation), ended, effectID); err != nil {
 			return err
 		}
-		ledgerScope := "task"
-		query := "UPDATE budget_ledgers SET charged_ms=charged_ms+?,revision=revision+1,updated_at=? WHERE scope=? AND plan_id=?"
-		args := []any{ended - started, ended, ledgerScope, scope.Target.PlanID}
-		if scope.Target.Kind == "task" {
-			query += " AND task_id=?"
-			args = append(args, scope.Target.TaskID)
-		} else {
-			ledgerScope = "plan_services"
-			args[2] = ledgerScope
-			query += " AND task_id IS NULL"
-		}
-		updated, err := tx.ExecContext(ctx, query, args...)
-		if err != nil {
+		if _, err := quality.FinishBudgetSegment(ctx, tx, effectID, ended); err != nil {
 			return err
-		}
-		if count, _ := updated.RowsAffected(); count != 1 {
-			return errors.New("quality budget ledger missing")
 		}
 		if scope.Target.Kind == "task" {
 			if result.Status == "request_changes" || result.Status == "write_denied" || result.Status == "malformed" || result.Status == "error" || result.Status == "interrupted" {
-				_, err = tx.ExecContext(ctx, "UPDATE tasks SET state='needs_repair',block_reason=? WHERE id=?", "review returned "+result.Status, scope.Target.TaskID)
+				_, err = tx.ExecContext(ctx, "UPDATE tasks SET state='needs_repair',block_reason=? WHERE id=? AND revision=? AND state='reviewing'", "review returned "+result.Status, scope.Target.TaskID, scope.TaskRevision)
 			} else if result.Status == "pass" && (scope.HumanAcceptanceRequired || hasManual(scope.Criteria)) {
-				_, err = tx.ExecContext(ctx, "UPDATE tasks SET state='awaiting_human',block_reason=NULL WHERE id=?", scope.Target.TaskID)
+				_, err = tx.ExecContext(ctx, "UPDATE tasks SET state='awaiting_human',block_reason=NULL WHERE id=? AND revision=? AND state='reviewing'", scope.Target.TaskID, scope.TaskRevision)
 			}
 		}
 		return err

@@ -344,22 +344,8 @@ func TestBaselineExceptionDoesNotCoverNewFailure(t *testing.T) {
 	if err != nil || !gates.Satisfied || gates.Checks[0].Status != "accepted_baseline" {
 		t.Fatal(gates, err)
 	}
-	// Prepare a bounded repair without changing the source, then the same check
-	// reports the known failure plus one new identity.
-	f.releaseExecutionReservation(t)
-	follow, err := supervisor.PrepareFollowup(context.Background(), f.engine, supervisor.FollowupRequest{CommandID: store.ID(), ExpectedRevision: projectRevision(t, f.engine), SourceRunID: f.prepared.RunID, Kind: "repair", WallLimitMS: 60000})
-	if err != nil {
-		t.Fatal(err)
-	}
-	reservation, err := f.engine.ReserveResources(context.Background(), f.owner, store.ID(), follow.RunID, "fixture-endpoint")
-	if err != nil {
-		t.Fatal(err)
-	}
-	driver := &supervisor.FixtureDriver{RepositoryID: "repo", Root: f.root, RelativePath: "src/result.txt", Content: []byte("implemented\n")}
-	runner := supervisor.Runner{Engine: f.engine, Owner: f.owner, Driver: driver}
-	if _, err = runner.Run(context.Background(), follow, reservation, "repair fixture"); err != nil {
-		t.Fatal(err)
-	}
+	// Baseline authorization restores checking, but the next result reports the
+	// known failure plus one new identity and therefore remains blocking.
 	_ = os.WriteFile(control, []byte("known-failure\nnew-failure\n"), 0600)
 	second, err := f.runCheck(context.Background(), nil)
 	if err != nil {
@@ -650,7 +636,7 @@ func TestDefinitionProfileFreshnessAndUncertainRestart(t *testing.T) {
 		}
 		f.engine = reopened
 		ids, err := quality.RecoverUnfinished(context.Background(), f.engine)
-		if err != nil || len(ids) != 1 {
+		if err != nil || len(ids) != 0 {
 			t.Fatal(ids, err)
 		}
 		if _, err = (&checks.Runner{Engine: f.engine, Owner: f.owner}).Run(context.Background(), request); err == nil {
