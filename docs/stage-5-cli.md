@@ -1,6 +1,6 @@
 # Persisted planning CLI
 
-Stage 5 persists definitions, repository setup and a journaled execution lifecycle. Production agents remain qualification-gated; the only CLI execution driver in Stage 5.2 is an explicitly selected, marker-gated synthetic driver for disposable repositories. Execution can move a task to `checking`, never acceptance or delivery. `dashboard PROJECT_ID` remains read-only and `spike` remains a separate diagnostic runner with no production fallback.
+Stage 5 persists definitions, repository setup, a journaled execution lifecycle and the Stage 5.4 quality/acceptance path. Production agents and reviewers remain qualification-gated; all currently exposed execution, review, human and acceptance drivers are explicitly selected, marker-gated fixture paths for disposable repositories. Implementation result persistence stops at `checking`; only `quality-accept` can accept current evidence, and it never creates delivery authority. `dashboard PROJECT_ID` remains read-only and `spike` remains a separate diagnostic runner with no production fallback.
 
 ## Initialize and inspect
 
@@ -33,12 +33,14 @@ Example initial configuration:
     "model_policy": "local_only",
     "deny": ["push"],
     "required_checks": ["unit-tests"],
-    "check_definitions": [{"id":"unit-tests","argv":["go","test","./..."],"cwd":".","timeout_ms":300000}],
+    "check_definitions": [{"id":"unit-tests","argv":["/usr/local/go/bin/go","test","./..."],"cwd":".","environment":[],"required_outputs":[],"timeout_ms":300000,"max_output_bytes":1048576}],
     "task_limit_ms": 2700000,
     "attempt_limit_ms": 600000,
     "repair_limit": 2,
     "supervisor_profile": "local",
-    "approval_mode": "supervised"
+    "approval_mode": "supervised",
+    "human_acceptance_required": true,
+    "review_blocking_severity": "high"
   }
 }
 ```
@@ -73,6 +75,10 @@ At revision 3, `kind: "plan.put"` accepts:
   "specification": "Implement the agreed behavior and verify it with unit tests.",
   "approved": true,
   "authorize_criteria_changes": false,
+  "quality_criteria": [{"id":"plan-manual","text":"Plan-level fixture verification completed","manual":true}],
+  "quality_checks": ["unit-tests"],
+  "reviewer_profile": "local",
+  "human_acceptance_required": true,
   "tasks": [{
     "id": "first-task",
     "objective": "Implement the specified behavior",
@@ -92,7 +98,7 @@ At revision 3, `kind: "plan.put"` accepts:
 }
 ```
 
-Plan import validates dependency graphs and retains immutable revisions. Existing tasks cannot be silently removed. Criteria changes require an explicit human flag. `plan.reorder` takes `{"plan_id":"first-plan","tasks":["first-task"]}` and preserves the exact task set and task revisions. Readiness reports missing profiles, unapproved specifications, unresolved questions, dependencies and policy constraints. Actual check/manual-result execution remains pending Stage 5.4; production eligibility remains false until an exact trusted launch/recovery qualification exists.
+Plan import validates dependency graphs and retains immutable revisions. Existing tasks cannot be silently removed. Criteria changes require explicit human revision authority. `plan.reorder` takes `{"plan_id":"first-plan","tasks":["first-task"]}` and preserves the exact task set and task revisions. Readiness reports missing profiles, unapproved specifications, unresolved questions, dependencies and policy constraints. Plan-wide quality fields are optional, but when present bind their own check/review/manual/human gates to the exact plan revision. Production eligibility remains false until exact trusted launch/recovery and reviewer qualification exist.
 
 ## Repository enrollment and branch preparation
 
@@ -311,7 +317,7 @@ The dashboard reads one consistent database snapshot for readiness, tasks, the f
 
 ## Check definitions and manual setup prerequisites
 
-Project `check_definitions` specify an ID, exact argv array, explicit project-relative `cwd` and positive `timeout_ms` within the project attempt ceiling. Definitions are immutable within their configuration snapshot. This declares a check; it does not execute it. Readiness blocks any required or task check whose definition is absent. Tasks can add checks and cannot remove the project-required set.
+Project `check_definitions` specify an ID, exact argv array, explicit project-relative `cwd`, a sorted explicit environment, sorted required output paths, positive `timeout_ms` within the project attempt ceiling and an optional output ceiling up to 16 MiB. Use an exact absolute executable or explicitly approve an absolute, canonical `PATH`; ambient executable lookup is never used. `HOME`, `TMPDIR`, `TMP` and `TEMP` are runner-owned and cannot be overridden. Definitions are immutable within their configuration snapshot. This declares a check; it does not execute it. Readiness blocks any required task/plan check whose definition is absent. Tasks and plans can add checks and cannot remove the project-required set.
 
 Tasks can also carry `manual_prerequisites`, for example:
 
@@ -320,6 +326,60 @@ Tasks can also carry `manual_prerequisites`, for example:
 ```
 
 An unsatisfied prerequisite blocks readiness. A human plan revision may set `satisfied` to true only with nonempty `evidence` text. This records setup evidence only: it creates no manual functional Pass, quality evidence, acceptance or run. Manual criteria on finished code still need the later fingerprint-bound review flow. Definition changes remain versioned and invalidate prior operation authority.
+
+## Offline quality and acceptance commands
+
+The current commands require a committed regular `.vigil-disposable-fixture` marker and explicit fixture flags. They do not provide a production fallback. A task begins this sequence in `checking`; a plan begins it in `verifying` after all tasks are accepted.
+
+Run every current required check by its definition ID. Add `--plan-wide` and use the plan ID as `TARGET_ID` for plan gates:
+
+```sh
+./bin/vigil project quality-check PROJECT_ID TASK_ID unit-tests \
+  --command-id check-001 --synthetic-fixture
+```
+
+The runner copies enrolled source into an isolated workspace, executes the approved argv without a shell under the explicit environment/cwd/timeout, bounds output, verifies required outputs and re-fingerprints managed source. Nonzero exit, timeout, interruption, overflow, missing output, source mutation or missing/corrupt evidence cannot pass.
+
+Supply a fresh fixture review in the closed schema; `SESSION_ID` and `NATIVE_ID` must be new, distinct from one another and from implementation/prior review identities:
+
+```sh
+./bin/vigil project quality-review PROJECT_ID TASK_ID \
+  --command-id review-001 --result review.json \
+  --session-id fixture-review-001 --native-identity fixture-native-001 \
+  --synthetic-fixture
+```
+
+Example `review.json`:
+
+```json
+{"schema_version":1,"decision":"pass","summary":"fixture review only","findings":[]}
+```
+
+The application validates findings and derives blocking status from `review_blocking_severity`; reviewer claims cannot lower it. Review is read-only and has no code-writing, acceptance, publishing or delivery authority. A rejection routes the task to Stage 5.3's existing bounded `execution-followup-prepare --kind repair` flow; changed source requires fresh checks and a distinct fresh review without resetting the task ledger.
+
+Record each manual criterion and any configured human decision explicitly. Only manual `pass` satisfies a manual gate; a human `accept` does not manufacture it:
+
+```sh
+./bin/vigil project quality-manual PROJECT_ID TASK_ID CRITERION_ID \
+  --command-id manual-001 --outcome pass --evaluator fixture-user \
+  --notes 'fixture verification only' --synthetic-fixture
+./bin/vigil project quality-decision PROJECT_ID TASK_ID \
+  --command-id decision-001 --action accept \
+  --rationale 'fixture acceptance only' --synthetic-fixture
+```
+
+Manual outcomes are `pending`, `pass`, `fail` or `cannot_verify`; decisions are `accept`, `request_changes`, `clarify` or `stop`. These offline commands always label their actor as fixture-human and are not evidence of real user acceptance.
+
+Finally, atomically recheck every current revision, fingerprint, artifact, gate, budget and unresolved effect:
+
+```sh
+./bin/vigil project quality-accept PROJECT_ID TASK_ID \
+  --command-id accept-task-001 --synthetic-fixture
+./bin/vigil project quality-accept PROJECT_ID PLAN_ID \
+  --command-id accept-plan-001 --plan-wide --synthetic-fixture
+```
+
+Task acceptance can move the completed task to `accepted`; once all tasks are accepted, the plan moves to `verifying`. Plan checks/review/manual/decision commands also use `--plan-wide` and charge the separate plan-services ledger. Plan acceptance moves only to `finalizing`. Neither acceptance command authorizes or performs a commit, push, publication or delivery.
 
 
 ## Read-only repository discovery
