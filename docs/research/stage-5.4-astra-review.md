@@ -1,5 +1,7 @@
 # Stage 5.4 independent security/correctness review
 
+Latest verdict: [follow-up of 0993a24](#independent-follow-up-of-0993a24) leaves R2/R5 open (P1), R8 open for upgrades (P2), and adds R10 (P2). R1/R3/R4/R6/R7/R9 are closed at the reported offline scope. Earlier sections are historical.
+
 Date: 2026-09-22. Reviewed `4b48737..405b8c9`; implementation head `03f65e8`.
 
 **Verdict: changes requested. Seven P1 and two P2 findings. Stage 5.4 is not independently accepted.** IDs in this report are local to Stage 5.4; the accepted historical Stage 5.3 R1–R10 remain separate. Do not begin Stage 5.5 on the assumption these quality contracts are accepted. Production dispatch must remain disabled; R1 is a concrete hole in the claimed check-dispatch gate, not authorization to use it.
@@ -108,3 +110,60 @@ Correction: evaluate the authoritative set of classified check gates when advanc
 ## Implementing-agent handoff
 
 Fix R1–R9 in reviewable checkpoints. Prioritize admission/containment and evidence/acceptance authority before expanding live routes. Preserve the earlier Stage 5.1–5.3 safeguards; do not weaken fail-closed checks to make fixtures pass. Convert these reproductions into permanent regression tests and extend them to the failure paths named above. Use forward migrations and validate populated upgrades, digest safety and immutable evidence. Update results and request independent follow-up; do not self-accept Stage 5.4, start Stage 5.5, push, incur additional spend or enable production dispatch.
+
+## Independent follow-up of 0993a24
+
+Date: 2026-09-22. Reviewed remediation `c224826..0993a24`, documentation HEAD `959818e`.
+
+**Verdict: changes requested. R2 and R5 remain open (P1); R8 remains open for populated upgrades (P2); new R10 is P2.** R1, R3, R4, R6, R7 and R9 are closed for the originally reported offline defects. Stage 5.4 is not accepted; production dispatch remains disabled.
+
+The original permanent reproductions pass, including the competing-WAL manual-gate race, both stop outcomes, source mutation, baseline progression and stale child acceptance. The acceptance epoch and transaction-local state fences close the demonstrated R6 race; the committed manifest now uses the final gate selection. Fixture-only check admission closes R1. The new defects below are not reasons to remove those protections.
+
+### R2 remains open — P1: process-group absence is not descendant containment
+
+Locations: `internal/checks/runner.go:387–405,578–590,678–680`.
+
+The new runner kills and observes only the original Unix process group. A child that creates a new session leaves that group and survives while the group becomes absent; the check is recorded as a pass. Separately, even when `runContained` reports `contained=false`, `runHeld` converts that to a status string and can return a successfully persisted result with nil error. `Run` then sets `releaseProof=contained_stopped` and permits release. A terminal error result is not proof that writers stopped.
+
+`TestStage54FollowupEscapedSession` launches a test helper that starts only a disposable `/bin/sleep 30` child with `Setsid:true`. The parent exits, the runner returns `pass`, and the detached child is still alive. The probe kills that exact child immediately. This demonstrates an escaped session, beyond the fixed original same-group child case.
+
+Required correction: use a lifecycle boundary that actually covers the supported descendants, or leave unsupported containment explicitly unavailable/uncertain. Never issue a containment proof from process-group absence alone or from successful error-result persistence. Propagate containment uncertainty independently of check status, retain/quarantine ownership and block downstream work. Include detached sessions, timeout/failure, denied/ambiguous observations and the explicit `contained=false` return path in regression coverage. Production qualification remains separate; these fixtures do not qualify host execution.
+
+### R5 remains open — P1: post-process observation and persistence escape charging
+
+Locations: `internal/checks/runner.go:660–712,730–736,762`; corresponding terminal timestamp handling in `internal/review/review.go` and `internal/quality/assessment.go`.
+
+Durable segments now charge crash gaps and prevent the original fresh-command redispatch, but a normal check fixes `ended` immediately after subprocess retirement. Source-copy verification, required-output reads, original-source observation, artifact persistence and any intervening delay occur later. Both exhaustion evaluation and segment closure use the earlier timestamp. Thus a check can exceed the remaining allowance, still return pass and leave most of that allowance available. The comment claiming the whole preparation/copy/observation interval is charged is inaccurate.
+
+`TestStage54FollowupPostprocessBudget` gives the task 500 ms remaining, runs `/bin/true`, and delays the existing `before_source_recheck` hook by 800 ms. The check returns `pass`, charges only a few milliseconds, and leaves approximately 490 ms available. The hook models slow observation/persistence; it does not bypass a driver boundary.
+
+Required correction: bound and account the complete active quality interval through authoritative terminal persistence, using a current terminal time and transactionally enforced remaining allowance. Apply the same rule to checks, reviews and assessments, including artifact/storage delay. Preserve terminal evidence without granting success after exhaustion. Add delayed observation and delayed final-transaction tests alongside the now-passing crash-gap tests.
+
+### R8 remains open on upgrade — P2: migration 013 forgets already consumed assessment sources
+
+Locations: `internal/store/migrations/project-013.sql:22–34`; `internal/quality/assessment.go:125–138,157–161,198–201`.
+
+Migration 013 creates empty source-reservation and budget-segment tables. Existing v12 assessment records and executing effects are not imported into these authorities. For an already observed repair-exhaustion assessment, a new command after upgrade reserves the apparently unused source and invokes the assessor again. Only the old terminal uniqueness constraint rejects its result afterward. The new pre-effect reservation works on fresh databases, but does not close the reported duplicate-invocation defect for populated installations. The new recovery query also joins only effects with new segments, so pre-013 executing effects need an explicit conservative migration/reconciliation policy.
+
+`TestStage54FollowupPopulatedV12Assessment` reconstructs a populated v12 fixture by removing only migration-013 additions/metadata, retaining an observed assessment and its other records. Reopening applies the real migration 013. A new command for the same source invokes the callback a second time before failing with the existing `supervisor_assessments_v2` uniqueness constraint.
+
+Required correction: add a forward migration/reconciliation path that preserves consumed and uncertain source authority from historical effects/results, including multiple old scopes for one task/source. Conservatively account or block legacy running effects without segments; never infer non-occurrence from an empty new table. Keep historical migration digests unchanged and add populated-v12 observed, failed and executing upgrade regressions.
+
+### R10 — P2: permission normalization makes ordinary files fail copy equivalence
+
+Locations: `internal/checks/runner.go:258,316,619–633`.
+
+`copyProject` masks file modes with `0700`, whereas `treeDigest` hashes the original full permission bits. A normal `0644` source file is copied as `0600`; the new equivalence check then declares source mutation before executing the check. The fixtures mostly use `0600`, hiding this common fresh-checkout case. Ordinary `0755` executables have the analogous mismatch.
+
+`TestStage54FollowupRegularPermissions` changes only a fixture source file to `0644`, then runs its unchanged passing check. The result is `source_mutated` with no execution error.
+
+Required correction: choose a consistent, documented source-mode equivalence policy. Either preserve required modes in the private isolated tree or compare the same approved normalization on both sides while preserving executable semantics. Do not remove byte/symlink/source-mutation validation. Cover `0644`, `0755` and existing private-mode fixtures on both platforms.
+
+### Follow-up validation and implementing-agent notes
+
+- Independent submitted-suite Linux `make check`, `make check-race`, `make build`, `make build-boundary` and all four cross-builds passed before adding follow-up probes.
+- All four new cases reproduced in ordinary focused runs and twice under `-race`. Every permanent `TestStage54Review` regression passed in both focused repetitions. The combined focused command failed only at the four new behavioral assertions; no race-detector data-race diagnostics were reported.
+- Retained probes: `stage-5.4-review/followup_test.go.txt`. Copy to `internal/quality/stage54_followup_test.go` and run `go test ./internal/quality -run TestStage54Followup -count=1 -v` using the pinned Go environment. The helper test is a subprocess fixture, not a separate finding. Executable review copies are removed after validation.
+- Historical migration files are unchanged in the remediation diff; only migration 013 was added. The independent populated-v12 probe above exposes a semantic preservation gap despite the passing submitted migration tests.
+- Native macOS results remain the implementer's submitted evidence for `0993a24776404dac00df39ca8d25d2c2c1c2f68f`, bundle `5e0cb97c4b9ea9a6c5a209af502075b648e010aecf6bee8704a55eaf8d3bb874`; native tests were not independently rerun here.
+- Remediate R2/R5/R8 and R10, retain the six closed findings' safeguards, and request independent follow-up. Do not begin Stage 5.5, enable production dispatch, incur extra spending or push. No models, paid/provider calls, Docker, hosting, real-checkout recovery or production activation occurred during this review.

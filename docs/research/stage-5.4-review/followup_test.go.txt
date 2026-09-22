@@ -1,0 +1,152 @@
+package quality_test
+
+import (
+	"context"
+	"database/sql"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+	"vigil/internal/policy"
+	"vigil/internal/quality"
+	"vigil/internal/store"
+)
+
+func TestStage54FollowupHelper(t *testing.T) {
+	if os.Getenv("VIGIL_FOLLOWUP_CHILD") != "1" {
+		return
+	}
+	child := exec.Command("/bin/sleep", "30")
+	child.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(os.Getenv("VIGIL_PID_PATH"), []byte(strconv.Itoa(child.Process.Pid)), 0600); err != nil {
+		child.Process.Kill()
+		t.Fatal(err)
+	}
+	os.Exit(0)
+}
+
+func TestStage54FollowupEscapedSession(t *testing.T) {
+	pidfile := filepath.Join(t.TempDir(), "pid")
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := setupQuality(t, "pass", func(d *policy.CheckDefinition) {
+		d.Argv = []string{executable, "-test.run=^TestStage54FollowupHelper$"}
+		d.Environment = []policy.EnvironmentVariable{{Name: "VIGIL_FOLLOWUP_CHILD", Value: "1"}, {Name: "VIGIL_PID_PATH", Value: pidfile}}
+		d.RequiredOutputs = nil
+	})
+	result, runErr := f.runCheck(context.Background(), nil)
+	raw, err := os.ReadFile(pidfile)
+	if err != nil {
+		t.Fatal(err, runErr)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	alive := syscall.Kill(pid, 0) == nil
+	_ = syscall.Kill(pid, syscall.SIGKILL)
+	if alive && runErr == nil {
+		t.Fatalf("detached descendant alive after terminal %s", result.Status)
+	}
+}
+
+func TestStage54FollowupRegularPermissions(t *testing.T) {
+	f := setupQuality(t, "pass", nil)
+	if err := os.Chmod(filepath.Join(f.root, "src/input.txt"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := f.runCheck(context.Background(), nil)
+	if err != nil || result.Status != "pass" {
+		t.Fatalf("ordinary 0644 source cannot pass check: %s %v", result.Status, err)
+	}
+}
+
+func TestStage54FollowupPostprocessBudget(t *testing.T) {
+	f := setupQuality(t, "pass", func(d *policy.CheckDefinition) { d.Argv = []string{"/bin/true"}; d.RequiredOutputs = nil })
+	if _, err := f.engine.DB.SQL.Exec("UPDATE budget_ledgers SET active_limit_ms=charged_ms+unknown_ms+500 WHERE scope='task'"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := f.runCheck(context.Background(), func(point string) error {
+		if point == "before_source_recheck" {
+			time.Sleep(800 * time.Millisecond)
+		}
+		return nil
+	})
+	var remaining int64
+	if e := f.engine.DB.SQL.QueryRow("SELECT active_limit_ms-charged_ms-unknown_ms FROM budget_ledgers WHERE scope='task'").Scan(&remaining); e != nil {
+		t.Fatal(e)
+	}
+	if err == nil && result.Status == "pass" {
+		t.Fatalf("late check passed after 800ms observation delay with %dms remaining from 500ms allowance; charged duration %d", remaining, result.DurationMS)
+	}
+}
+
+func TestStage54FollowupPopulatedV12Assessment(t *testing.T) {
+	ctx := context.Background()
+	f := setupQuality(t, "pass", nil)
+	if _, err := f.engine.DB.SQL.Exec("UPDATE tasks SET state='needs_repair',repair_limit=0 WHERE id='task'"); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	assessor := assessorFunc(func(context.Context, quality.Scope) ([]byte, error) {
+		calls++
+		return []byte(`{"schema_version":1,"action":"remain_blocked","rationale":"fixture"}`), nil
+	})
+	request := quality.AssessmentRequest{CommandID: store.ID(), Target: f.target(), SourceKind: "repair_exhaustion", Actor: "fixture"}
+	if _, err := quality.RunAssessment(ctx, f.engine, f.owner, assessor, request); err != nil {
+		t.Fatal(err)
+	}
+	// Reconstruct installed v12 by removing only v13's additions in this fixture.
+	path := f.engine.DB.Path
+	if err := f.engine.DB.Close(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := raw.Query("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'quality_authority_%'")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var triggers []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		triggers = append(triggers, name)
+	}
+	rows.Close()
+	for _, name := range triggers {
+		if _, err := raw.Exec("DROP TRIGGER " + name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, statement := range []string{"DROP TABLE quality_assessment_sources_v2", "DROP TABLE quality_budget_segments_v2", "DROP TABLE quality_authority_v2", "DELETE FROM schema_migrations WHERE version=13"} {
+		if _, err := raw.Exec(statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	f.engine, err = f.manager.Open(ctx, f.project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.CommandID = store.ID()
+	_, err = quality.RunAssessment(ctx, f.engine, f.owner, assessor, request)
+	if calls != 1 {
+		t.Fatalf("v12 observed exhaustion invoked assessor again after v13 upgrade: calls=%d error=%v", calls, err)
+	}
+}

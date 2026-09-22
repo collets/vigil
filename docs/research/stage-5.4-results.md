@@ -4,7 +4,7 @@ Date: 2026-09-22
 
 Scope: offline implementation and fixture validation only
 
-Status: initial implementation through `03f65e8` received seven P1 and two P2 findings. All R1–R9 remediations and final acceptance-state fencing are implemented and validated through `0993a24`; Stage 5.4 remains **unaccepted pending independent follow-up review**. See the [independent review and retained probes](stage-5.4-astra-review.md).
+Status: independent follow-up of `0993a24` requests further changes: **R2/R5 remain P1, R8 remains P2 for populated upgrades, and new R10 is P2**. R1/R3/R4/R6/R7/R9 are closed for their reported offline defects. Stage 5.4 remains unaccepted. See the [follow-up findings and retained probes](stage-5.4-astra-review.md#independent-follow-up-of-0993a24). Implementation claims below are subject to these findings.
 
 Production dispatch: disabled
 
