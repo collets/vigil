@@ -4,7 +4,7 @@ Date: 2026-09-22
 
 Scope: offline implementation and fixture validation only
 
-Status: implementation complete through `03f65e8`; **pending independent review**
+Status: implementation through `03f65e8` independently reviewed on 2026-09-22; **changes requested: seven P1 and two P2 findings (R1–R9)**. Stage 5.4 is unaccepted. See the [independent review and retained probes](stage-5.4-astra-review.md). The implementation claims below are superseded where that review demonstrates a defect.
 
 Production dispatch: disabled
 
@@ -116,7 +116,7 @@ The temporary Mac directory `/tmp/vigil-stage54.BFYvfH` and local bundle `/tmp/v
 
 ## Deferred gates and limitations
 
-- Stage 5.4 is pending independent review; this implementation report is not self-acceptance.
+- Stage 5.4 requires remediation of independent review R1–R9 and follow-up acceptance; this implementation report is not self-acceptance.
 - Production check/model/reviewer dispatch remains disabled. No real fresh model review was attempted.
 - Safe contained Codex subscription routing, effective Luna/low selection, provider-idle proof, shared Mac/WSL capacity authority and live recovery across advertised harness/platform combinations remain pending. No paid fallback or larger-model fallback is authorized.
 - Real project repository/base/branch/check choices, baseline exceptions, criteria changes, manual functional verification and task/plan human acceptance remain explicit user gates. No such evidence was fabricated.
