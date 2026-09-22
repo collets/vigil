@@ -114,7 +114,7 @@ The fixture actors `fixture`, `fixture_human` and `fixture_core` are deliberatel
 
 ### Linux/WSL
 
-The pre-remediation suites were reported passing at `0993a24`. At exact final remediation commit `253efd2a6cb1210009dbe290f083507c4363052e`, the following gates passed:
+The pre-remediation suites were reported passing at `0993a24`. At final R2/R10 remediation commit `49b9fbb`, the following gates passed:
 
 ```text
 make check
@@ -129,18 +129,24 @@ git diff --check
 
 ### Native macOS
 
-The previously authorized host was available. An isolated temporary checkout was cloned from a complete Git bundle; the normal checkout was not touched.
+The previously authorized host was available. An isolated temporary checkout was cloned from the final bundle; the normal checkout was not touched. `make check`, `make check-race` and `make build` completed successfully on Darwin arm64. The checkout and bundle were removed afterward; only resources created for this validation were cleaned up.
 
 | Item | Exact value |
 | --- | --- |
-| Commit | `253efd2a6cb1210009dbe290f083507c4363052e` |
-| Bundle SHA-256 | `d7f606d316d05e56c22e9a5e84badeb6088c54497cafe164daedec73e86dcc7a` |
+| Commit | `49b9fbb67d31dd604da673bd0b92cc9bbb15a27c` |
+| Bundle SHA-256 | `322b3facdb75a3056c346dc770043e9a97127373cb0328db6dc70059cb21b238` |
 | Host | Darwin 25.6.0 arm64 |
 | Go | `go1.27.1 darwin/arm64` |
 | Commands | `make check` (including permanent R1–R10 probes); `make check-race`; `make build` |
 | Result | all passed |
 
 The temporary Mac directory `/tmp/vigil-stage54-f3057aa.VvWBtx`, all remote bundles/checkouts and all three local diagnostic/final bundles were removed and verified absent. Only disposable module caches were made writable to permit their removal. The normal Mac checkout was not accessed or changed.
+
+## Final follow-up remediation
+
+Commit `49b9fbb` adds a Linux-only re-exec supervisor that enables `PR_SET_CHILD_SUBREAPER`, starts the approved command from a canonical serialized specification, handles cancellation, recursively signals descendants, and reaps adopted children before returning. A reserved supervisor exit status makes cleanup uncertainty fail closed. The copy path now calls `Chmod` after regular-file creation, eliminating umask-dependent source evidence. `internal/quality/stage54_final_followup_test.go` permanently covers both the empty-environment detached child and `umask(077)` cases; the retained inert probe remains at `docs/research/stage-5.4-review/final_followup_test.go.txt`.
+
+The implementing agent does not self-accept these corrections. Independent review must inspect `ff0d9c0..49b9fbb`, rerun all ten retained/permanent probes (including both final regressions twice under ordinary and race runs), and decide whether R2/R10 are closed.
 
 ## Deferred gates and limitations
 
