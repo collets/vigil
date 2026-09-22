@@ -69,7 +69,7 @@ No immediate answer is required to begin implementation. A plan may be autonomou
 - [ ] 5.3 recovery and controls complete.
   - Implemented and independently accepted offline through `a182152`: durable controls, verified multi-repository checkpoints, scoped clear/restore, exact/fresh recovery and cumulative budgets; R1–R10 are closed. Pending completion gate: qualified live recovery combinations.
 - [ ] 5.4 quality and acceptance complete.
-  - R1–R10 are remediated in the implementing-agent submission through `253efd2`: fixture-only contained/fail-closed checks, evaluated-copy integrity, terminal-transaction budget accounting, populated-v12 source reconciliation, stop-fenced reviews/assessments and epoch/state-fenced task/plan acceptance. Pending completion gates: independent follow-up review, qualified live review/runtime routes and real user/manual decisions.
+  - R1–R10 are remediated in the implementing-agent submission through `49b9fbb`: fixture-only contained/fail-closed checks, Linux subreaper descendant reaping, umask-independent copied modes, evaluated-copy integrity, terminal-transaction budget accounting, populated-v12 source reconciliation, stop-fenced reviews/assessments and epoch/state-fenced task/plan acceptance. Pending completion gates: independent follow-up review, qualified live review/runtime routes and real user/manual decisions.
 - [ ] 5.5 interactive workflow and planning complete.
 - [ ] 5.6 delivery and finalization complete.
 - [ ] 5.7 accepted milestone demonstrated, limitations recorded.
