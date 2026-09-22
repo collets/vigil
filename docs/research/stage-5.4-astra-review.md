@@ -1,6 +1,6 @@
 # Stage 5.4 independent security/correctness review
 
-Latest verdict: [follow-up of 0993a24](#independent-follow-up-of-0993a24) leaves R2/R5 open (P1), R8 open for upgrades (P2), and adds R10 (P2). R1/R3/R4/R6/R7/R9 are closed at the reported offline scope. Earlier sections are historical.
+Latest verdict: [follow-up of 253efd2](#independent-follow-up-of-253efd2) leaves R2 (P1) and R10 (P2) open. R1/R3/R4/R5/R6/R7/R8/R9 are closed for the reported offline defects. Earlier sections are historical.
 
 Date: 2026-09-22. Reviewed `4b48737..405b8c9`; implementation head `03f65e8`.
 
@@ -167,3 +167,44 @@ Required correction: choose a consistent, documented source-mode equivalence pol
 - Historical migration files are unchanged in the remediation diff; only migration 013 was added. The independent populated-v12 probe above exposes a semantic preservation gap despite the passing submitted migration tests.
 - Native macOS results remain the implementer's submitted evidence for `0993a24776404dac00df39ca8d25d2c2c1c2f68f`, bundle `5e0cb97c4b9ea9a6c5a209af502075b648e010aecf6bee8704a55eaf8d3bb874`; native tests were not independently rerun here.
 - Remediate R2/R5/R8 and R10, retain the six closed findings' safeguards, and request independent follow-up. Do not begin Stage 5.5, enable production dispatch, incur extra spending or push. No models, paid/provider calls, Docker, hosting, real-checkout recovery or production activation occurred during this review.
+
+## Independent follow-up of 253efd2
+
+Date: 2026-09-22. Reviewed implementation `ff0d9c0..253efd2` and documentation `e9056ce`.
+
+**Verdict: changes requested. R2 remains P1 and R10 remains P2. R5 and R8 are now closed for the reported defects; R1/R3/R4/R6/R7/R9 remain closed.** Stage 5.4 is not accepted. Production dispatch remains disabled.
+
+R5 now charges through post-processing/artifact work and checks exhaustion with current ledger values inside the terminal transaction for checks, reviews and assessments. R8's forward migration 014 restores observed assessment-source reservations and conservatively reconstructs missing legacy timing/uncertainty; the populated-v12 regression suite covers observed and unfinished sources. These fixes should be retained.
+
+### R2 remains open — P1: a clean-environment descendant can evade polling
+
+Locations: `internal/checks/process_tracker_linux.go:14–19,32–57`; `internal/checks/process_tracker.go:44–64,100–104`; `internal/checks/runner.go:437–439`.
+
+The Linux containment verdict treats successful `/proc` enumeration as reliable tracking. It discovers children either through sampled ancestry or an inherited environment marker. The marker is not immutable: a child can start with an empty environment, and after its parent exits the ancestry relation disappears. A detached child created and orphaned between samples is therefore absent from both discovery mechanisms. `unresolvedProcessFork` always returns false on Linux, so the incomplete tracked set can still yield `contained=true` and a passing check.
+
+`TestStage54FinalCleanEnvironmentEscape` starts a disposable helper which creates only `/bin/sleep 20` with `Setsid:true` and an explicitly empty environment, writes its PID, and exits. In the ordinary focused run, attempt zero returned `pass` with the child still alive. The probe kills only that exact test-owned child. This is the previously reported detached-child scenario with environment inheritance removed; it does not require guessing a token or changing host configuration.
+
+The false-proof propagation on explicit `contained=false` is fixed in this submission, and the inherited-marker case is covered. The remaining issue is generating a false positive containment proof. Darwin's `groupHadDescendants || tracker.hasDescendants()` also cannot by itself establish that every fork was accounted for; observing one descendant does not resolve an unknown additional fork. That Darwin observation is source analysis, not a native reproduction from this review.
+
+Required correction: do not promote sampling plus mutable environment data into authoritative absence. Use an inherited lifecycle boundary whose membership cannot escape this way, or explicitly fail closed for the unsupported host execution route. Preserve uncertainty/ownership rather than declaring success from a partial tracked set. Do not merely increase polling frequency. Cover empty/filtered environments, rapid reparenting and multiple forks, and bind any process handles used for signalling to process identity rather than assuming a PID can never be reused.
+
+### R10 remains open — P2: file creation still applies the caller's umask
+
+Location: `internal/checks/runner.go:267–276`.
+
+Passing the source mode to `os.OpenFile` fixes the earlier unconditional `&0700` mask only when the process umask permits those bits. Under a common restrictive umask `077`, a `0644` source is still created as `0600`. Directories receive a later chmod but regular files do not, so copy equivalence again rejects ordinary unchanged source.
+
+`TestStage54FinalRestrictiveUmask` sets a disposable source to `0644`, temporarily changes only the test process umask to `077`, invokes the passing fixture check, then restores the prior umask. The result is `source_mutated`. No host-wide setting or user checkout is changed.
+
+Required correction: apply the chosen source permission policy explicitly to the opened destination file after creation, checking errors, rather than relying on creation mode alone. Preserve private temporary-directory isolation and source-integrity validation. Test `0600`, `0644` and `0755` under both permissive and restrictive masks.
+
+### Evidence and next handoff
+
+The retained source is `stage-5.4-review/final_followup_test.go.txt`; copy it to `internal/quality/stage54_final_review_test.go` and run `go test ./internal/quality -run TestStage54Final -count=1 -v` with the pinned environment. The escape probe is scheduling-sensitive and bounded to twelve attempts; a pass under slower instrumentation does not prove absence tracking sound. Its helper only exists to launch an owned disposable sleep process. Temporary executable copies are removed after validation.
+
+Native macOS evidence remains the implementer's submission for `253efd2`, bundle `d7f606d316d05e56c22e9a5e84badeb6088c54497cafe164daedec73e86dcc7a`; this follow-up did not independently execute on the Mac. No models/providers, purchases, Docker qualification, hosting, real checkout recovery, pushes, production activation or Stage 5.5 work occurred.
+
+Next agent: fix R2 and R10, retain all closed safeguards and forward migrations, add the two edge cases to permanent coverage, and request another independent follow-up. Do not treat process polling or passing synthetic suites as live containment qualification.
+
+
+Final validation for this follow-up: independent submitted-suite `make check`, `make check-race`, `make build`, `make build-boundary` and four cross-builds passed. All permanent `TestStage54Followup` cases passed twice under `-race`. The restrictive-umask probe failed in ordinary and both race repetitions. The clean-environment escape failed on attempt zero in the initial ordinary run, then on attempts zero and four in subsequent ordinary repetitions; both race-instrumented repetitions exhausted twelve attempts without reproducing it. The scheduling-sensitive limitation is retained explicitly, rather than treating race-test passage as proof. No data-race diagnostics were reported. Executable probe copies were removed; only review documentation and inert reproduction source remain changed.

@@ -1,6 +1,6 @@
 # Next steps and resumption plan
 
-Updated: 2026-09-22. Stages 3/3.5 investigations and Stage 4 specification are complete. Stage 5.1 offline qualification/review fixes and the independently accepted Stage 5.2 offline implementation are complete at their stated scope. Stage 5.3 through `a182152` is independently accepted offline, with R1–R10 closed. Stage 5.4 follow-up R2/R5/R8/R10 is remediated through `253efd2` with permanent Linux/Darwin coverage, but remains pending independent review. Live production qualification remains pending.
+Updated: 2026-09-22. Stage 5.3 remains independently accepted offline. Stage 5.4 remediation through `253efd2` has been independently reviewed: R2 (P1) and R10 (P2) remain open; R1/R3/R4/R5/R6/R7/R8/R9 are closed for their reported offline defects. Live production qualification remains pending.
 
 Status: Stage 3 Linux experiments and adapter improvements are complete, with explicit unresolved qualification gates. See [Stage 3 results](research/stage-3-results.md). Both Stage 3 and Stage 4 plans were prepared before implementation. Stage 4 is complete: [core specification](core-spec.md), [validated draft schemas](spec/project.sql), and [Stage 5 backlog/requirements map](stage-5-plan.md). [Stage 3.5 macOS checks](research/stage-3.5-results.md) are also complete: basic runtime behavior passed, but both harnesses left writers after abrupt loss and strict production containment remains unsupported.
 
@@ -8,7 +8,7 @@ Status: Stage 3 Linux experiments and adapter improvements are complete, with ex
 
 Follow-up [Stage 5.1 validation](research/stage-5.1-astra-review.md) confirms R1–R4 are resolved. The [Stage 5.2 follow-up review](research/stage-5.2-astra-review.md#independent-follow-up-acceptance-of-d34f894) closes R6/R8 at `d34f894`, with R1–R5, R7 and R9 remaining closed. The offline implementation review is accepted. Independent Linux full/race/build/cross-build and retained budget/wait reproductions pass. Production dispatch stays disabled pending live qualification.
 
-The next action is independent review of the [Stage 5.4 R2/R5/R8/R10 remediation](research/stage-5.4-astra-review.md#independent-follow-up-of-0993a24) over `ff0d9c0..253efd2`. Re-run the retained and permanent probes, audit migration 014 and the Darwin fail-closed fork path, and preserve the six previously closed findings. Do not begin Stage 5.5. Stage 5.3 remains accepted offline. All live qualification gates remain open and production dispatch stays disabled.
+The next action is to fix [Stage 5.4 R2 and R10](research/stage-5.4-astra-review.md#independent-follow-up-of-253efd2): clean-environment detached children can evade containment, and restrictive umasks still alter copied file permissions. Use the retained `final_followup_test.go.txt` probes and preserve all closed safeguards. Request independent follow-up afterward. Stage 5.4 remains unaccepted; do not start Stage 5.5 or enable production dispatch.
 
 The user has answered the setup questions for 5.1–5.3: existing Codex included subscription usage is authorized after verifying no additional charges (otherwise defer live Codex); use existing local llama; demonstrate repository execution only in disposable repositories; and perform destructive recovery tests only in agent-owned disposable fixtures. Preserve real checkout changes and defer ambiguous real recovery. See the confirmed decisions in each plan and [pending decisions](pending-decisions.md); do not ask for these permissions again.
 
@@ -20,7 +20,7 @@ The user has answered the setup questions for 5.1–5.3: existing Codex included
 
 Suggested independent-review handoff prompt:
 
-> Independently review Stage 5.4 follow-up remediation `ff0d9c0..253efd2` against R2/R5/R8/R10 in `docs/research/stage-5.4-astra-review.md#independent-follow-up-of-0993a24`. Re-run the retained/permanent probes twice under race, verify migration 014 on populated v12 observed/failed/executing assessment states, audit terminal budget charging and Darwin detached-session uncertainty, and retain R1/R3/R4/R6/R7/R9. Leave production disabled and do not begin Stage 5.5.
+> Remediate remaining Stage 5.4 R2 (P1) and R10 (P2) from `docs/research/stage-5.4-astra-review.md#independent-follow-up-of-253efd2`. Start at `253efd2`/`e9056ce` plus this review, retain the closed budget/migration/acceptance fixes, and use the inert `docs/research/stage-5.4-review/final_followup_test.go.txt` probes. Do not treat mutable environment markers and sampled ancestry as complete containment proof. Validate permissions under restrictive umasks, preserve historical migrations, and request independent follow-up. No paid calls, production activation, pushes or Stage 5.5 work.
 
 ## Current state
 

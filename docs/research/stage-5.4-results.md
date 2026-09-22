@@ -4,7 +4,7 @@ Date: 2026-09-22
 
 Scope: offline implementation and fixture validation only
 
-Status: R2/R5/R8/R10 follow-up remediation is implemented through `253efd2`; R1/R3/R4/R6/R7/R9 remain closed at their reported offline scope. Stage 5.4 remains unaccepted pending independent review. See the [follow-up findings and retained probes](stage-5.4-astra-review.md#independent-follow-up-of-0993a24). This document reports implementing-agent evidence, not self-acceptance.
+Status: independent follow-up of `253efd2` leaves **R2 (P1) and R10 (P2) open**. R5/R8 are now closed, alongside R1/R3/R4/R6/R7/R9 at the reported offline scope. Stage 5.4 remains unaccepted. See the [latest findings and retained probes](stage-5.4-astra-review.md#independent-follow-up-of-253efd2). Implementation claims below are subject to this verdict.
 
 Production dispatch: disabled
 
