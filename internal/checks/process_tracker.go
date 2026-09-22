@@ -101,3 +101,7 @@ func (t *processTracker) reliable() bool {
 	defer t.mu.Unlock()
 	return t.scanErr == nil
 }
+
+func (t *processTracker) close() {
+	closeProcessContainment(t.root)
+}

@@ -379,13 +379,26 @@ func runContained(ctx context.Context, command *exec.Cmd, output io.Writer) (err
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	marker := "VIGIL_CHECK_CONTAINMENT_ID=" + store.ID()
 	command.Env = append(command.Env, marker)
+	if err = prepareProcessContainment(command); err != nil {
+		reader.Close()
+		writer.Close()
+		return err, false
+	}
 	if err = command.Start(); err != nil {
 		reader.Close()
 		writer.Close()
 		return err, true
 	}
 	pid := command.Process.Pid
+	if err = activateProcessContainment(pid); err != nil {
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		_ = command.Wait()
+		reader.Close()
+		writer.Close()
+		return err, false
+	}
 	tracker := newProcessTracker(pid, marker)
+	defer tracker.close()
 	tracker.start()
 	_ = writer.Close()
 	drained := make(chan struct{})
