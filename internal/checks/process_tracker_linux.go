@@ -3,6 +3,7 @@
 package checks
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -11,10 +12,50 @@ import (
 	"strings"
 )
 
-func prepareProcessContainment(_ *exec.Cmd) error { return nil }
-func activateProcessContainment(_ int) error      { return nil }
-func closeProcessContainment(_ int)               {}
-func unresolvedProcessFork(_ int) bool            { return false }
+const linuxContainmentFailureExit = 125
+
+type supervisorCommand struct {
+	Path string   `json:"path"`
+	Args []string `json:"args"`
+	Dir  string   `json:"dir"`
+	Env  []string `json:"env"`
+}
+
+func prepareProcessContainment(command *exec.Cmd) error {
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	read, write, err := os.Pipe()
+	if err != nil {
+		return err
+	}
+	config, err := json.Marshal(supervisorCommand{Path: command.Path, Args: command.Args, Dir: command.Dir, Env: command.Env})
+	if err != nil {
+		read.Close()
+		write.Close()
+		return err
+	}
+	// The supervisor is a subreaper. Detached descendants are adopted by it,
+	// rather than init, and can therefore be synchronously killed and reaped.
+	command.ExtraFiles = append(command.ExtraFiles, read)
+	command.Env = append(command.Env, "VIGIL_CHECK_SUPERVISOR=1")
+	command.Path = executable
+	command.Args = []string{executable, "-vigil-check-supervisor"}
+	command.Env = append(command.Env, "VIGIL_CHECK_SUPERVISOR_CONFIG_FD=3")
+	go func() {
+		_, _ = write.Write(config)
+		_ = write.Close()
+	}()
+	return nil
+}
+
+func activateProcessContainment(_ int) error { return nil }
+func closeProcessContainment(_ int)          {}
+func unresolvedProcessFork(_ int) bool       { return false }
+func processContainmentFailed(command *exec.Cmd) bool {
+	return command.ProcessState != nil && command.ProcessState.ExitCode() == linuxContainmentFailureExit
+}
 
 func discoverCheckProcesses(known map[int]bool, marker string) ([]int, error) {
 	entries, err := os.ReadDir("/proc")

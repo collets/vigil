@@ -273,7 +273,12 @@ func copyProject(source, destination string) error {
 		if copyErr != nil {
 			return copyErr
 		}
-		return closeErr
+		if closeErr != nil {
+			return closeErr
+		}
+		// Creation honors the process umask. Restore the source mode explicitly so
+		// an isolated copy has the same source evidence under restrictive umasks.
+		return os.Chmod(target, info.Mode().Perm())
 	})
 	if err != nil {
 		return err
@@ -420,6 +425,7 @@ func runContained(ctx context.Context, command *exec.Cmd, output io.Writer) (err
 			runErr = <-waited
 		}
 	}
+	supervisorContainmentFailed := processContainmentFailed(command)
 	tracker.stop()
 	groupHadDescendants := syscall.Kill(-pid, 0) == nil
 	// A successful direct parent may have children in its process group or in
@@ -436,7 +442,7 @@ func runContained(ctx context.Context, command *exec.Cmd, output io.Writer) (err
 	}
 	lifecycleStopped := !tracker.alive()
 	reliable := tracker.reliable() && (!unresolvedProcessFork(pid) || groupHadDescendants || tracker.hasDescendants())
-	contained := lifecycleStopped && reliable
+	contained := lifecycleStopped && reliable && !supervisorContainmentFailed
 	_ = reader.Close()
 	drainedOutput := true
 	select {

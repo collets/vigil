@@ -32,6 +32,8 @@ func prepareProcessContainment(command *exec.Cmd) error {
 	return nil
 }
 
+func processContainmentFailed(_ *exec.Cmd) bool { return false }
+
 // The fixed wrapper stops before exec, so NOTE_FORK is registered before
 // approved code can fork. Current Darwin kernels do not support NOTE_TRACK;
 // an observed fork that cannot be tied to a live group or discovered PID is
