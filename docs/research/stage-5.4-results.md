@@ -4,7 +4,7 @@ Date: 2026-09-22
 
 Scope: offline implementation and fixture validation only
 
-Status: implementation through `03f65e8` independently reviewed on 2026-09-22; **changes requested: seven P1 and two P2 findings (R1–R9)**. Stage 5.4 is unaccepted. See the [independent review and retained probes](stage-5.4-astra-review.md). The implementation claims below are superseded where that review demonstrates a defect.
+Status: initial implementation through `03f65e8` received seven P1 and two P2 findings. All R1–R9 remediations are implemented and validated through `872be1a`; Stage 5.4 remains **unaccepted pending independent follow-up review**. See the [independent review and retained probes](stage-5.4-astra-review.md).
 
 Production dispatch: disabled
 
@@ -21,8 +21,27 @@ Stage 5.4 was implemented as these local commits:
 | `15b8c66` | Add bounded, owner-fenced exhaustion assessments and migration 012 |
 | `e992685` | Add explicit instruction-freshness and source/criteria/check-definition acceptance-race fixtures |
 | `03f65e8` | Hold live owner fences through the full check effect and reject ambient executable lookup |
+| `405b8c9` | Initial implementation handoff |
+| `c224826` | Preserve the independent R1–R9 report and inert reproduction source separately |
+| `872be1a` | Close R1–R9 with migration 013, permanent probes and extended failure-path coverage |
 
-Review range: `4b48737..03f65e8`. No commit was pushed and no publication or production activation occurred.
+Initial review range: `4b48737..03f65e8`. Follow-up remediation range: `c224826..872be1a`. No commit was pushed and no publication or production activation occurred.
+
+## Independent-review remediation
+
+| Finding | Implemented correction |
+| --- | --- |
+| R1 | Core check admission now accepts only marked disposable fixtures. `qualified_runtime` fails closed until a real qualified execution boundary exists; actor strings cannot substitute for qualification. |
+| R2 | Checks run in a dedicated Unix process group with bounded pipe draining and TERM/KILL retirement proof. Claims are released only after terminal persistence and containment; uncertain paths retain them. |
+| R3 | The isolated source tree is digested before and after copying and after execution, with only declared required-output paths excluded. A copied-source mutation records `source_mutated`; the original enrolled set is still re-observed. |
+| R4 | Review and assessment terminal state changes are conditional on the exact task revision and allowed in-progress state. Late pass/failure results persist without overwriting stop, request-changes or criteria authority. |
+| R5 | Migration 013 adds durable per-effect quality budget segments. Effect start and segment reservation are atomic; every terminal path charges the full interval, uncertain recovery charges unknown time, and unresolved effects block fresh target dispatch across scopes. |
+| R6 | Migration 013 adds a comprehensive quality-authority epoch advanced by every relevant mutator. Acceptance binds the final gate manifest, compares the epoch before/after reads and inside its immediate write transaction, and records a raced attempt on concurrent evidence changes. |
+| R7 | Staleness explicitly invalidates current acceptances. Plan gates re-observe every child scope, require a compatible current acceptance, recursively revalidate child gates/artifacts, and refuse stale children. A later task check can reopen an invalidated accepted task without discarding harmless evidence. |
+| R8 | The exact task/exhaustion source is reserved before assessment dispatch, independently of command ID. Observed or uncertain sources cannot call the assessor again; failures are charged and non-replayable. |
+| R9 | Exact baseline authorization reconciles `needs_repair` back to `checking` only when no already-observed current check is blocking. Missing required checks still have to run and any new failure remains blocking. |
+
+Migration 013 is forward-only. It adds immutable single-close budget segments, single-resolution assessment-source reservations and the acceptance authority epoch without changing migrations 001–012 or their recorded digests.
 
 ## Implemented authority model
 
@@ -46,7 +65,7 @@ Migration 011 replaces the inherited global uniqueness of `execution_results.res
 
 Terminal check statuses are `pass`, `fail`, `timeout`, `interrupted`, `error`, `source_mutated`, `missing_output` and `output_overflow`. A baseline exception is explicit immutable fixture-human/human authority bound to the check definition, base fingerprint and exact normalized failure identities. It classifies only those known identities as `accepted_baseline`; an additional identity still blocks.
 
-Check, review and assessment intent is durable before its external effect. Process/reviewer/assessor execution occurs outside database transactions while a live owner holds exact repository claims/fences. An `executing` effect found after restart becomes `uncertain`; it is never reset or automatically replayed. A paused project cannot dispatch a new check or review. Task effects charge the existing cumulative task ledger; plan-wide effects charge the separate plan-services ledger.
+Check, review and assessment intent is durable before its external effect. Process/reviewer/assessor execution occurs outside database transactions while a live owner holds exact repository claims/fences. Budget timing begins durably with the executing transition. An `executing` effect found after restart becomes `uncertain`, charges its conservative unknown interval and is never reset or automatically replayed; any unresolved effect for the target blocks fresh dispatch across scopes. A paused project cannot dispatch a new check or review. Task effects charge the existing cumulative task ledger; plan-wide effects charge the separate plan-services ledger.
 
 ### Fresh read-only review, repair and exhaustion
 
@@ -54,15 +73,15 @@ Check, review and assessment intent is durable before its external effect. Proce
 
 Repository mutation during review produces `write_denied`. The reviewer has no code-writing, acceptance, publishing or delivery authority. Rejection routes to the existing Stage 5.3 repair preparation path; repair count and task ledger are cumulative. Source or definition changes require fresh checks and a distinct fresh review.
 
-A fixture-only bounded assessment may inspect a persisted repair or budget exhaustion. It runs under current owner fences, charges the same task ledger, is unique for the exact scope/source and may return only `clarify`, `revise_or_split`, `eligible_reassignment` or `remain_blocked`. It leaves the task blocked and cannot change criteria, increase budgets, accept partial work, create gate evidence or authorize further spending. No assessment starts once the ledger is exhausted.
+A fixture-only bounded assessment may inspect a persisted repair or budget exhaustion. It runs under current owner fences, charges the same task ledger, reserves the exact task/source before invocation and may return only `clarify`, `revise_or_split`, `eligible_reassignment` or `remain_blocked`. It leaves the task blocked and cannot change criteria, increase budgets, accept partial work, create gate evidence or authorize further spending. No assessment starts once the ledger is exhausted; failure leaves a charged uncertain source that cannot be replayed.
 
 ### Manual/human and atomic acceptance
 
 Manual outcomes are `pending`, `pass`, `fail` and `cannot_verify`; only an explicit current `pass` satisfies a manual criterion. Human decisions are `accept`, `request_changes`, `clarify` and `stop`. Both bind the exact scope. A human-acceptance setting cannot manufacture a manual pass. `task.criteria.revise` requires explicit human revision authority, advances task and plan revisions, retires any current acceptance and invalidates the prior evidence scope.
 
-Task acceptance holds current claims and re-observes repository bytes, then atomically rechecks all revisions, checks, review/findings, manual results, configured human decision, budgets, artifacts and unresolved effects. A mismatch records a rejected or raced attempt rather than accepting. Only this path moves a task to `accepted`. Once all tasks are accepted the plan enters `verifying`.
+Task acceptance holds current claims and re-observes repository bytes, evaluates the exact final manifest under a comprehensive quality-authority epoch, then compares that epoch inside the immediate acceptance transaction. This atomically covers revisions, checks, review/findings, manual results, configured human decision, budgets, artifacts and unresolved effects. A mismatch records a rejected or raced attempt rather than accepting. Only this path moves a task to `accepted`. Once all tasks are accepted the plan enters `verifying`.
 
-Plan-wide checks/review/manual/human evidence uses an exact plan scope and the plan-services ledger. Atomic plan acceptance rechecks every current task acceptance and plan gate, then moves only to `finalizing`. No acceptance path creates a delivery, commit, push or publication authority.
+Plan-wide checks/review/manual/human evidence uses an exact plan scope and the plan-services ledger. Atomic plan acceptance re-observes and revalidates every child task scope, gate, artifact and non-invalidated acceptance under the same epoch, then moves only to `finalizing`. No acceptance path creates a delivery, commit, push or publication authority.
 
 ## Permanent fixture coverage
 
@@ -79,6 +98,7 @@ The default suite requires no model, Docker, hosting service or credential. It c
 - pause denial for new check and reviewer dispatch, and live-owner release blocked for the complete check interval;
 - a database restart inside a complete failure → Stage 5.3 repair → fresh passing check → distinct fresh review → fixture manual/human task acceptance → plan-wide gates → `finalizing` cycle;
 - an assertion that the completed acceptance cycle creates no delivery.
+- all nine independent R1–R9 reproductions as permanent tests, plus inherited-output descendant retirement, late failing-review stop preservation and failed-assessment charge/non-replay coverage.
 
 The fixture actors `fixture`, `fixture_human` and `fixture_core` are deliberately closed and accepted only for repositories carrying the disposable-fixture marker. They are not real check qualification, review or human acceptance.
 
@@ -86,7 +106,7 @@ The fixture actors `fixture`, `fixture_human` and `fixture_core` are deliberatel
 
 ### Linux/WSL
 
-The pre-implementation baseline `make check` passed at `4b48737`. After the final implementation commit, the following combined gate passed:
+The pre-remediation baseline `make check` passed after the review-artifact commit `c224826`. At exact remediation commit `872be1a7f94ed732d7333246524903a8e8441391`, the following gates passed:
 
 ```text
 make check
@@ -97,7 +117,7 @@ make cross-build
 git diff --check
 ```
 
-`make check-race` includes the new `internal/checks`, `internal/review` and `internal/quality` packages. Cross-build completed `linux/amd64`, `linux/arm64`, `darwin/amd64` and `darwin/arm64`. The first restricted-sandbox rerun could not open the existing boundary test's loopback listener; the same full command was then run with its normal loopback/process permissions and passed. No model, Docker or hosting call ran.
+`make check-race` includes `internal/checks`, `internal/review` and `internal/quality`. The permanent Stage 5.4 review probes also passed twice under `-race`. Cross-build completed `linux/amd64`, `linux/arm64`, `darwin/amd64` and `darwin/arm64`. Full tests used normal loopback/process permissions for the existing boundary cases. No model, Docker or hosting call ran.
 
 ### Native macOS
 
@@ -105,18 +125,18 @@ The previously authorized host was available. An isolated temporary checkout was
 
 | Item | Exact value |
 | --- | --- |
-| Commit | `03f65e8bc2d1e7ec9234df8e81377dd53c950671` |
-| Bundle SHA-256 | `d2dfeb11e5cd4b004ca18cd95b4f06daa18edcce32bb7cafb1a5aba1ea6c509d` |
+| Commit | `872be1a7f94ed732d7333246524903a8e8441391` |
+| Bundle SHA-256 | `ed0fb94f2339133829ffee1368882c6642d926dbdb8df558fb97d738d35feea9` |
 | Host | Darwin 25.6.0 arm64 |
 | Go | `go1.27.1 darwin/arm64` |
-| Commands | `make check`; `make check-race`; `make build` |
+| Commands | focused permanent R1–R9 probes; `make check`; `make check-race`; `make build` |
 | Result | all passed |
 
-The temporary Mac directory `/tmp/vigil-stage54.BFYvfH` and local bundle `/tmp/vigil-stage54-03f65e8.bundle` were removed and verified absent. Only resources created for this validation were cleaned up.
+The temporary Mac directory `/tmp/vigil-stage54-872be1a.CyTMoy` and remote bundle were removed and verified absent after making only its downloaded module cache writable. Both local temporary bundles were removed. The normal Mac checkout was not accessed or changed.
 
 ## Deferred gates and limitations
 
-- Stage 5.4 requires remediation of independent review R1–R9 and follow-up acceptance; this implementation report is not self-acceptance.
+- Stage 5.4 remediation requires independent follow-up acceptance; this implementation report is not self-acceptance and does not close R1–R9 by assertion.
 - Production check/model/reviewer dispatch remains disabled. No real fresh model review was attempted.
 - Safe contained Codex subscription routing, effective Luna/low selection, provider-idle proof, shared Mac/WSL capacity authority and live recovery across advertised harness/platform combinations remain pending. No paid fallback or larger-model fallback is authorized.
 - Real project repository/base/branch/check choices, baseline exceptions, criteria changes, manual functional verification and task/plan human acceptance remain explicit user gates. No such evidence was fabricated.
@@ -125,14 +145,14 @@ The temporary Mac directory `/tmp/vigil-stage54.BFYvfH` and local bundle `/tmp/v
 
 ## Independent review instructions
 
-Review `4b48737..03f65e8`; treat `7333891` as the pre-code plan, `63726f4`/`15b8c66` as primary implementation, `e992685` as authority-race/freshness coverage and `03f65e8` as the final check-boundary remediation. Begin from the accepted Stage 5.3 contracts and explicitly preserve R1–R10.
+Review remediation range `c224826..872be1a` against the original findings in `docs/research/stage-5.4-astra-review.md`. The initial implementation range remains `4b48737..03f65e8`. Begin from the accepted Stage 5.3 contracts and explicitly preserve R1–R10.
 
-1. Verify migrations 010–012 on both a fresh database and a populated migration-009 database. Confirm historical migration bytes/digests are unchanged, immutable triggers hold, duplicate result content across distinct runs is allowed, and supervisor assessments are uniquely scope/source bound.
+1. Verify migrations 010–013 on both a fresh database and populated older databases. Confirm historical migration bytes/digests are unchanged, migration 013 rollback is atomic, its segment/reservation guards hold, duplicate result content remains allowed, and assessment sources are unique per exact task/exhaustion across scope changes.
 2. Audit `internal/quality/scope.go` field by field. Reproduce repository, task/plan revision, criteria/definition, configuration/check-set, reviewer profile/instruction and artifact invalidation. Confirm a harmless plan reorder does not stale task evidence but an enclosing restriction change does.
-3. Audit `internal/checks/runner.go` for argv/cwd/environment authority, isolated copy behavior, output bounding, required outputs, source re-observation, owner fences, effect ordering and restart uncertainty. Reproduce every terminal status and artifact tamper case. Verify an exact baseline exception cannot cover a new failure.
+3. Audit `internal/checks/runner.go` for fixture-only admission before effects, argv/cwd/environment authority, copy equivalence, post-check source integrity, process-group retirement, bounded inherited-output draining, required outputs, owner-release proof and restart uncertainty. Verify unsupported `qualified_runtime` dispatch starts no child and an exact baseline exception cannot cover a new failure.
 4. Audit `internal/review/review.go` for distinct identities, exact manifests, closed decoding, deterministic thresholds, owner fences and write denial. Confirm suggestions cannot block and reviewer output cannot grant acceptance or publishing authority.
 5. Trace rejection into the existing Stage 5.3 repair path. Confirm repair counters and ledgers never reset, changed source requires fresh checks/review, and migration 011 does not weaken run identity.
-6. Audit `internal/quality/assessment.go`. Confirm only persisted exhaustion is eligible, the same task ledger bounds it, the task remains blocked and none of its four actions can change criteria, accept partial work, increase budget or authorize spending.
-7. Audit manual/human commands and `Acceptor`. Exercise code, criteria, definition/config/profile and artifact races immediately before acceptance. Verify only current explicit manual `pass` satisfies a manual gate and plan acceptance uses the plan-services ledger and creates no delivery.
+6. Audit `internal/quality/assessment.go`. Confirm exact source reservation precedes invocation, second/failed/uncertain requests cannot invoke again, every failure is charged, the task remains blocked and no action can weaken criteria or spending limits.
+7. Audit manual/human commands and `Acceptor`. Re-run the competing-WAL pending-manual probe at the gate-read/write-transaction boundary. Exercise code, criteria, definition/config/profile, stale child acceptance and artifact races. Confirm the committed manifest names the final selected gates, only current explicit manual `pass` satisfies a manual gate, and plan acceptance creates no delivery.
 8. Run `make check`, `make check-race`, `make build`, `make build-boundary`, `make cross-build` and `git diff --check` without models, Docker or hosting. Re-run native process/filesystem/locking validation if review changes those paths.
 9. Report findings independently. If accepted offline, update the review record and shared status while leaving live qualification and real human/manual gates pending. Do not enable production dispatch, push, publish, self-authorize recovery, or begin Stage 5.5 as part of the review.

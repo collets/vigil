@@ -127,6 +127,7 @@ func TestProjectV8UpgradePreservesRecoverySnapshotsAndPermitsEqualDigests(t *tes
 	statements := []string{
 		"PRAGMA foreign_keys=OFF",
 		"DROP TRIGGER quality_authority_config_v2",
+		"DROP TRIGGER quality_authority_project_update_v2",
 		"DROP TRIGGER quality_authority_profile_v2",
 		"DROP TRIGGER quality_authority_plan_revision_v2",
 		"DROP TRIGGER quality_authority_task_revision_v2",
@@ -216,6 +217,7 @@ func TestProjectV8UpgradePreservesRecoverySnapshotsAndPermitsEqualDigests(t *tes
 
 var qualityAuthorityTriggers = []string{
 	"quality_authority_config_v2", "quality_authority_profile_v2",
+	"quality_authority_project_update_v2",
 	"quality_authority_plan_revision_v2", "quality_authority_task_revision_v2",
 	"quality_authority_effect_insert_v2", "quality_authority_effect_update_v2",
 	"quality_authority_check_v2", "quality_authority_baseline_v2",

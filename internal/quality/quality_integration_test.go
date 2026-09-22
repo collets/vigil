@@ -563,6 +563,11 @@ func TestStaleCriteriaProfileAndAcceptanceRace(t *testing.T) {
 			config.CheckDefinitions[0].MaxOutputBytes = 2048
 			command(t, r.engine, "project.configure", config)
 		}},
+		{"project-pause", func(r *fixture) {
+			if _, err := r.engine.Pause(context.Background(), store.ID(), projectRevision(t, r.engine)); err != nil {
+				t.Fatal(err)
+			}
+		}},
 	}
 	for _, race := range races {
 		t.Run("acceptance-race-"+race.name, func(t *testing.T) {

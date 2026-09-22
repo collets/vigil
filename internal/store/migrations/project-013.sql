@@ -35,6 +35,8 @@ CREATE TABLE quality_assessment_sources_v2 (
 
 CREATE TRIGGER quality_authority_config_v2 AFTER INSERT ON project_configurations
  BEGIN UPDATE quality_authority_v2 SET revision=revision+1,updated_at=unixepoch('subsec')*1000 WHERE singleton=1; END;
+CREATE TRIGGER quality_authority_project_update_v2 AFTER UPDATE ON project
+ BEGIN UPDATE quality_authority_v2 SET revision=revision+1,updated_at=unixepoch('subsec')*1000 WHERE singleton=1; END;
 CREATE TRIGGER quality_authority_profile_v2 AFTER INSERT ON profiles
  BEGIN UPDATE quality_authority_v2 SET revision=revision+1,updated_at=unixepoch('subsec')*1000 WHERE singleton=1; END;
 CREATE TRIGGER quality_authority_plan_revision_v2 AFTER INSERT ON plan_revisions

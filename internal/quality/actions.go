@@ -563,8 +563,21 @@ func (a *Acceptor) Accept(ctx context.Context, request AcceptanceRequest) (Accep
 			if outcome != "accepted" {
 				return map[string]any{"outcome": outcome, "reasons": finalReasons}, nil
 			}
-			var state string
+			var state, projectState string
+			if err := tx.QueryRowContext(ctx, "SELECT state FROM project WHERE id=?", a.Engine.ProjectID).Scan(&projectState); err != nil {
+				return nil, err
+			}
+			if projectState != "ready" {
+				return nil, errors.New("project state changed before acceptance")
+			}
 			if scope.Target.Kind == "task" {
+				var planState string
+				if err := tx.QueryRowContext(ctx, "SELECT state FROM plans WHERE id=? AND revision=?", scope.Target.PlanID, scope.PlanRevision).Scan(&planState); err != nil {
+					return nil, err
+				}
+				if planState != "active" {
+					return nil, errors.New("plan state changed before task acceptance")
+				}
 				if err := tx.QueryRowContext(ctx, "SELECT state FROM tasks WHERE id=? AND revision=?", scope.Target.TaskID, scope.TaskRevision).Scan(&state); err != nil {
 					return nil, err
 				}

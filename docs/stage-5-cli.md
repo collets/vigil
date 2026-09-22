@@ -329,7 +329,7 @@ An unsatisfied prerequisite blocks readiness. A human plan revision may set `sat
 
 ## Offline quality and acceptance commands
 
-The current commands require a committed regular `.vigil-disposable-fixture` marker and explicit fixture flags. They do not provide a production fallback. A task begins this sequence in `checking`; a plan begins it in `verifying` after all tasks are accepted.
+The current commands require a regular `.vigil-disposable-fixture` marker in every enrolled root and explicit fixture flags. Core admission rechecks the markers before durable effect preparation; a caller-supplied actor cannot bypass it. `qualified_runtime` and all production check/reviewer routes remain unavailable. A task begins this sequence in `checking`; a plan begins it in `verifying` after all tasks are accepted.
 
 Run every current required check by its definition ID. Add `--plan-wide` and use the plan ID as `TARGET_ID` for plan gates:
 
@@ -338,7 +338,7 @@ Run every current required check by its definition ID. Add `--plan-wide` and use
   --command-id check-001 --synthetic-fixture
 ```
 
-The runner copies enrolled source into an isolated workspace, executes the approved argv without a shell under the explicit environment/cwd/timeout, bounds output, verifies required outputs and re-fingerprints managed source. Nonzero exit, timeout, interruption, overflow, missing output, source mutation or missing/corrupt evidence cannot pass.
+The runner opens a durable budget segment with the executing effect, verifies its isolated copy against the enrolled source, executes the approved argv without a shell in a dedicated Unix process group under the explicit environment/cwd/timeout, bounds output and inherited-pipe draining, and proves group retirement before releasing owned claims. Only declared required-output paths may differ after execution. Nonzero exit, timeout, interruption, overflow, missing output, copied/original source mutation or missing/corrupt evidence cannot pass. A crash or persistence failure charges unknown time, leaves the effect uncertain and blocks a fresh check/review/assessment command for the target across scope changes; it is never automatically replayed.
 
 Supply a fresh fixture review in the closed schema; `SESSION_ID` and `NATIVE_ID` must be new, distinct from one another and from implementation/prior review identities:
 
@@ -355,7 +355,7 @@ Example `review.json`:
 {"schema_version":1,"decision":"pass","summary":"fixture review only","findings":[]}
 ```
 
-The application validates findings and derives blocking status from `review_blocking_severity`; reviewer claims cannot lower it. Review is read-only and has no code-writing, acceptance, publishing or delivery authority. A rejection routes the task to Stage 5.3's existing bounded `execution-followup-prepare --kind repair` flow; changed source requires fresh checks and a distinct fresh review without resetting the task ledger.
+The application validates findings and derives blocking status from `review_blocking_severity`; reviewer claims cannot lower it. Review is read-only and has no code-writing, acceptance, publishing or delivery authority. Terminal review/assessment evidence is retained, but its task transition is conditional on the exact revision and in-progress state, so a late result cannot overwrite a human stop or request-changes action. A rejection routes to Stage 5.3's bounded repair flow; changed source requires fresh checks and a distinct fresh review without resetting the ledger. An exact baseline exception may restore `checking` for remaining checks/review only when no already-observed current check remains blocking.
 
 Record each manual criterion and any configured human decision explicitly. Only manual `pass` satisfies a manual gate; a human `accept` does not manufacture it:
 
@@ -370,7 +370,7 @@ Record each manual criterion and any configured human decision explicitly. Only 
 
 Manual outcomes are `pending`, `pass`, `fail` or `cannot_verify`; decisions are `accept`, `request_changes`, `clarify` or `stop`. These offline commands always label their actor as fixture-human and are not evidence of real user acceptance.
 
-Finally, atomically recheck every current revision, fingerprint, artifact, gate, budget and unresolved effect:
+Finally, atomically recheck every current revision, fingerprint, artifact, selected gate, budget and unresolved effect. Acceptance builds the committed manifest under a quality-authority epoch and compares that epoch inside its immediate write transaction, so a pending/manual or other evidence commit between gate reads and acceptance records `raced` instead of accepting:
 
 ```sh
 ./bin/vigil project quality-accept PROJECT_ID TASK_ID \
@@ -379,7 +379,7 @@ Finally, atomically recheck every current revision, fingerprint, artifact, gate,
   --command-id accept-plan-001 --plan-wide --synthetic-fixture
 ```
 
-Task acceptance can move the completed task to `accepted`; once all tasks are accepted, the plan moves to `verifying`. Plan checks/review/manual/decision commands also use `--plan-wide` and charge the separate plan-services ledger. Plan acceptance moves only to `finalizing`. Neither acceptance command authorizes or performs a commit, push, publication or delivery.
+Task acceptance can move the completed task to `accepted`; once all tasks are accepted, the plan moves to `verifying`. Staleness invalidates the prior acceptance, and a later task check can reopen the task for fresh evidence. Plan checks/review/manual/decision commands use `--plan-wide` and charge the plan-services ledger. Plan acceptance re-observes each child task and revalidates its non-invalidated acceptance, current gates and artifacts before moving only to `finalizing`. Neither acceptance command authorizes or performs a commit, push, publication or delivery.
 
 
 ## Read-only repository discovery
