@@ -555,6 +555,37 @@ func (a *Acceptor) Accept(ctx context.Context, request AcceptanceRequest) (Accep
 				outcome = "raced"
 				finalReasons = append(finalReasons, "quality authority changed before acceptance transaction")
 			}
+			var state, projectState string
+			if err := tx.QueryRowContext(ctx, "SELECT state FROM project WHERE id=?", a.Engine.ProjectID).Scan(&projectState); err != nil {
+				return nil, err
+			}
+			if projectState != "ready" {
+				outcome = "raced"
+				finalReasons = append(finalReasons, "project state changed before acceptance")
+			}
+			if outcome == "accepted" && scope.Target.Kind == "task" {
+				var planState string
+				var planRevision, taskRevision int
+				if err := tx.QueryRowContext(ctx, "SELECT state,revision FROM plans WHERE id=?", scope.Target.PlanID).Scan(&planState, &planRevision); err != nil {
+					return nil, err
+				}
+				if err := tx.QueryRowContext(ctx, "SELECT state,revision FROM tasks WHERE id=?", scope.Target.TaskID).Scan(&state, &taskRevision); err != nil {
+					return nil, err
+				}
+				if planState != "active" || planRevision != scope.PlanRevision || taskRevision != scope.TaskRevision || state != "reviewing" && state != "awaiting_human" {
+					outcome = "raced"
+					finalReasons = append(finalReasons, "task or plan state/revision changed before acceptance")
+				}
+			} else if outcome == "accepted" {
+				var planRevision int
+				if err := tx.QueryRowContext(ctx, "SELECT state,revision FROM plans WHERE id=?", scope.Target.PlanID).Scan(&state, &planRevision); err != nil {
+					return nil, err
+				}
+				if state != "verifying" || planRevision != scope.PlanRevision {
+					outcome = "raced"
+					finalReasons = append(finalReasons, "plan state/revision changed before acceptance")
+				}
+			}
 			attemptID := store.ID()
 			reasonRaw, _ := json.Marshal(finalReasons)
 			if _, err := tx.ExecContext(ctx, `INSERT INTO quality_acceptance_attempts_v2(id,scope_id,target_kind,outcome,reasons_json,command_id,attempted_at) VALUES(?,?,?,?,?,?,?)`, attemptID, scope.ID, scope.Target.Kind, outcome, string(reasonRaw), request.CommandID, store.Now()); err != nil {
@@ -562,35 +593,6 @@ func (a *Acceptor) Accept(ctx context.Context, request AcceptanceRequest) (Accep
 			}
 			if outcome != "accepted" {
 				return map[string]any{"outcome": outcome, "reasons": finalReasons}, nil
-			}
-			var state, projectState string
-			if err := tx.QueryRowContext(ctx, "SELECT state FROM project WHERE id=?", a.Engine.ProjectID).Scan(&projectState); err != nil {
-				return nil, err
-			}
-			if projectState != "ready" {
-				return nil, errors.New("project state changed before acceptance")
-			}
-			if scope.Target.Kind == "task" {
-				var planState string
-				if err := tx.QueryRowContext(ctx, "SELECT state FROM plans WHERE id=? AND revision=?", scope.Target.PlanID, scope.PlanRevision).Scan(&planState); err != nil {
-					return nil, err
-				}
-				if planState != "active" {
-					return nil, errors.New("plan state changed before task acceptance")
-				}
-				if err := tx.QueryRowContext(ctx, "SELECT state FROM tasks WHERE id=? AND revision=?", scope.Target.TaskID, scope.TaskRevision).Scan(&state); err != nil {
-					return nil, err
-				}
-				if state != "reviewing" && state != "awaiting_human" {
-					return nil, errors.New("task state changed before acceptance")
-				}
-			} else {
-				if err := tx.QueryRowContext(ctx, "SELECT state FROM plans WHERE id=? AND revision=?", scope.Target.PlanID, scope.PlanRevision).Scan(&state); err != nil {
-					return nil, err
-				}
-				if state != "verifying" {
-					return nil, errors.New("plan state changed before acceptance")
-				}
 			}
 			accepted = Acceptance{ID: store.ID(), ScopeID: current.ID, TargetKind: current.Target.Kind, ManifestID: artifact.ID, ManifestDigest: artifact.Digest, AcceptedAt: store.Now()}
 			_, err := tx.ExecContext(ctx, `INSERT INTO quality_acceptances_v2(id,scope_id,target_kind,plan_id,task_id,evidence_manifest_id,evidence_manifest_digest,actor,accepted_at) VALUES(?,?,?,?,?,?,?,?,?)`, accepted.ID, current.ID, current.Target.Kind, current.Target.PlanID, nullable(current.Target.TaskID), artifact.ID, artifact.Digest, request.Actor, accepted.AcceptedAt)
