@@ -8,10 +8,18 @@ import (
 // CheckDefinition is approved data, not an instruction to run a subprocess.
 // The future check runner must use the qualified boundary and recorded argv.
 type CheckDefinition struct {
-	ID        string   `json:"id"`
-	Argv      []string `json:"argv"`
-	Cwd       string   `json:"cwd"`
-	TimeoutMS int64    `json:"timeout_ms"`
+	ID              string                `json:"id"`
+	Argv            []string              `json:"argv"`
+	Cwd             string                `json:"cwd"`
+	Environment     []EnvironmentVariable `json:"environment,omitempty"`
+	RequiredOutputs []string              `json:"required_outputs,omitempty"`
+	TimeoutMS       int64                 `json:"timeout_ms"`
+	MaxOutputBytes  int64                 `json:"max_output_bytes,omitempty"`
+}
+
+type EnvironmentVariable struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 // ManualPrerequisite records human setup evidence. It is separate from manual
@@ -47,12 +55,58 @@ func (c CheckDefinition) Validate(ceiling int64) error {
 	if c.Argv[0] == "" {
 		return errors.New("check executable required")
 	}
-	if c.Cwd == "" || len(c.Cwd) > 4096 || strings.HasPrefix(c.Cwd, "/") || strings.ContainsAny(c.Cwd, "\\\x00*?[]") {
+	if err := checkRelativePath(c.Cwd, true); err != nil {
 		return errors.New("check cwd must be an explicit project-relative directory")
 	}
-	for _, part := range strings.Split(c.Cwd, "/") {
-		if part == ".." {
-			return errors.New("check cwd escapes project")
+	if c.MaxOutputBytes < 0 || c.MaxOutputBytes > 16<<20 {
+		return errors.New("check output ceiling must be at most 16 MiB")
+	}
+	if len(c.Environment) > 64 || len(c.RequiredOutputs) > 64 {
+		return errors.New("too many check environment variables or required outputs")
+	}
+	last := ""
+	for _, variable := range c.Environment {
+		if !environmentName(variable.Name) || variable.Name <= last || len(variable.Value) > 4096 || strings.ContainsRune(variable.Value, 0) {
+			return errors.New("check environment must be unique, sorted and bounded")
+		}
+		last = variable.Name
+	}
+	last = ""
+	for _, output := range c.RequiredOutputs {
+		if err := checkRelativePath(output, false); err != nil || output <= last {
+			return errors.New("required outputs must be unique, sorted project-relative paths")
+		}
+		last = output
+	}
+	return nil
+}
+
+func (c CheckDefinition) OutputLimit() int64 {
+	if c.MaxOutputBytes == 0 {
+		return 1 << 20
+	}
+	return c.MaxOutputBytes
+}
+
+func environmentName(value string) bool {
+	if value == "" || len(value) > 128 {
+		return false
+	}
+	for i, r := range value {
+		if !(r == '_' || r >= 'A' && r <= 'Z' || i > 0 && r >= '0' && r <= '9') {
+			return false
+		}
+	}
+	return true
+}
+
+func checkRelativePath(value string, allowDot bool) error {
+	if value == "" || len(value) > 4096 || strings.HasPrefix(value, "/") || strings.ContainsAny(value, "\\\x00*?[]") || (!allowDot && value == ".") {
+		return errors.New("invalid relative path")
+	}
+	for _, part := range strings.Split(value, "/") {
+		if part == "" || part == ".." || part == "." && value != "." {
+			return errors.New("relative path escapes or is not canonical")
 		}
 	}
 	return nil

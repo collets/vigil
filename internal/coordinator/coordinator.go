@@ -49,6 +49,59 @@ type Ticket struct {
 	State      string `json:"state"`
 }
 
+// HoldClaims keeps the live owner capability exclusively locked while a
+// non-inference external effect uses the repository set. It revalidates the
+// exact project, physical roots and fencing generations immediately before
+// the callback. Checks use this path; model execution additionally requires
+// HoldReservation and endpoint authority.
+func (o *Owner) HoldClaims(ctx context.Context, project string, roots []workspace.Identity, claims []Claim, fn func() error) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if err := o.live(); err != nil {
+		return err
+	}
+	if fn == nil || !store.SafeID(project) || len(roots) == 0 || len(roots) != len(claims) {
+		return errors.New("invalid live workspace authority")
+	}
+	wanted := map[string]workspace.Identity{}
+	for _, root := range roots {
+		if err := root.Validate(); err != nil {
+			return err
+		}
+		wanted[root.Key+"\x00"+root.CommonGit] = root
+	}
+	tx, err := o.Coordinator.DB.SQL.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	seen := map[string]bool{}
+	for _, claim := range claims {
+		var priorProject, owner, raw, state string
+		var generation int64
+		if err := tx.QueryRowContext(ctx, "SELECT project_id,instance_id,identity_json,generation,state FROM workspace_claims WHERE id=?", claim.ID).Scan(&priorProject, &owner, &raw, &generation, &state); err != nil {
+			return err
+		}
+		var identity workspace.Identity
+		if err := json.Unmarshal([]byte(raw), &identity); err != nil {
+			return err
+		}
+		key := identity.Key + "\x00" + identity.CommonGit
+		root, exists := wanted[key]
+		if !exists || seen[key] || priorProject != project || owner != o.ID || generation != claim.Generation || state != "active" || claim.Identity.Key != identity.Key || claim.Identity.CommonGit != identity.CommonGit || root.Root != identity.Root || root.CommonGitPath != identity.CommonGitPath {
+			return errors.New("workspace claim is stale, foreign or quarantined")
+		}
+		seen[key] = true
+	}
+	if len(seen) != len(wanted) {
+		return errors.New("workspace claims do not cover every participating root")
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return fn()
+}
+
 // HoldReservation keeps the live owner capability exclusively locked while fn
 // may start external effects. The exact claims, fencing generations, queue
 // ticket and endpoint slot are re-read from the coordinator database before fn
@@ -300,6 +353,49 @@ func (o *Owner) Claim(ctx context.Context, project, operation string, roots []wo
 		return nil
 	})
 	return claims, err
+}
+
+// Claims resolves an already-held exact repository set for the live owner.
+// It is used when a project intentionally keeps its workspace fences between
+// implementation and quality phases.
+func (o *Owner) Claims(ctx context.Context, project string, roots []workspace.Identity) ([]Claim, error) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	if err := o.live(); err != nil {
+		return nil, err
+	}
+	if !store.SafeID(project) || len(roots) == 0 {
+		return nil, errors.New("valid project and roots required")
+	}
+	rows, err := o.Coordinator.DB.SQL.QueryContext(ctx, "SELECT id,identity_json,generation FROM workspace_claims WHERE project_id=? AND instance_id=? AND state='active'", project, o.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	available := map[string]Claim{}
+	for rows.Next() {
+		var claim Claim
+		var raw string
+		if err := rows.Scan(&claim.ID, &raw, &claim.Generation); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(raw), &claim.Identity); err != nil {
+			return nil, err
+		}
+		available[claim.Identity.Key+"\x00"+claim.Identity.CommonGit] = claim
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	result := make([]Claim, 0, len(roots))
+	for _, root := range roots {
+		claim, ok := available[root.Key+"\x00"+root.CommonGit]
+		if !ok || claim.Identity.Root != root.Root || claim.Identity.CommonGitPath != root.CommonGitPath {
+			return nil, errors.New("live owner does not hold the exact repository set")
+		}
+		result = append(result, claim)
+	}
+	return result, nil
 }
 
 func quarantine(ctx context.Context, tx *store.Tx, owner, reason string) error {

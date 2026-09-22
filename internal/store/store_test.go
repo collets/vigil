@@ -21,12 +21,12 @@ func TestProjectV6UpgradeAndRollback(t *testing.T) {
 	if _, err = db.SQL.Exec("INSERT INTO config_snapshots VALUES('existing','digest',1,'{}','{}',1)"); err != nil {
 		t.Fatal(err)
 	}
-	for _, object := range []string{"generation_recovery_snapshots", "budget_exhaustions", "recovery_choice_checkpoints", "recovery_attempt_links"} {
+	for _, object := range []string{"quality_acceptances_v2", "quality_acceptance_attempts_v2", "evidence_staleness_v2", "human_decisions_v2", "manual_results_v2", "quality_findings_v2", "review_results_v2", "baseline_exceptions_v2", "check_results_v2", "quality_effects_v2", "quality_scopes_v2", "generation_recovery_snapshots", "budget_exhaustions", "recovery_choice_checkpoints", "recovery_attempt_links"} {
 		if _, err = db.SQL.Exec("DROP TABLE " + object); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err = db.SQL.Exec("DELETE FROM schema_migrations WHERE version IN(7,8,9)"); err != nil {
+	if _, err = db.SQL.Exec("DELETE FROM schema_migrations WHERE version>=7"); err != nil {
 		t.Fatal(err)
 	}
 	if err = db.Close(); err != nil {
@@ -72,7 +72,7 @@ func TestProjectV6UpgradeAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer upgraded.Close()
-	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 9 {
+	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 11 {
 		t.Fatal("v6 database was not upgraded", versions, err)
 	}
 	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM config_snapshots WHERE id='existing'").Scan(&existing); err != nil || existing != 1 {
@@ -121,6 +121,17 @@ func TestProjectV8UpgradePreservesRecoverySnapshotsAndPermitsEqualDigests(t *tes
 	}
 	statements := []string{
 		"PRAGMA foreign_keys=OFF",
+		"DROP TABLE quality_acceptances_v2",
+		"DROP TABLE quality_acceptance_attempts_v2",
+		"DROP TABLE evidence_staleness_v2",
+		"DROP TABLE human_decisions_v2",
+		"DROP TABLE manual_results_v2",
+		"DROP TABLE quality_findings_v2",
+		"DROP TABLE review_results_v2",
+		"DROP TABLE baseline_exceptions_v2",
+		"DROP TABLE check_results_v2",
+		"DROP TABLE quality_effects_v2",
+		"DROP TABLE quality_scopes_v2",
 		"DROP TRIGGER generation_recovery_snapshot_no_update",
 		"DROP TRIGGER generation_recovery_snapshot_no_delete",
 		"ALTER TABLE generation_recovery_snapshots RENAME TO generation_recovery_snapshots_v9",
@@ -137,7 +148,7 @@ func TestProjectV8UpgradePreservesRecoverySnapshotsAndPermitsEqualDigests(t *tes
  BEGIN SELECT RAISE(ABORT,'generation recovery workspace authority is immutable'); END`,
 		`CREATE TRIGGER generation_recovery_snapshot_no_delete BEFORE DELETE ON generation_recovery_snapshots
  BEGIN SELECT RAISE(ABORT,'generation recovery workspace authority is recovery evidence'); END`,
-		"DELETE FROM schema_migrations WHERE version=9",
+		"DELETE FROM schema_migrations WHERE version>=9",
 	}
 	for _, statement := range statements {
 		if _, err = raw.Exec(statement); err != nil {

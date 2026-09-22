@@ -14,11 +14,20 @@ import (
 	"vigil/internal/artifacts"
 	"vigil/internal/boundary"
 	"vigil/internal/checkpoint"
+	"vigil/internal/checks"
 	"vigil/internal/coordinator"
 	"vigil/internal/core"
+	"vigil/internal/quality"
+	"vigil/internal/review"
 	"vigil/internal/store"
 	"vigil/internal/supervisor"
 )
+
+type fixtureReviewer struct{ raw []byte }
+
+func (r fixtureReviewer) Review(context.Context, review.Manifest) ([]byte, error) {
+	return append([]byte(nil), r.raw...), nil
+}
 
 func printJSON(cmd *cobra.Command, value any) error {
 	enc := json.NewEncoder(cmd.OutOrStdout())
@@ -48,6 +57,17 @@ func withProject(cmd *cobra.Command, stateDir *string, id string, fn func(*core.
 	}
 	defer e.DB.Close()
 	return fn(e)
+}
+
+func resolveQualityTarget(ctx context.Context, e *core.Engine, id string, planWide bool) (quality.Target, error) {
+	if planWide {
+		return quality.Target{Kind: "plan", PlanID: id}, nil
+	}
+	var planID string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT plan_id FROM tasks WHERE id=?", id).Scan(&planID); err != nil {
+		return quality.Target{}, err
+	}
+	return quality.Target{Kind: "task", PlanID: planID, TaskID: id}, nil
 }
 
 func withRecoveryProject(cmd *cobra.Command, stateDir *string, projectID, checkpointID, commandID string, fn func(*checkpoint.Manager) error) error {
@@ -641,6 +661,175 @@ func projectCommand(stateDir *string) *cobra.Command {
 			return printJSON(cmd, result)
 		})
 	}})
+	var qualityCheckCommand string
+	var qualityPlanWide, qualityFixture bool
+	qualityCheck := &cobra.Command{Use: "quality-check PROJECT_ID TARGET_ID CHECK_ID", Short: "Run one approved check in an isolated disposable-fixture copy", Args: cobra.ExactArgs(3), RunE: func(cmd *cobra.Command, args []string) error {
+		if !qualityFixture || qualityCheckCommand == "" {
+			return errors.New("--synthetic-fixture and --command-id required; production dispatch remains disabled")
+		}
+		m, err := manager(cmd, stateDir)
+		if err != nil {
+			return err
+		}
+		defer m.Close()
+		e, err := m.Open(cmd.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		defer e.DB.Close()
+		target, err := resolveQualityTarget(cmd.Context(), e, args[1], qualityPlanWide)
+		if err != nil {
+			return err
+		}
+		owner, err := m.Coordinator.Register(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer owner.Close()
+		result, err := (&checks.Runner{Engine: e, Owner: owner}).Run(cmd.Context(), checks.Request{CommandID: qualityCheckCommand, Target: target, CheckID: args[2], Actor: "fixture"})
+		if err != nil {
+			return err
+		}
+		return printJSON(cmd, result)
+	}}
+	qualityCheck.Flags().StringVar(&qualityCheckCommand, "command-id", "", "Unique replay-safe check command")
+	qualityCheck.Flags().BoolVar(&qualityPlanWide, "plan-wide", false, "TARGET_ID is a plan rather than a task")
+	qualityCheck.Flags().BoolVar(&qualityFixture, "synthetic-fixture", false, "Require marked disposable repositories and the fixture boundary")
+	root.AddCommand(qualityCheck)
+
+	var reviewCommand, reviewFile, reviewSession, reviewNative string
+	var reviewPlanWide, reviewFixture bool
+	qualityReview := &cobra.Command{Use: "quality-review PROJECT_ID TARGET_ID", Short: "Record a fresh closed-schema fixture review through the read-only quality path", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		if !reviewFixture || reviewCommand == "" || reviewFile == "" || reviewSession == "" || reviewNative == "" {
+			return errors.New("--synthetic-fixture, --command-id, --result, --session-id and --native-identity required")
+		}
+		raw, err := os.ReadFile(reviewFile)
+		if err != nil {
+			return err
+		}
+		if len(raw) > store.MaxDocument {
+			return errors.New("review result exceeds 64 KiB")
+		}
+		m, err := manager(cmd, stateDir)
+		if err != nil {
+			return err
+		}
+		defer m.Close()
+		e, err := m.Open(cmd.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		defer e.DB.Close()
+		target, err := resolveQualityTarget(cmd.Context(), e, args[1], reviewPlanWide)
+		if err != nil {
+			return err
+		}
+		owner, err := m.Coordinator.Register(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer owner.Close()
+		result, err := (&review.Runner{Engine: e, Owner: owner, Reviewer: fixtureReviewer{raw: raw}}).Run(cmd.Context(), review.Request{CommandID: reviewCommand, Target: target, Actor: "fixture", SessionID: reviewSession, NativeIdentity: reviewNative})
+		if err != nil {
+			return err
+		}
+		return printJSON(cmd, result)
+	}}
+	qualityReview.Flags().StringVar(&reviewCommand, "command-id", "", "Unique replay-safe review command")
+	qualityReview.Flags().StringVar(&reviewFile, "result", "", "Closed JSON review result file")
+	qualityReview.Flags().StringVar(&reviewSession, "session-id", "", "Fresh fixture reviewer session identity")
+	qualityReview.Flags().StringVar(&reviewNative, "native-identity", "", "Fresh distinct native reviewer identity")
+	qualityReview.Flags().BoolVar(&reviewPlanWide, "plan-wide", false, "TARGET_ID is a plan rather than a task")
+	qualityReview.Flags().BoolVar(&reviewFixture, "synthetic-fixture", false, "Use only the labeled fixture reviewer")
+	root.AddCommand(qualityReview)
+
+	var manualCommand, manualState, manualEvaluator, manualNotes string
+	var manualPlanWide, manualFixture bool
+	qualityManual := &cobra.Command{Use: "quality-manual PROJECT_ID TARGET_ID CRITERION_ID", Short: "Record a fingerprint-bound manual outcome", Args: cobra.ExactArgs(3), RunE: func(cmd *cobra.Command, args []string) error {
+		if !manualFixture || manualCommand == "" {
+			return errors.New("--synthetic-fixture and --command-id required in this offline build")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			target, err := resolveQualityTarget(cmd.Context(), e, args[1], manualPlanWide)
+			if err != nil {
+				return err
+			}
+			id, err := quality.RecordManual(cmd.Context(), e, quality.ManualRequest{CommandID: manualCommand, Target: target, CriterionID: args[2], State: manualState, Evaluator: manualEvaluator, Notes: manualNotes, Actor: "fixture_human"})
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, map[string]string{"manual_result_id": id})
+		})
+	}}
+	qualityManual.Flags().StringVar(&manualCommand, "command-id", "", "Unique replay-safe manual command")
+	qualityManual.Flags().StringVar(&manualState, "outcome", "pending", "pending, pass, fail or cannot_verify")
+	qualityManual.Flags().StringVar(&manualEvaluator, "evaluator", "", "Fixture evaluator identity")
+	qualityManual.Flags().StringVar(&manualNotes, "notes", "", "Manual evidence notes")
+	qualityManual.Flags().BoolVar(&manualPlanWide, "plan-wide", false, "TARGET_ID is a plan rather than a task")
+	qualityManual.Flags().BoolVar(&manualFixture, "synthetic-fixture", false, "Label the action as fixture-human evidence")
+	root.AddCommand(qualityManual)
+
+	var decisionCommand, decisionAction, decisionRationale string
+	var decisionPlanWide, decisionFixture bool
+	qualityDecision := &cobra.Command{Use: "quality-decision PROJECT_ID TARGET_ID", Short: "Record a typed fingerprint-bound human decision", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		if !decisionFixture || decisionCommand == "" {
+			return errors.New("--synthetic-fixture and --command-id required in this offline build")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			target, err := resolveQualityTarget(cmd.Context(), e, args[1], decisionPlanWide)
+			if err != nil {
+				return err
+			}
+			id, err := quality.RecordHumanDecision(cmd.Context(), e, quality.HumanDecisionRequest{CommandID: decisionCommand, Target: target, Action: decisionAction, Rationale: decisionRationale, Actor: "fixture_human"})
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, map[string]string{"decision_id": id})
+		})
+	}}
+	qualityDecision.Flags().StringVar(&decisionCommand, "command-id", "", "Unique replay-safe decision command")
+	qualityDecision.Flags().StringVar(&decisionAction, "action", "", "accept, request_changes, clarify or stop")
+	qualityDecision.Flags().StringVar(&decisionRationale, "rationale", "", "Explicit decision rationale")
+	qualityDecision.Flags().BoolVar(&decisionPlanWide, "plan-wide", false, "TARGET_ID is a plan rather than a task")
+	qualityDecision.Flags().BoolVar(&decisionFixture, "synthetic-fixture", false, "Label the action as fixture-human evidence")
+	root.AddCommand(qualityDecision)
+
+	var acceptCommand string
+	var acceptPlanWide, acceptFixture bool
+	qualityAccept := &cobra.Command{Use: "quality-accept PROJECT_ID TARGET_ID", Short: "Atomically recheck current quality gates and accept without delivery authority", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		if !acceptFixture || acceptCommand == "" {
+			return errors.New("--synthetic-fixture and --command-id required in this offline build")
+		}
+		m, err := manager(cmd, stateDir)
+		if err != nil {
+			return err
+		}
+		defer m.Close()
+		e, err := m.Open(cmd.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		defer e.DB.Close()
+		target, err := resolveQualityTarget(cmd.Context(), e, args[1], acceptPlanWide)
+		if err != nil {
+			return err
+		}
+		owner, err := m.Coordinator.Register(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer owner.Close()
+		result, err := (&quality.Acceptor{Engine: e, Owner: owner}).Accept(cmd.Context(), quality.AcceptanceRequest{CommandID: acceptCommand, Target: target, Actor: "fixture_core"})
+		if err != nil {
+			return err
+		}
+		return printJSON(cmd, result)
+	}}
+	qualityAccept.Flags().StringVar(&acceptCommand, "command-id", "", "Unique replay-safe acceptance command")
+	qualityAccept.Flags().BoolVar(&acceptPlanWide, "plan-wide", false, "TARGET_ID is a plan rather than a task")
+	qualityAccept.Flags().BoolVar(&acceptFixture, "synthetic-fixture", false, "Accept only labeled disposable fixture evidence")
+	root.AddCommand(qualityAccept)
+
 	var commandID, kind string
 	artifact := &cobra.Command{Use: "artifact PROJECT_ID FILE", Short: "Publish an explicit durable evidence file (maximum 16 MiB)", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
 		if commandID == "" {

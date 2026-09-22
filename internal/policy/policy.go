@@ -29,6 +29,7 @@ type Profile struct {
 	AuxiliaryLocal     bool         `json:"auxiliary_local"`
 	DelegationDisabled bool         `json:"delegation_disabled"`
 	Capabilities       []Capability `json:"capabilities"`
+	InstructionDigests []string     `json:"instruction_digests,omitempty"`
 }
 type Config struct {
 	CheckDefinitions  []CheckDefinition `json:"check_definitions,omitempty"`
@@ -41,6 +42,8 @@ type Config struct {
 	RepairLimit       int               `json:"repair_limit"`
 	SupervisorProfile string            `json:"supervisor_profile"`
 	ApprovalMode      string            `json:"approval_mode"`
+	HumanAcceptance   bool              `json:"human_acceptance_required,omitempty"`
+	BlockingSeverity  string            `json:"review_blocking_severity,omitempty"`
 }
 type Layer struct {
 	Restrictions Restrictions
@@ -138,6 +141,9 @@ func (c Config) Validate() error {
 	if c.AttemptLimitMS <= 0 || c.TaskLimitMS < c.AttemptLimitMS || c.RepairLimit < 0 || c.RepairLimit > 20 || c.SupervisorProfile == "" {
 		return errors.New("explicit bounded limits and supervisor profile required")
 	}
+	if c.BlockingSeverity != "" && !Contains([]string{"critical", "high", "medium", "low"}, c.BlockingSeverity) {
+		return errors.New("invalid review blocking severity")
+	}
 	return nil
 }
 func (p Profile) Validate() error {
@@ -170,6 +176,18 @@ func (p Profile) Validate() error {
 		if c.Name == "" || !Contains([]string{"available", "unsupported", "unverified"}, c.Support) || !Contains([]string{"application_enforced", "native_enforced", "advisory"}, c.Guarantee) || c.Platform == "" || c.HarnessVersion != p.Version || c.EvidenceID == "" {
 			return errors.New("incomplete or stale capability evidence")
 		}
+	}
+	lastDigest := ""
+	for _, digest := range p.InstructionDigests {
+		if len(digest) != 64 || digest <= lastDigest {
+			return errors.New("instruction digests must be sorted unique SHA-256 identities")
+		}
+		for _, r := range digest {
+			if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') {
+				return errors.New("instruction digests must be lowercase SHA-256 identities")
+			}
+		}
+		lastDigest = digest
 	}
 	return nil
 }
@@ -211,6 +229,44 @@ type Task struct {
 	RepairLimit         int                  `json:"repair_limit"`
 }
 
+func ValidateCriteria(criteria []Criterion) error {
+	if len(criteria) == 0 || len(criteria) > 100 {
+		return errors.New("criteria require 1–100 entries")
+	}
+	seen := map[string]bool{}
+	for _, criterion := range criteria {
+		if !definitionID(criterion.ID) || strings.TrimSpace(criterion.Text) == "" || len(criterion.Text) > 4096 || seen[criterion.ID] {
+			return errors.New("invalid or duplicate criterion")
+		}
+		seen[criterion.ID] = true
+	}
+	return nil
+}
+
+// ValidateQualityDefinition validates the optional plan-wide quality gates.
+// An entirely empty definition means that the plan has no separate quality
+// process; once any gate is configured a reviewer profile is mandatory.
+func ValidateQualityDefinition(criteria []Criterion, checks []string, reviewer string) error {
+	if err := validateCheckReferences(checks); err != nil {
+		return err
+	}
+	if len(criteria) > 100 {
+		return errors.New("too many plan quality criteria")
+	}
+	if len(criteria) != 0 {
+		if err := ValidateCriteria(criteria); err != nil {
+			return err
+		}
+	}
+	if (len(criteria) != 0 || len(checks) != 0) && !definitionID(reviewer) {
+		return errors.New("plan quality gates require a reviewer profile")
+	}
+	if reviewer != "" && !definitionID(reviewer) {
+		return errors.New("invalid plan reviewer profile")
+	}
+	return nil
+}
+
 func ValidateTasks(tasks []Task) error {
 	if len(tasks) == 0 || len(tasks) > 100 {
 		return errors.New("plan requires 1–100 tasks")
@@ -229,12 +285,8 @@ func ValidateTasks(tasks []Task) error {
 		if t.ID == "" || byID[t.ID].ID != "" || t.Objective == "" || len(t.Criteria) == 0 || len(t.Scope) == 0 || t.Implementation == "" || t.Reviewer == "" || t.Difficulty == "" || t.Rationale == "" || t.ActiveLimitMS <= 0 || t.RepairLimit < 0 {
 			return errors.New("duplicate task ID or incomplete task definition")
 		}
-		criteria := map[string]bool{}
-		for _, c := range t.Criteria {
-			if c.ID == "" || c.Text == "" || criteria[c.ID] {
-				return errors.New("duplicate or empty criterion")
-			}
-			criteria[c.ID] = true
+		if err := ValidateCriteria(t.Criteria); err != nil {
+			return err
 		}
 		for _, path := range t.Scope {
 			if path == "" || strings.HasPrefix(path, "/") || strings.Contains(path, "\\") || strings.ContainsRune(path, 0) {

@@ -264,6 +264,8 @@ func (e *Engine) Apply(ctx context.Context, actor Authority, cmd Envelope) (json
 			}
 		case "plan.reorder":
 			result, err = e.reorder(ctx, tx, actor, cmd)
+		case "task.criteria.revise":
+			result, err = e.reviseCriteria(ctx, tx, cmd)
 		case "operation.request", "permission.grant", "permission.revoke", "operation.start":
 			result, err = e.permission(ctx, tx, actor, cmd, epoch)
 		default:
@@ -279,6 +281,84 @@ func (e *Engine) Apply(ctx context.Context, actor Authority, cmd Envelope) (json
 	})
 }
 
+func (e *Engine) reviseCriteria(ctx context.Context, tx *store.Tx, cmd Envelope) (any, error) {
+	var request struct {
+		TaskID   string             `json:"task_id"`
+		Criteria []policy.Criterion `json:"criteria"`
+		Reason   string             `json:"reason"`
+	}
+	if err := store.Decode(cmd.Payload, &request); err != nil {
+		return nil, err
+	}
+	if !store.SafeID(request.TaskID) || request.Reason == "" {
+		return nil, errors.New("task and explicit human criteria-revision reason required")
+	}
+	if err := policy.ValidateCriteria(request.Criteria); err != nil {
+		return nil, err
+	}
+	var planID, state, taskRaw, oldCriteria string
+	var taskRevision, planRevision int
+	if err := tx.QueryRowContext(ctx, `SELECT t.plan_id,t.state,t.revision,tr.definition_json,tr.criteria_digest,p.revision FROM tasks t JOIN task_revisions tr ON tr.task_id=t.id AND tr.revision=t.revision JOIN plans p ON p.id=t.plan_id WHERE t.id=?`, request.TaskID).Scan(&planID, &state, &taskRevision, &taskRaw, &oldCriteria, &planRevision); err != nil {
+		return nil, err
+	}
+	if state != "awaiting_human" && state != "needs_repair" && state != "blocked" && state != "accepted" {
+		return nil, errors.New("criteria may be revised only at a human/rework boundary")
+	}
+	var task policy.Task
+	if err := json.Unmarshal([]byte(taskRaw), &task); err != nil {
+		return nil, err
+	}
+	task.Criteria = request.Criteria
+	definition, _ := json.Marshal(task)
+	criteriaRaw, _ := json.Marshal(request.Criteria)
+	definitionDigest, criteriaDigest := store.Digest(definition), store.Digest(criteriaRaw)
+	if criteriaDigest == oldCriteria {
+		return nil, errors.New("criteria revision does not change criteria")
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO task_revisions VALUES(?,?,?,?,?,?,?)", request.TaskID, taskRevision+1, string(definition), criteriaDigest, definitionDigest, "human", cmd.CommandID); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE tasks SET revision=revision+1,state='draft',block_reason=? WHERE id=?", "criteria revised by human: "+request.Reason, request.TaskID); err != nil {
+		return nil, err
+	}
+	var planRaw, spec string
+	var accepted any
+	if err := tx.QueryRowContext(ctx, "SELECT definition_json,spec_digest,accepted_at FROM plan_revisions WHERE plan_id=? AND revision=?", planID, planRevision).Scan(&planRaw, &spec, &accepted); err != nil {
+		return nil, err
+	}
+	var plan Plan
+	if err := json.Unmarshal([]byte(planRaw), &plan); err != nil {
+		return nil, err
+	}
+	found := false
+	for index := range plan.Tasks {
+		if plan.Tasks[index].ID == request.TaskID {
+			plan.Tasks[index] = task
+			found = true
+		}
+	}
+	if !found {
+		return nil, errors.New("task missing from plan definition")
+	}
+	nextPlanRaw, _ := json.Marshal(plan)
+	if _, err := tx.ExecContext(ctx, "INSERT INTO plan_revisions VALUES(?,?,?,?,?,?)", planID, planRevision+1, spec, string(nextPlanRaw), "human", accepted); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE plans SET revision=revision+1,state=CASE WHEN state='verifying' THEN 'active' ELSE state END WHERE id=?", planID); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE quality_acceptances_v2 SET invalidated_at=?,invalidation_reason='criteria_retired' WHERE task_id=? AND invalidated_at IS NULL", store.Now(), request.TaskID); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE requests SET state='cancelled',resolved_at=? WHERE task_id=? AND state='pending'", store.Now(), request.TaskID); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE project SET policy_epoch=policy_epoch+1"); err != nil {
+		return nil, err
+	}
+	return map[string]any{"task_id": request.TaskID, "task_revision": taskRevision + 1, "plan_revision": planRevision + 1, "criteria_digest": criteriaDigest}, nil
+}
+
 type Plan struct {
 	Restrictions             policy.Restrictions `json:"restrictions,omitempty"`
 	ID                       string              `json:"id"`
@@ -287,6 +367,10 @@ type Plan struct {
 	Approved                 bool                `json:"approved"`
 	AuthorizeCriteriaChanges bool                `json:"authorize_criteria_changes"`
 	Tasks                    []policy.Task       `json:"tasks"`
+	Criteria                 []policy.Criterion  `json:"quality_criteria,omitempty"`
+	Checks                   []string            `json:"quality_checks,omitempty"`
+	Reviewer                 string              `json:"reviewer_profile,omitempty"`
+	HumanAcceptanceRequired  bool                `json:"human_acceptance_required,omitempty"`
 }
 
 func (e *Engine) putPlan(ctx context.Context, tx *store.Tx, cmd Envelope) (any, error) {
@@ -298,6 +382,9 @@ func (e *Engine) putPlan(ctx context.Context, tx *store.Tx, cmd Envelope) (any, 
 		return nil, errors.New("plan ID/title/specification required")
 	}
 	if err := policy.ValidateTasks(p.Tasks); err != nil {
+		return nil, err
+	}
+	if err := policy.ValidateQualityDefinition(p.Criteria, p.Checks, p.Reviewer); err != nil {
 		return nil, err
 	}
 	if err := p.Restrictions.Validate(); err != nil {
