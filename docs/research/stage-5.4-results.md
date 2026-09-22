@@ -4,7 +4,7 @@ Date: 2026-09-22
 
 Scope: offline implementation and fixture validation only
 
-Status: initial implementation through `03f65e8` received seven P1 and two P2 findings. All R1–R9 remediations are implemented and validated through `872be1a`; Stage 5.4 remains **unaccepted pending independent follow-up review**. See the [independent review and retained probes](stage-5.4-astra-review.md).
+Status: initial implementation through `03f65e8` received seven P1 and two P2 findings. All R1–R9 remediations and final acceptance-state fencing are implemented and validated through `0993a24`; Stage 5.4 remains **unaccepted pending independent follow-up review**. See the [independent review and retained probes](stage-5.4-astra-review.md).
 
 Production dispatch: disabled
 
@@ -24,8 +24,10 @@ Stage 5.4 was implemented as these local commits:
 | `405b8c9` | Initial implementation handoff |
 | `c224826` | Preserve the independent R1–R9 report and inert reproduction source separately |
 | `872be1a` | Close R1–R9 with migration 013, permanent probes and extended failure-path coverage |
+| `9558b3e` | Add project-state authority and transaction-local project/plan acceptance fences |
+| `0993a24` | Persist rejected/raced acceptance attempts for concurrent state changes |
 
-Initial review range: `4b48737..03f65e8`. Follow-up remediation range: `c224826..872be1a`. No commit was pushed and no publication or production activation occurred.
+Initial review range: `4b48737..03f65e8`. Follow-up remediation range: `c224826..0993a24`. No commit was pushed and no publication or production activation occurred.
 
 ## Independent-review remediation
 
@@ -106,7 +108,7 @@ The fixture actors `fixture`, `fixture_human` and `fixture_core` are deliberatel
 
 ### Linux/WSL
 
-The pre-remediation baseline `make check` passed after the review-artifact commit `c224826`. At exact remediation commit `872be1a7f94ed732d7333246524903a8e8441391`, the following gates passed:
+The pre-remediation baseline `make check` passed after the review-artifact commit `c224826`. At exact final remediation commit `0993a24776404dac00df39ca8d25d2c2c1c2f68f`, the following gates passed:
 
 ```text
 make check
@@ -125,14 +127,14 @@ The previously authorized host was available. An isolated temporary checkout was
 
 | Item | Exact value |
 | --- | --- |
-| Commit | `872be1a7f94ed732d7333246524903a8e8441391` |
-| Bundle SHA-256 | `ed0fb94f2339133829ffee1368882c6642d926dbdb8df558fb97d738d35feea9` |
+| Commit | `0993a24776404dac00df39ca8d25d2c2c1c2f68f` |
+| Bundle SHA-256 | `5e0cb97c4b9ea9a6c5a209af502075b648e010aecf6bee8704a55eaf8d3bb874` |
 | Host | Darwin 25.6.0 arm64 |
 | Go | `go1.27.1 darwin/arm64` |
-| Commands | focused permanent R1–R9 probes; `make check`; `make check-race`; `make build` |
+| Commands | `make check` (including permanent R1–R9 probes); `make check-race`; `make build` |
 | Result | all passed |
 
-The temporary Mac directory `/tmp/vigil-stage54-872be1a.CyTMoy` and remote bundle were removed and verified absent after making only its downloaded module cache writable. Both local temporary bundles were removed. The normal Mac checkout was not accessed or changed.
+The final temporary Mac directory `/tmp/vigil-stage54-0993a24.rnP5qK` and remote bundle were removed and verified absent; the local bundle was also removed. The earlier `872be1a` validation checkout/bundle was likewise removed after making only its disposable module cache writable. The normal Mac checkout was not accessed or changed.
 
 ## Deferred gates and limitations
 
@@ -145,7 +147,7 @@ The temporary Mac directory `/tmp/vigil-stage54-872be1a.CyTMoy` and remote bundl
 
 ## Independent review instructions
 
-Review remediation range `c224826..872be1a` against the original findings in `docs/research/stage-5.4-astra-review.md`. The initial implementation range remains `4b48737..03f65e8`. Begin from the accepted Stage 5.3 contracts and explicitly preserve R1–R10.
+Review remediation range `c224826..0993a24` against the original findings in `docs/research/stage-5.4-astra-review.md`. The initial implementation range remains `4b48737..03f65e8`. Begin from the accepted Stage 5.3 contracts and explicitly preserve R1–R10.
 
 1. Verify migrations 010–013 on both a fresh database and populated older databases. Confirm historical migration bytes/digests are unchanged, migration 013 rollback is atomic, its segment/reservation guards hold, duplicate result content remains allowed, and assessment sources are unique per exact task/exhaustion across scope changes.
 2. Audit `internal/quality/scope.go` field by field. Reproduce repository, task/plan revision, criteria/definition, configuration/check-set, reviewer profile/instruction and artifact invalidation. Confirm a harmless plan reorder does not stale task evidence but an enclosing restriction change does.
