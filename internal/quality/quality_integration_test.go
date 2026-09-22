@@ -188,6 +188,24 @@ func (f *fixture) runReview(reviewer review.Reviewer, session string) (review.Re
 	return runner.Run(context.Background(), review.Request{CommandID: store.ID(), Target: f.target(), Actor: "fixture", SessionID: session, NativeIdentity: "native-" + session})
 }
 
+func readyForAcceptance(t *testing.T) *fixture {
+	t.Helper()
+	f := setupQuality(t, "pass", nil)
+	if _, err := f.runCheck(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.runReview(reviewFunc(func(context.Context, review.Manifest) ([]byte, error) { return reviewDocument("pass", nil), nil }), "race-review"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := quality.RecordManual(context.Background(), f.engine, quality.ManualRequest{CommandID: store.ID(), Target: f.target(), CriterionID: "device", State: "pass", Evaluator: "fixture", Notes: "pass", Actor: "fixture_human"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := quality.RecordHumanDecision(context.Background(), f.engine, quality.HumanDecisionRequest{CommandID: store.ID(), Target: f.target(), Action: "accept", Rationale: "fixture", Actor: "fixture_human"}); err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
 func (f *fixture) releaseExecutionReservation(t *testing.T) {
 	t.Helper()
 	if err := f.owner.FinishTicket(context.Background(), f.reservation.Ticket, "contained_stopped"); err != nil {
@@ -500,27 +518,49 @@ func TestStaleCriteriaProfileAndAcceptanceRace(t *testing.T) {
 	if stale == 0 {
 		t.Fatal("criteria change did not record staleness")
 	}
-	// A fresh fixture proves repository mutation between gate evaluation and the
-	// final acceptance observation records a raced attempt.
-	r := setupQuality(t, "pass", nil)
-	if _, err = r.runCheck(context.Background(), nil); err != nil {
-		t.Fatal(err)
+	// Each fixture changes one authority dimension after gate evaluation but
+	// before the final observation under live repository claims.
+	races := []struct {
+		name   string
+		mutate func(*fixture)
+	}{
+		{"repository", func(r *fixture) {
+			if err := os.WriteFile(filepath.Join(r.root, "src", "accept-race.txt"), []byte("race"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"criteria", func(r *fixture) {
+			command(t, r.engine, "task.criteria.revise", map[string]any{"task_id": "task", "criteria": []policy.Criterion{{ID: "automatic", Text: "raced requirement"}, {ID: "device", Text: "fixture human verifies", Manual: true}}, "reason": "acceptance race fixture"})
+		}},
+		{"check-definition", func(r *fixture) {
+			var raw string
+			if err := r.engine.DB.SQL.QueryRow(`SELECT s.resolved_json FROM project_configurations pc JOIN config_snapshots s ON s.id=pc.config_id ORDER BY pc.revision DESC LIMIT 1`).Scan(&raw); err != nil {
+				t.Fatal(err)
+			}
+			var config policy.Config
+			if err := json.Unmarshal([]byte(raw), &config); err != nil {
+				t.Fatal(err)
+			}
+			config.CheckDefinitions[0].MaxOutputBytes = 2048
+			command(t, r.engine, "project.configure", config)
+		}},
 	}
-	if _, err = r.runReview(reviewFunc(func(context.Context, review.Manifest) ([]byte, error) { return reviewDocument("pass", nil), nil }), "race-review"); err != nil {
-		t.Fatal(err)
-	}
-	_, _ = quality.RecordManual(context.Background(), r.engine, quality.ManualRequest{CommandID: store.ID(), Target: r.target(), CriterionID: "device", State: "pass", Evaluator: "fixture", Notes: "pass", Actor: "fixture_human"})
-	_, _ = quality.RecordHumanDecision(context.Background(), r.engine, quality.HumanDecisionRequest{CommandID: store.ID(), Target: r.target(), Action: "accept", Rationale: "fixture", Actor: "fixture_human"})
-	acceptor := quality.Acceptor{Engine: r.engine, Owner: r.owner, Hook: func(string) error {
-		return os.WriteFile(filepath.Join(r.root, "src", "accept-race.txt"), []byte("race"), 0600)
-	}}
-	if _, err = acceptor.Accept(context.Background(), quality.AcceptanceRequest{CommandID: store.ID(), Target: r.target(), Actor: "fixture_core"}); err == nil {
-		t.Fatal("acceptance race passed")
-	}
-	var raced int
-	_ = r.engine.DB.SQL.QueryRow("SELECT count(*) FROM quality_acceptance_attempts_v2 WHERE outcome='raced'").Scan(&raced)
-	if raced != 1 {
-		t.Fatal("race attempt missing", raced)
+	for _, race := range races {
+		t.Run("acceptance-race-"+race.name, func(t *testing.T) {
+			r := readyForAcceptance(t)
+			acceptor := quality.Acceptor{Engine: r.engine, Owner: r.owner, Hook: func(string) error {
+				race.mutate(r)
+				return nil
+			}}
+			if _, err := acceptor.Accept(context.Background(), quality.AcceptanceRequest{CommandID: store.ID(), Target: r.target(), Actor: "fixture_core"}); err == nil {
+				t.Fatal("acceptance race passed")
+			}
+			var raced int
+			_ = r.engine.DB.SQL.QueryRow("SELECT count(*) FROM quality_acceptance_attempts_v2 WHERE outcome='raced'").Scan(&raced)
+			if raced != 1 {
+				t.Fatal("race attempt missing", raced)
+			}
+		})
 	}
 }
 
@@ -545,14 +585,15 @@ func TestDefinitionProfileFreshnessAndUncertainRestart(t *testing.T) {
 		if !containsString(reasons, "configuration") || !containsString(reasons, "check_set") {
 			t.Fatal("missing check invalidation", reasons)
 		}
-		profile := policy.Profile{ID: "local", Harness: "hermes", Version: "fixture", Model: "fixture-v2", Provider: "custom", CredentialRef: "env:FIXTURE_KEY", Roles: []string{"implementation", "review", "supervisor"}, EndpointID: "fixture-endpoint", LocalInference: true, AuxiliaryLocal: true, DelegationDisabled: true}
+		profile := policy.Profile{ID: "local", Harness: "hermes", Version: "fixture", Model: "fixture-v2", Provider: "custom", CredentialRef: "env:FIXTURE_KEY", Roles: []string{"implementation", "review", "supervisor"}, EndpointID: "fixture-endpoint", LocalInference: true, AuxiliaryLocal: true, DelegationDisabled: true, InstructionDigests: []string{store.Digest([]byte("updated-review-instructions"))}}
 		command(t, f.engine, "profile.put", profile)
 		newer, err := quality.Observe(context.Background(), f.engine, f.target())
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !containsString(quality.StaleReasons(current, newer), "reviewer_profile") {
-			t.Fatal("profile revision did not stale evidence")
+		profileReasons := quality.StaleReasons(current, newer)
+		if !containsString(profileReasons, "reviewer_profile") || !containsString(profileReasons, "reviewer_instructions") {
+			t.Fatal("profile or instruction revision did not stale evidence", profileReasons)
 		}
 	})
 	t.Run("uncertain-effect", func(t *testing.T) {
