@@ -158,7 +158,6 @@ func RunAssessment(ctx context.Context, engine *core.Engine, owner *coordinator.
 		raw, callErr = assessor.Assess(assessmentCtx, scope)
 		return nil
 	})
-	ended := store.Now()
 	if err != nil {
 		_ = MarkEffectUncertain(context.Background(), engine, effectID, err.Error())
 		return result, err
@@ -176,15 +175,6 @@ func RunAssessment(ctx context.Context, engine *core.Engine, owner *coordinator.
 		_ = MarkEffectUncertain(context.Background(), engine, effectID, "malformed supervisor assessment")
 		return result, errors.New("malformed supervisor assessment cannot change task state")
 	}
-	if exhausted, exhaustionErr := WouldExhaust(ctx, engine, effectID, ended); exhaustionErr != nil {
-		_ = MarkEffectUncertain(context.Background(), engine, effectID, exhaustionErr.Error())
-		return result, exhaustionErr
-	} else if exhausted {
-		document.Action = "remain_blocked"
-		document.Rationale = "cumulative quality budget exhausted; " + document.Rationale
-		raw, _ = json.Marshal(document)
-		raw, _ = store.Canonical(raw)
-	}
 	repository, err := artifacts.New(engine.DB)
 	if err != nil {
 		_ = MarkEffectUncertain(context.Background(), engine, effectID, err.Error())
@@ -195,16 +185,24 @@ func RunAssessment(ctx context.Context, engine *core.Engine, owner *coordinator.
 		_ = MarkEffectUncertain(context.Background(), engine, effectID, err.Error())
 		return result, err
 	}
-	result = Assessment{ID: store.ID(), EffectID: effectID, ScopeID: scope.ID, SourceKind: request.SourceKind, SourceID: sourceID, Action: document.Action, Rationale: document.Rationale, ArtifactID: artifact.ID, ArtifactDigest: artifact.Digest, AssessedAt: ended}
-	observation, _ := json.Marshal(result)
+	resultID := store.ID()
 	err = engine.DB.Write(ctx, func(tx *store.Tx) error {
+		ended := store.Now()
+		_, exhausted, err := FinishBudgetSegment(ctx, tx, effectID, ended)
+		if err != nil {
+			return err
+		}
+		terminalDocument := document
+		if exhausted {
+			terminalDocument.Action = "remain_blocked"
+			terminalDocument.Rationale = "cumulative quality budget exhausted; " + terminalDocument.Rationale
+		}
+		result = Assessment{ID: resultID, EffectID: effectID, ScopeID: scope.ID, SourceKind: request.SourceKind, SourceID: sourceID, Action: terminalDocument.Action, Rationale: terminalDocument.Rationale, ArtifactID: artifact.ID, ArtifactDigest: artifact.Digest, AssessedAt: ended}
+		observation, _ := json.Marshal(result)
 		if _, err := tx.ExecContext(ctx, `INSERT INTO supervisor_assessments_v2(id,effect_id,scope_id,source_kind,source_id,action,rationale,result_artifact_id,result_artifact_digest,actor,assessed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, result.ID, effectID, scope.ID, request.SourceKind, sourceID, result.Action, result.Rationale, artifact.ID, artifact.Digest, request.Actor, ended); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, "UPDATE quality_effects_v2 SET state='observed',observation_json=?,observed_at=? WHERE id=? AND state='executing'", string(observation), ended, effectID); err != nil {
-			return err
-		}
-		if _, err := FinishBudgetSegment(ctx, tx, effectID, ended); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, "UPDATE quality_assessment_sources_v2 SET state='observed',observed_at=? WHERE effect_id=? AND state='reserved'", ended, effectID); err != nil {
@@ -215,7 +213,7 @@ func RunAssessment(ctx context.Context, engine *core.Engine, owner *coordinator.
 				return err
 			}
 		}
-		_, err := tx.ExecContext(ctx, "UPDATE tasks SET state='blocked',block_reason=? WHERE id=? AND revision=? AND state IN('needs_repair','blocked')", "bounded supervisor assessment: "+result.Action, scope.Target.TaskID, scope.TaskRevision)
+		_, err = tx.ExecContext(ctx, "UPDATE tasks SET state='blocked',block_reason=? WHERE id=? AND revision=? AND state IN('needs_repair','blocked')", "bounded supervisor assessment: "+result.Action, scope.Target.TaskID, scope.TaskRevision)
 		return err
 	})
 	if err != nil {

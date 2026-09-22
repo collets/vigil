@@ -96,24 +96,28 @@ func WouldExhaust(ctx context.Context, engine *core.Engine, effectID string, end
 }
 
 // FinishBudgetSegment charges the whole external-effect interval, including
-// preparation/copy/observation work, exactly once in the terminal transaction.
-func FinishBudgetSegment(ctx context.Context, tx *store.Tx, effectID string, ended int64) (int64, error) {
+// preparation/copy/observation/artifact work, exactly once in the terminal
+// transaction. Callers must obtain ended immediately before this call while
+// holding that transaction; an earlier subprocess/callback timestamp is not
+// terminal authority.
+func FinishBudgetSegment(ctx context.Context, tx *store.Tx, effectID string, ended int64) (int64, bool, error) {
 	var ledgerID, state string
-	var started int64
-	if err := tx.QueryRowContext(ctx, "SELECT ledger_id,state,started_at FROM quality_budget_segments_v2 WHERE effect_id=?", effectID).Scan(&ledgerID, &state, &started); err != nil {
-		return 0, err
+	var started, charged, unknown, limit int64
+	if err := tx.QueryRowContext(ctx, `SELECT s.ledger_id,s.state,s.started_at,l.charged_ms,l.unknown_ms,l.active_limit_ms FROM quality_budget_segments_v2 s JOIN budget_ledgers l ON l.id=s.ledger_id WHERE s.effect_id=?`, effectID).Scan(&ledgerID, &state, &started, &charged, &unknown, &limit); err != nil {
+		return 0, false, err
 	}
 	if state != "active" {
-		return 0, errors.New("quality budget segment is not active")
+		return 0, false, errors.New("quality budget segment is not active")
 	}
 	duration := elapsed(started, ended)
+	exhausted := charged+unknown+duration >= limit
 	if _, err := tx.ExecContext(ctx, "UPDATE budget_ledgers SET charged_ms=charged_ms+?,revision=revision+1,updated_at=? WHERE id=?", duration, ended, ledgerID); err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE quality_budget_segments_v2 SET state='charged',ended_at=?,charged_ms=? WHERE effect_id=? AND state='active'", ended, duration, effectID); err != nil {
-		return 0, err
+		return 0, false, err
 	}
-	return duration, nil
+	return duration, exhausted, nil
 }
 
 // MarkEffectUncertain conservatively charges an unobserved active interval as

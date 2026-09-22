@@ -360,19 +360,14 @@ func (r *Runner) Run(ctx context.Context, request Request) (Result, error) {
 		return result, persistErr
 	}
 	releaseAllowed = true
-	if status != "pass" {
-		return result, fmt.Errorf("%w: %s", ErrInvalidReview, status)
+	if result.Status != "pass" {
+		return result, fmt.Errorf("%w: %s", ErrInvalidReview, result.Status)
 	}
 	return result, nil
 }
 
 func (r *Runner) finish(ctx context.Context, effectID string, request Request, scope quality.Scope, manifestDigest string, raw []byte, document Document, status string, readOnly bool, started, ended int64) (Result, error) {
 	var result Result
-	if exhausted, err := quality.WouldExhaust(ctx, r.Engine, effectID, ended); err != nil {
-		return result, err
-	} else if exhausted && status == "pass" {
-		status = "error"
-	}
 	repository, err := artifacts.New(r.Engine.DB)
 	if err != nil {
 		return result, err
@@ -381,26 +376,37 @@ func (r *Runner) finish(ctx context.Context, effectID string, request Request, s
 	if err != nil {
 		return result, err
 	}
-	result = Result{ID: store.ID(), EffectID: effectID, ScopeID: scope.ID, Status: status, ReviewerSessionID: request.SessionID, ReviewerNativeIdentity: request.NativeIdentity, ReadOnlyVerified: readOnly, EvidenceManifestDigest: manifestDigest, ResultArtifactID: artifact.ID, ResultArtifactDigest: artifact.Digest, StartedAt: started, EndedAt: ended}
+	resultID := store.ID()
 	threshold := blockingThreshold(scope.Config.BlockingSeverity)
-	blocking := false
+	findings := make([]RecordedFinding, 0, len(document.Findings))
 	for _, finding := range document.Findings {
 		recorded := RecordedFinding{Finding: finding, Blocking: severityRank(finding.Severity) >= threshold}
-		if recorded.Blocking {
-			blocking = true
-		}
-		result.Findings = append(result.Findings, recorded)
+		findings = append(findings, recorded)
 	}
-	if status == "pass" && blocking {
-		result.Status = "request_changes"
-	}
-	digestValue := result
-	digestValue.ID, digestValue.ResultDigest = "", ""
-	rawDigest, _ := json.Marshal(digestValue)
-	rawDigest, _ = store.Canonical(rawDigest)
-	result.ResultDigest = store.Digest(rawDigest)
-	observation, _ := json.Marshal(result)
 	err = r.Engine.DB.Write(ctx, func(tx *store.Tx) error {
+		ended = store.Now()
+		_, exhausted, err := quality.FinishBudgetSegment(ctx, tx, effectID, ended)
+		if err != nil {
+			return err
+		}
+		terminalStatus := status
+		if exhausted && terminalStatus == "pass" {
+			terminalStatus = "error"
+		}
+		blocking := false
+		for _, finding := range findings {
+			blocking = blocking || finding.Blocking
+		}
+		if terminalStatus == "pass" && blocking {
+			terminalStatus = "request_changes"
+		}
+		result = Result{ID: resultID, EffectID: effectID, ScopeID: scope.ID, Status: terminalStatus, ReviewerSessionID: request.SessionID, ReviewerNativeIdentity: request.NativeIdentity, ReadOnlyVerified: readOnly, EvidenceManifestDigest: manifestDigest, ResultArtifactID: artifact.ID, ResultArtifactDigest: artifact.Digest, StartedAt: started, EndedAt: ended, Findings: findings}
+		digestValue := result
+		digestValue.ID, digestValue.ResultDigest = "", ""
+		rawDigest, _ := json.Marshal(digestValue)
+		rawDigest, _ = store.Canonical(rawDigest)
+		result.ResultDigest = store.Digest(rawDigest)
+		observation, _ := json.Marshal(result)
 		if _, err := tx.ExecContext(ctx, `INSERT INTO review_results_v2(id,effect_id,scope_id,schema_version,status,reviewer_session_id,reviewer_native_identity,read_only_verified,evidence_manifest_digest,result_artifact_id,result_artifact_digest,result_digest,started_at,ended_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, result.ID, effectID, scope.ID, 1, result.Status, request.SessionID, request.NativeIdentity, boolInt(readOnly), manifestDigest, artifact.ID, artifact.Digest, result.ResultDigest, started, ended); err != nil {
 			return err
 		}
@@ -414,9 +420,6 @@ func (r *Runner) finish(ctx context.Context, effectID string, request Request, s
 			}
 		}
 		if _, err := tx.ExecContext(ctx, "UPDATE quality_effects_v2 SET state='observed',observation_json=?,observed_at=? WHERE id=? AND state='executing'", string(observation), ended, effectID); err != nil {
-			return err
-		}
-		if _, err := quality.FinishBudgetSegment(ctx, tx, effectID, ended); err != nil {
 			return err
 		}
 		if scope.Target.Kind == "task" {

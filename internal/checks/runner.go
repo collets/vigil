@@ -208,7 +208,12 @@ func qualityFixture(scope quality.Scope) bool {
 
 func copyProject(source, destination string) error {
 	count := 0
-	return filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
+	type copiedDirectory struct {
+		path string
+		mode os.FileMode
+	}
+	var directories []copiedDirectory
+	err := filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -232,7 +237,11 @@ func copyProject(source, destination string) error {
 			return err
 		}
 		if entry.IsDir() {
-			return os.Mkdir(target, info.Mode().Perm()&0700)
+			if err := os.Mkdir(target, 0700); err != nil {
+				return err
+			}
+			directories = append(directories, copiedDirectory{path: target, mode: info.Mode().Perm()})
+			return nil
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
 			link, err := os.Readlink(path)
@@ -255,7 +264,7 @@ func copyProject(source, destination string) error {
 			return err
 		}
 		defer in.Close()
-		out, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm()&0700)
+		out, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
 		if err != nil {
 			return err
 		}
@@ -266,6 +275,15 @@ func copyProject(source, destination string) error {
 		}
 		return closeErr
 	})
+	if err != nil {
+		return err
+	}
+	for i := len(directories) - 1; i >= 0; i-- {
+		if err := os.Chmod(directories[i].path, directories[i].mode); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type treeEntry struct {
@@ -348,8 +366,9 @@ func treeDigest(root string, outputs []string) (string, error) {
 }
 
 // runContained keeps stdout bounded even when a descendant inherits it, and
-// does not report terminal completion until the entire Unix process group is
-// absent. All Stage 5 production targets are Unix; production dispatch is
+// does not report terminal completion until both the Unix process group and
+// every observed descendant (including a process that creates a new session)
+// are absent. All Stage 5 production targets are Unix; production dispatch is
 // still disabled independently of this containment implementation.
 func runContained(ctx context.Context, command *exec.Cmd, output io.Writer) (error, bool) {
 	reader, writer, err := os.Pipe()
@@ -358,12 +377,16 @@ func runContained(ctx context.Context, command *exec.Cmd, output io.Writer) (err
 	}
 	command.Stdout, command.Stderr = writer, writer
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	marker := "VIGIL_CHECK_CONTAINMENT_ID=" + store.ID()
+	command.Env = append(command.Env, marker)
 	if err = command.Start(); err != nil {
 		reader.Close()
 		writer.Close()
 		return err, true
 	}
 	pid := command.Process.Pid
+	tracker := newProcessTracker(pid, marker)
+	tracker.start()
 	_ = writer.Close()
 	drained := make(chan struct{})
 	go func() {
@@ -376,26 +399,28 @@ func runContained(ctx context.Context, command *exec.Cmd, output io.Writer) (err
 	select {
 	case runErr = <-waited:
 	case <-ctx.Done():
-		_ = syscall.Kill(-pid, syscall.SIGTERM)
+		tracker.signal(syscall.SIGTERM)
 		select {
 		case runErr = <-waited:
 		case <-time.After(250 * time.Millisecond):
-			_ = syscall.Kill(-pid, syscall.SIGKILL)
+			tracker.signal(syscall.SIGKILL)
 			runErr = <-waited
 		}
 	}
-	// A successful direct parent may have detached children within its group.
-	_ = syscall.Kill(-pid, syscall.SIGTERM)
+	tracker.stop()
+	// A successful direct parent may have children in its process group or in
+	// detached sessions. Signal both sets and prove that both are gone.
+	tracker.signal(syscall.SIGTERM)
 	deadline := time.Now().Add(500 * time.Millisecond)
-	for syscall.Kill(-pid, 0) == nil && time.Now().Before(deadline) {
+	for tracker.alive() && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	_ = syscall.Kill(-pid, syscall.SIGKILL)
+	tracker.signal(syscall.SIGKILL)
 	deadline = time.Now().Add(2 * time.Second)
-	for syscall.Kill(-pid, 0) == nil && time.Now().Before(deadline) {
+	for tracker.alive() && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	contained := syscall.Kill(-pid, 0) != nil
+	contained := !tracker.alive() && tracker.reliable()
 	_ = reader.Close()
 	select {
 	case <-drained:
@@ -658,7 +683,6 @@ func (r *Runner) runHeld(ctx context.Context, effectID string, scope quality.Sco
 	command.Dir = commandDir
 	command.Env = environment
 	runErr, contained := runContained(checkCtx, command, output)
-	ended := store.Now()
 	status := "pass"
 	var exitCode *int
 	if command.ProcessState != nil {
@@ -676,7 +700,7 @@ func (r *Runner) runHeld(ctx context.Context, effectID string, scope quality.Sco
 		status = "output_overflow"
 	}
 	if !contained {
-		status = "error"
+		return result, errors.New("check descendant containment could not be proven")
 	}
 	evaluatedAfter, digestErr := treeDigest(work, check.RequiredOutputs)
 	if digestErr != nil || evaluatedAfter != copyDigest {
@@ -709,15 +733,15 @@ func (r *Runner) runHeld(ctx context.Context, effectID string, scope quality.Sco
 		finishCtx, finishCancel = context.WithTimeout(context.Background(), 5*time.Second)
 		defer finishCancel()
 	}
-	return r.finish(finishCtx, effectID, scope, check, definitionDigest, output.Bytes(), outputs, status, exitCode, started, ended, observedDigest)
+	return r.finish(finishCtx, effectID, scope, check, definitionDigest, output.Bytes(), outputs, status, exitCode, started, observedDigest)
 }
 
-func (r *Runner) finishError(ctx context.Context, effectID string, scope quality.Scope, check policy.CheckDefinition, definitionDigest string, output []byte, outputs []OutputObservation, status, message string, started, ended int64) (Result, error) {
+func (r *Runner) finishError(ctx context.Context, effectID string, scope quality.Scope, check policy.CheckDefinition, definitionDigest string, output []byte, outputs []OutputObservation, status, message string, started, _ int64) (Result, error) {
 	output = append(output, []byte(message)...)
-	return r.finish(ctx, effectID, scope, check, definitionDigest, output, outputs, status, nil, started, ended, scope.RepositorySetDigest)
+	return r.finish(ctx, effectID, scope, check, definitionDigest, output, outputs, status, nil, started, scope.RepositorySetDigest)
 }
 
-func (r *Runner) finish(ctx context.Context, effectID string, scope quality.Scope, check policy.CheckDefinition, definitionDigest string, output []byte, outputs []OutputObservation, status string, exitCode *int, started, ended int64, observedDigest string) (Result, error) {
+func (r *Runner) finish(ctx context.Context, effectID string, scope quality.Scope, check policy.CheckDefinition, definitionDigest string, output []byte, outputs []OutputObservation, status string, exitCode *int, started int64, observedDigest string) (Result, error) {
 	var result Result
 	repository, err := artifacts.New(r.Engine.DB)
 	if err != nil {
@@ -727,24 +751,7 @@ func (r *Runner) finish(ctx context.Context, effectID string, scope quality.Scop
 	if err != nil {
 		return result, err
 	}
-	if ended < started {
-		ended = started
-	}
-	if exhausted, exhaustionErr := quality.WouldExhaust(ctx, r.Engine, effectID, ended); exhaustionErr != nil {
-		return result, exhaustionErr
-	} else if exhausted && status == "pass" {
-		status = "error"
-		output = append(output, []byte("cumulative quality budget exhausted before terminal observation")...)
-	}
-	result = Result{ID: store.ID(), EffectID: effectID, ScopeID: scope.ID, CheckID: check.ID, DefinitionDigest: definitionDigest, Status: status, ExitCode: exitCode, FailureIdentities: failureIdentities(output, status, exitCode), RequiredOutputs: outputs, OutputArtifactID: artifact.ID, OutputArtifactDigest: artifact.Digest, EvaluatedDigest: scope.RepositorySetDigest, ObservedDigest: observedDigest, StartedAt: started, EndedAt: ended, DurationMS: ended - started}
-	digestValue := result
-	digestValue.ID, digestValue.ResultDigest = "", ""
-	raw, _ := json.Marshal(digestValue)
-	canonical, _ := store.Canonical(raw)
-	result.ResultDigest = store.Digest(canonical)
-	failures, _ := json.Marshal(result.FailureIdentities)
-	required, _ := json.Marshal(outputs)
-	observation, _ := json.Marshal(result)
+	result.ID = store.ID()
 	err = r.Engine.DB.Write(ctx, func(tx *store.Tx) error {
 		var state string
 		if err := tx.QueryRowContext(ctx, "SELECT state FROM quality_effects_v2 WHERE id=?", effectID).Scan(&state); err != nil {
@@ -753,17 +760,32 @@ func (r *Runner) finish(ctx context.Context, effectID string, scope quality.Scop
 		if state != "executing" {
 			return errors.New("check effect is not executing")
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO check_results_v2(id,effect_id,scope_id,check_id,definition_digest,status,exit_code,failure_identities_json,required_outputs_json,output_artifact_id,output_artifact_digest,evaluated_repository_set_digest,observed_repository_set_digest,started_at,ended_at,duration_ms,result_digest) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, result.ID, effectID, scope.ID, check.ID, definitionDigest, status, nullableInt(exitCode), string(failures), string(required), artifact.ID, artifact.Digest, scope.RepositorySetDigest, observedDigest, started, ended, result.DurationMS, result.ResultDigest); err != nil {
+		ended := store.Now()
+		duration, exhausted, err := quality.FinishBudgetSegment(ctx, tx, effectID, ended)
+		if err != nil {
+			return err
+		}
+		terminalStatus := status
+		if exhausted && terminalStatus == "pass" {
+			terminalStatus = "error"
+		}
+		result = Result{ID: result.ID, EffectID: effectID, ScopeID: scope.ID, CheckID: check.ID, DefinitionDigest: definitionDigest, Status: terminalStatus, ExitCode: exitCode, FailureIdentities: failureIdentities(output, terminalStatus, exitCode), RequiredOutputs: outputs, OutputArtifactID: artifact.ID, OutputArtifactDigest: artifact.Digest, EvaluatedDigest: scope.RepositorySetDigest, ObservedDigest: observedDigest, StartedAt: started, EndedAt: ended, DurationMS: duration}
+		digestValue := result
+		digestValue.ID, digestValue.ResultDigest = "", ""
+		raw, _ := json.Marshal(digestValue)
+		canonical, _ := store.Canonical(raw)
+		result.ResultDigest = store.Digest(canonical)
+		failures, _ := json.Marshal(result.FailureIdentities)
+		required, _ := json.Marshal(outputs)
+		observation, _ := json.Marshal(result)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO check_results_v2(id,effect_id,scope_id,check_id,definition_digest,status,exit_code,failure_identities_json,required_outputs_json,output_artifact_id,output_artifact_digest,evaluated_repository_set_digest,observed_repository_set_digest,started_at,ended_at,duration_ms,result_digest) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, result.ID, effectID, scope.ID, check.ID, definitionDigest, result.Status, nullableInt(exitCode), string(failures), string(required), artifact.ID, artifact.Digest, scope.RepositorySetDigest, observedDigest, started, ended, result.DurationMS, result.ResultDigest); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, "UPDATE quality_effects_v2 SET state='observed',observation_json=?,observed_at=? WHERE id=?", string(observation), ended, effectID); err != nil {
 			return err
 		}
-		if _, err := quality.FinishBudgetSegment(ctx, tx, effectID, ended); err != nil {
-			return err
-		}
-		if scope.Target.Kind == "task" && status != "pass" {
-			_, err = tx.ExecContext(ctx, "UPDATE tasks SET state='needs_repair',block_reason=? WHERE id=? AND state='checking'", "check "+check.ID+" returned "+status, scope.Target.TaskID)
+		if scope.Target.Kind == "task" && result.Status != "pass" {
+			_, err = tx.ExecContext(ctx, "UPDATE tasks SET state='needs_repair',block_reason=? WHERE id=? AND state='checking'", "check "+check.ID+" returned "+result.Status, scope.Target.TaskID)
 		}
 		return err
 	})
