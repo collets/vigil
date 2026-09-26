@@ -3,6 +3,13 @@
 Status: review packet for implementation commit `20ca4d0`; no choice in this
 document is itself an approval, grant or authorization.
 
+User response, 2026-09-26: select 1A, use local llama while it is the available
+safe planning route with a five-minute first-run cap, select 3A, select 4B, and
+select 5A. Online research and bounded Codex use within the existing ChatGPT
+included quota are authorized. Metered API use, extra-credit consumption,
+purchases and paid fallback remain unauthorized. The real `cardtracker` checkout
+must not be changed or committed; use an agent-owned disposable copy.
+
 This packet turns the Stage 5.5 partial checkpoints and blocker log into choices
 that can be reviewed without reading the implementation. Fixture evidence proves
 mechanics only. A real specification, proposal, criterion, manual outcome or live
@@ -100,17 +107,22 @@ gaps conservatively, and never enable production dispatch.
 
 Implement the missing planner lifecycle against the already selected local route,
 first with a deterministic fake provider and then with one attended bounded local
-qualification. No paid API, subscription change or network egress is authorized.
+qualification. Local llama inference and necessary online implementation research
+are authorized. No paid API, subscription change, credential exposure,
+unrestricted worker egress or paid fallback is authorized.
 
 Recommended first live cap: 5 minutes active within the cumulative 30-minute
 plan-services allowance. A shorter run preserves budget for acceptance/finalization.
 
 ### Option 2B — included Codex subscription route
 
-Use the previously authorized included subscription only after the existing
-requirements can prove no additional charge and provide a scoped broker without
-exposing the account home or granting unrestricted egress. The current evidence
-says that scoped route is not yet available, so this option is presently deferred.
+Use the previously authorized included ChatGPT subscription quota through an
+effective ChatGPT login, never a metered API key. Inspect remaining included usage
+when the client exposes it and stop at the included limit instead of purchasing or
+consuming additional credits. Contained use still needs a supported scoped route
+that does not expose the account home or grant unrestricted worker egress. The
+current evidence says that contained route is not yet available, so local llama is
+the active planning route while Codex qualification remains conditional.
 
 ### Option 2C — defer live planning
 

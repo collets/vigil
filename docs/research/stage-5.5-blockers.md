@@ -4,6 +4,10 @@ This append-only log separates offline fixture evidence from decisions and runti
 evidence that require the unavailable user. Fixture actors never resolve these items.
 
 ## B1 — Real specification, plan and criteria approval
+- User input: PARTIALLY RESOLVED 2026-09-26 — use a small qualification
+  specification in an agent-owned disposable copy of `cardtracker`; never change
+  or commit the real checkout. Exact proposal/criteria inspection and approval
+  cannot be resolved until that immutable revision exists.
 - Checkpoint: C
 - Requirement or checklist item: R33
 - What is blocked and why it needs the user: Applying Stage 5.5 to a real project requires the user to select and inspect the specification, answer its clarifications, and approve the exact spec, plan and criteria revisions.
@@ -13,6 +17,10 @@ evidence that require the unavailable user. Fixture actors never resolve these i
 - Logged: 2026-09-26
 
 ## B2 — Live planning profile and provider-idle proof
+- User authorization: RESOLVED 2026-09-26 — online research, the existing local
+  llama route and bounded Codex ChatGPT included-subscription usage are authorized;
+  metered API and paid/extra-credit fallback remain prohibited. The supported
+  contained Codex route and provider-idle evidence are still technical gates.
 - Checkpoint: C
 - Requirement or checklist item: R18
 - What is blocked and why it needs the user: A real Codex or llama-backed planning turn and provider-idle observation are prohibited for this unattended task and could consume an authorized account or live inference resource.
@@ -22,6 +30,9 @@ evidence that require the unavailable user. Fixture actors never resolve these i
 - Logged: 2026-09-26
 
 ## B3 — Native model-tool integration qualification
+- User authorization: RESOLVED 2026-09-26 — qualify both Hermes and Codex, using
+  local llama where it is the available safe route and only included ChatGPT quota
+  for Codex. The actual native/session evidence remains pending.
 - Checkpoint: D
 - Requirement or checklist item: R20
 - What is blocked and why it needs the user: Native Codex/Hermes tool-session integration cannot be qualified without an attended live harness turn and eligible runtime/session identity.
@@ -31,6 +42,9 @@ evidence that require the unavailable user. Fixture actors never resolve these i
 - Logged: 2026-09-26
 
 ## B4 — Native macOS Stage 5.5 validation
+- Host availability: RESOLVED 2026-09-26 — the user made the documented Mac host
+  available and selected native validation. The validation run remains pending the
+  final implementation commit.
 - Checkpoint: D
 - Requirement or checklist item: R60
 - What is blocked and why it needs the user: Native macOS access and attended validation are unavailable for this task.
