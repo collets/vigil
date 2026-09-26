@@ -185,7 +185,7 @@ Review `49b9fbb..cba322b` against R2/R11 in `docs/research/stage-5.4-astra-revie
 5. Trace rejection into the existing Stage 5.3 repair path. Confirm repair counters and ledgers never reset, changed source requires fresh checks/review, and migration 011 does not weaken run identity.
 6. Audit `internal/quality/assessment.go`. Confirm exact source reservation precedes invocation, second/failed/uncertain requests cannot invoke again, every failure is charged, the task remains blocked and no action can weaken criteria or spending limits.
 7. Audit manual/human commands and `Acceptor`. Re-run the competing-WAL pending-manual probe at the gate-read/write-transaction boundary. Exercise code, criteria, definition/config/profile, stale child acceptance and artifact races. Confirm the committed manifest names the final selected gates, only current explicit manual `pass` satisfies a manual gate, and plan acceptance creates no delivery.
-8. Run `make check`, `make check-race`, `make build`, `make build-boundary`, `make cross-build` and `git diff --check` without models, Docker or hosting. Re-run native process/filesystem/locking validation if review changes those paths.
+8. Run `make check`, `make check-race`, `make build`, `make build-boundary`, `make cross-build`, `make docs-check` and `git diff --check` without models, Docker or hosting. Re-run native process/filesystem/locking validation if review changes those paths.
 9. Report findings independently. If accepted offline, update the review record and shared status while leaving live qualification and real human/manual gates pending. Do not enable production dispatch, push, publish, self-authorize recovery, or begin Stage 5.5 as part of the review.
 
 

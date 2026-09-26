@@ -2,7 +2,7 @@
 
 Investigated 2026-09-20. Recommendation: Codex app-server over stdio and Hermes TUI gateway over stdio for the first adapters. Both retain the original harness. The Go application owns task state, scheduling, approval policy, and acceptance.
 
-Verdict: the transport/execution foundation now passes a controlled model-backed fixture through both harnesses on Linux. Lifecycle recovery and hard policy boundaries still require Stage 3 runtime validation. Do not advertise complete approval enforcement or reliable cancellation of all child processes yet.
+Verdict: the transport/execution foundation passes a controlled model-backed fixture through both harnesses on Linux. Stage 3 runtime validation is complete (see [Stage 3 results](research/stage-3-results.md)) and offline recovery and policy boundaries are implemented through Stage 5.4 (see [next steps](next-steps.md)). Do not advertise complete approval enforcement, live recovery qualification, or production containment: the native approval and abrupt-loss gaps found in Stage 3 remain open, and production dispatch is still disabled.
 
 Stage 1 follow-up (2026-09-20): [contract and reproducible isolated profiles](adapter-spike.md), with [effective-setting evidence](research/stage-1-results.json). Versions are unchanged. Native settings checks passed without inference. Hermes background self-review is also disabled; every auxiliary task is explicitly pinned locally. Codex's native config loader rejects `untrusted` despite its presence in the generated schema; the spike uses `on-request` and user approval routing. At the Stage 1 checkpoint, the local llama.cpp endpoint was stopped; those settings checks alone did not establish live capabilities.
 

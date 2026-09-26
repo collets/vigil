@@ -1,6 +1,6 @@
 # Functional requirements baseline
 
-Status: accepted product direction consolidated on 2026-09-20. The application has a scaffold and bounded harness adapters; the production workflow core remains unimplemented. This baseline defines intended behavior; it is not an implementation-completion claim.
+Status: accepted product direction consolidated on 2026-09-20. The offline core through Stage 5.4 is now implemented and independently accepted; production execution, model dispatch and delivery remain unimplemented and qualification-gated (see [next steps](next-steps.md)). This baseline defines intended behavior; it is not an implementation-completion claim.
 
 The application owns reliable coordination and state; existing harnesses execute agent work. See [MVP acceptance](mvp-acceptance.md), [architecture](architecture.md), and [discovery history](discovery-notes.md). Detailed design questions are listed below separately.
 

@@ -1,6 +1,6 @@
 # First usable milestone
 
-Status: scenario accepted on 2026-09-20; Stage 1 adapter preparation is complete. The Go application now persists project planning, permissions and resource coordination. Contained Hermes probes passed on Linux and macOS; the full production milestone has not been demonstrated.
+Status: scenario accepted on 2026-09-20. The Go application now persists project planning, permissions and resource coordination, and the offline core through Stage 5.4 is independently accepted (see [next steps](next-steps.md)). Contained Hermes probes passed on Linux and macOS. **The milestone itself has still not been demonstrated**: the acceptance below requires real execution through both harnesses and real recovery/boundary checks, and production dispatch, live reviewer qualification and real user/manual decisions are still open.
 
 ## Accepted demonstration
 

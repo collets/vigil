@@ -1,6 +1,6 @@
 # Technology proposal
 
-Status: Go and the foundation stack accepted, 2026-09-19; status reconciled 2026-09-20. Linux and macOS are the initial targets. The hello-world scaffold exercises the CLI, TUI, and SQLite; functional discovery and initial harness research are complete, while detailed workflow design and implementation remain ahead.
+Status: Go and the foundation stack accepted, 2026-09-19; status reconciled 2026-09-20 and 2026-09-26. Linux and macOS are the initial targets. The decision has held: the application is still Go, still uses SQLite with embedded forward-only migrations, and still has no ORM. What has changed is scale, not stack — the original hello-world scaffold has grown into the persisted core implemented and independently accepted through Stage 5.4 (see [next steps](next-steps.md)). Production execution, model dispatch and delivery remain qualification-gated.
 
 ## Recommendation
 

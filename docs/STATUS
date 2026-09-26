@@ -1,0 +1,18 @@
+# Canonical current state.
+#
+# Single source of truth for the mechanical documentation check
+# (`make docs-check` -> internal/doccheck). Read and understood by AGENTS.md.
+#
+# Update this file in the same commit as any change to the state it describes.
+# Every path listed in status_documents must mention implementation_commit.
+# See AGENTS.md, section "Documentation obligations".
+
+stage=5.4
+stage_accepted=true
+implementation_commit=99cd6c0
+review_record=docs/research/stage-5.4-astra-review.md
+project_migrations=14
+coordination_migrations=2
+index=docs/README.md
+status_documents=docs/next-steps.md,docs/pending-decisions.md,docs/stage-5/README.md,docs/stage-5/5.4-quality-and-acceptance.md,docs/research/stage-5.4-results.md
+cli_reference=docs/stage-5-cli.md

@@ -18,7 +18,7 @@ Keep all seven. Each has a distinct result and acceptance boundary. The larger s
 
 The numbers express a working order, not permission to bypass a dependency. Build 5.1's boundary/evidence contract first; build 5.2's journal against synthetic workers next; then close their shared real-launch qualification gate. This resolves their integration dependency without pretending either alone proves production safety. Likewise, 5.2 can initially support a clean disposable checkout while 5.3 adds saved-work handling. Keep those paths visibly unavailable until implemented.
 
-Current implementation status: 5.1's offline evidence ledger, eligibility API, Codex images, admission and lifecycle contracts are implemented; R1–R4 are closed. Stage 5.2 checkpoints A–D and R1–R9 fixes are independently accepted offline at `d34f894`. Stage 5.3 is independently accepted offline through `a182152`, with R1–R10 closed. Stage 5.4 is independently accepted offline at `cba322b`: R2 and R11 are closed, and R10 with R1/R3/R4/R5/R6/R7/R8/R9 remain closed. P3 findings F1–F3 are remediated at `99cd6c0` and await independent follow-up; the Darwin fork-accounting limitation remains open. See [Stage 5.4 results](../research/stage-5.4-results.md). Live contained Codex/reviewer qualification, provider-idle proof, shared capacity authority, native macOS validation and the live recovery matrix remain pending. Production dispatch remains disabled.
+Current implementation status: 5.1's offline evidence ledger, eligibility API, Codex images, admission and lifecycle contracts are implemented; its 5.1-R1–5.1-R4 findings are closed. Stage 5.2 checkpoints A–D and its 5.2-R1–5.2-R9 fixes are independently accepted offline at `d34f894`. Stage 5.3 is independently accepted offline through `a182152`, with its 5.3-R1–5.3-R10 findings closed. Stage 5.4 is independently accepted offline at `cba322b`: 5.4-R2 and 5.4-R11 are closed, and 5.4-R10 with 5.4-R1/5.4-R3/5.4-R4/5.4-R5/5.4-R6/5.4-R7/5.4-R8/5.4-R9 remain closed. P3 findings F1–F3 are remediated at `99cd6c0` and await independent follow-up; the Darwin fork-accounting limitation remains open. See [Stage 5.4 results](../research/stage-5.4-results.md). Live contained Codex/reviewer qualification, provider-idle proof, shared capacity authority, native macOS validation and the live recovery matrix remain pending. Production dispatch remains disabled.
 
 Suggested sequence: 5.1 offline work → 5.2 offline work → 5.3 offline recovery → 5.4 → 5.5 → 5.6 → 5.7, with joint live qualification kept as a separate gate. If a live gate needs the user, continue the next plan's explicitly independent work. Do not mark a live or review gate complete from local implementation evidence.
 
@@ -46,6 +46,22 @@ Each plan repeats its critical limits and links here for the full handoff protoc
 - WSL Docker and Mac OrbStack availability is not qualification. Workers receive no host Docker socket, SSH agent, publishing credentials or writable application state. No broad reset/clean/stash, force push, merge or automatic replay of uncertain native submissions.
 - Cross-host routes to one physical llama endpoint must not establish independent capacity authorities. Until a supported shared authority exists, explicitly block concurrent cross-host eligibility; a test tunnel is not a scheduler guarantee.
 
+## Identifier conventions
+
+Two independent numbering schemes are in use, and mixing them is a real source of
+misreading. Qualify review findings with their stage whenever the surrounding
+sentence spans more than one stage.
+
+| Form | Meaning | Defined in |
+| --- | --- | --- |
+| `R01`–`R71` (two digits) | Functional requirements | [`requirements.md`](../requirements.md), mapped in [`stage-5-plan.md`](../stage-5-plan.md) |
+| `5.4-R2`, `5.2-R6` (stage prefix) | A finding of one stage's independent review | That stage's `docs/research/stage-5.N-astra-review.md` |
+| `F1`–`F3` | P3 findings raised by the Stage 5.4 follow-up review | [`stage-5.4-astra-review.md`](../research/stage-5.4-astra-review.md#independent-follow-up-of-cba322b) |
+
+The same bare label means different findings in different reviews — `R1`–`R9`
+exist in both the Stage 5.2 and Stage 5.4 records, and `R10` in both Stage 5.3 and
+Stage 5.4. A per-stage document is self-scoping; a shared status document is not.
+
 ## User input and autonomous work
 
 | Plan | Work available without user input | Possible user gate |
@@ -65,11 +81,11 @@ No immediate answer is required to begin implementation. A plan may be autonomou
 - [ ] 5.1 qualification and trusted eligibility complete.
   - Implemented: offline qualification/admission/lifecycle contract and two-platform containment matrix. Pending: live Codex/provider-idle and 5.2 integration.
 - [ ] 5.2 repository preparation and persisted execution complete.
-  - Implemented and independently accepted offline: checkpoints A–D, R1–R9 remediation through `d34f894`, synthetic crash matrix and disposable CLI execution on WSL/native Mac. Pending completion gate: qualified live combinations.
+  - Implemented and independently accepted offline: checkpoints A–D, 5.2-R1–5.2-R9 remediation through `d34f894`, synthetic crash matrix and disposable CLI execution on WSL/native Mac. Pending completion gate: qualified live combinations.
 - [ ] 5.3 recovery and controls complete.
   - Implemented and independently accepted offline through `a182152`: durable controls, verified multi-repository checkpoints, scoped clear/restore, exact/fresh recovery and cumulative budgets; R1–R10 are closed. Pending completion gate: qualified live recovery combinations.
 - [ ] 5.4 quality and acceptance complete.
-  - Independently accepted offline at `cba322b`: R2 and R11 are closed, and R10 with R1/R3/R4/R5/R6/R7/R8/R9 remain closed. Supervisor-owned readiness/cleanup proof, fail-closed supervisor loss, pidfd-bound descendant signals, coordinated cancellation and explicit configuration-resource retirement preserve the earlier fixture-only checks, copied modes, integrity, accounting and acceptance fences. P3 findings F1–F3 are remediated at `99cd6c0` and await independent follow-up. Open separately: the Darwin fork-accounting limitation. Pending completion gates: qualified live review/runtime routes, native macOS validation and real user/manual decisions.
+  - Independently accepted offline at `cba322b`: 5.4-R2 and 5.4-R11 are closed, and 5.4-R10 with 5.4-R1/5.4-R3/5.4-R4/5.4-R5/5.4-R6/5.4-R7/5.4-R8/5.4-R9 remain closed. Supervisor-owned readiness/cleanup proof, fail-closed supervisor loss, pidfd-bound descendant signals, coordinated cancellation and explicit configuration-resource retirement preserve the earlier fixture-only checks, copied modes, integrity, accounting and acceptance fences. P3 findings F1–F3 are remediated at `99cd6c0` and await independent follow-up. Open separately: the Darwin fork-accounting limitation. Pending completion gates: qualified live review/runtime routes, native macOS validation and real user/manual decisions.
 - [ ] 5.5 interactive workflow and planning complete.
 - [ ] 5.6 delivery and finalization complete.
 - [ ] 5.7 accepted milestone demonstrated, limitations recorded.

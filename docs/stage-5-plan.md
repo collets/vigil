@@ -60,7 +60,7 @@ The draft SQL encodes key integrity invariants; application transactions additio
 | R01, R06, R07, R11, R45, R46, R47, R51, R70 | Core §§1–3,10; authoritative views/inbox | H; terminal only, external IDE for detailed diffs |
 | R02, R03, R04, R08, R10, R42, R58, R59, R69 | Core §§1,2,4,8 | B,D,E; Codex/Hermes first, existing server, other harnesses deferred |
 | R05, R21, R23, R33, R34, R35 | Core §§2–4; typed tools above | B,I; explicit criteria changes remain human-only |
-| R09 | Core §4 | Jev optional/deferred; no dependency or implicit remote routing |
+| R09 | Core §4 | **Jev** optional/deferred; no dependency or implicit remote routing |
 | R12, R17, R27, R36, R63 | Core §§4,5,8 | B,D,G; approvals separate from model policy; strict boundary gated |
 | R13, R19, R39 | Core §§7,9 | A,C,F; parent warning and explicit repository map |
 | R14, R24, R26, R29, R30, R31, R48, R52, R53, R54 | Core §§3,10 | G; fresh review, exact baseline, manual outcomes and rejection actions |

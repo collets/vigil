@@ -1,6 +1,6 @@
 # Checkpoint proposal
 
-Status: save/restore behavior accepted, implementation mechanism still proposed, 2026-09-20. Automatic saving and clearing of agent-owned changes is allowed while preserving pre-existing user work; bringing saved changes back requires approval. No Git mutations are implemented or authorized for this design step.
+Status: save/restore behavior accepted, 2026-09-20. Automatic saving and clearing of agent-owned changes is allowed while preserving pre-existing user work; bringing saved changes back requires approval. The mechanism question below is now **decided and implemented** in `internal/checkpoint` and independently accepted offline in Stage 5.3 (see [Stage 5.3](stage-5/5.3-recovery-and-controls.md) and [next steps](next-steps.md)): private verified checkpoint sets with per-path compare-and-swap clear and restore journals. The "Options and evidence" section below is retained as the provenance record of the decision, not as an open question.
 
 Stage 4 follow-up: [core-spec.md](core-spec.md) resolves the mechanism/default questions below, and [Stage 5](stage-5-plan.md) defines implementation checks. Earlier proposed alternatives are retained for provenance; the core specification takes precedence for implementation. No production workflow or user configuration is installed by the specification.
 
@@ -36,11 +36,11 @@ Git can create a commit object without moving the current branch, and refs can r
 - [git-update-ref](https://git-scm.com/docs/git-update-ref)
 - [git-stash](https://git-scm.com/docs/git-stash) provides existing worktree/index capture concepts and highlights differences in tracked, untracked, and ignored-file handling.
 
-Do not assume the user's stash stack is application-owned. Choice between custom checkpoint objects and stash-shaped snapshots remains open.
+Do not assume the user's stash stack is application-owned. The choice between custom checkpoint objects and stash-shaped snapshots was resolved in favour of application-owned custom checkpoint sets, which Stage 5.3 implements and verifies. This section is retained for provenance; the implemented design is in the [Stage 5.3 document](stage-5/5.3-recovery-and-controls.md) and the [core specification](core-spec.md).
 
 ## Accepted decisions and remaining questions
 
 - Local recovery checkpoints may be saved and agent-owned changes cleared automatically while preserving user work. This does not grant deliverable-commit permission.
 - Bringing saved changes back requires approval. Whether task/plan-scoped advance grants can authorize later restorations remains open. Autonomous mode alone does not bypass the gate.
 - Deliverable commits are per task, with multiple commits allowed for clarity, under the configured commit policy. Task acceptance remains separate from the existence of commits.
-- How long must checkpoints remain available, and how is explicit cleanup presented?
+- How long must checkpoints remain available, and how is explicit cleanup presented? Still open: retention and explicit-discard UX are not implemented.

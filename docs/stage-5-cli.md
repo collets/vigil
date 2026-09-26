@@ -14,9 +14,12 @@ make build
 ./bin/vigil project events PROJECT_ID --after 0
 ./bin/vigil resources status
 ./bin/vigil doctor
+./bin/vigil hello
 ```
 
-Use the ID returned by initialization. State defaults to `$XDG_STATE_HOME/vigil` or `~/.local/state/vigil`; `--state-dir /absolute/private/path` overrides it. State must be outside managed checkout trees. Existing state directories/files must be private. Initialization reuses a physical root across symlink aliases and refuses overlapping registered projects. Project initialization installs embedded application migrations; the older `hello --db` only checks SQLite.
+Use the ID returned by initialization. State defaults to `$XDG_STATE_HOME/vigil` or `~/.local/state/vigil`; `--state-dir /absolute/private/path` overrides it. State must be outside managed checkout trees. Existing state directories/files must be private. Initialization reuses a physical root across symlink aliases and refuses overlapping registered projects.
+
+Two root-level diagnostics sit outside the persisted core. `hello` queries `sqlite_version()` only: it creates no application tables, persists no task, and honours `--db PATH` (default `:memory:`). `dashboard PROJECT_ID` is read-only and takes one project ID. Both accept the persistent `--db` flag, but **`--db` is inert for every other command** — all persisted state resolves through `--state-dir`, so passing `--db` to a `project`, `resources`, `doctor` or `spike` command is silently ignored rather than redirecting state.
 
 ## Apply a versioned human command
 
@@ -135,7 +138,7 @@ Preparation requires the exact clean fingerprint and selected base. It creates/r
 
 ## One disposable persisted execution
 
-The repository must contain a committed regular `.vigil-disposable-fixture` marker. The disposable profile's `endpoint_id` must be `fixture-endpoint`. Register that synthetic capacity identity; this URL is never contacted by the fixture driver:
+The repository must contain a committed regular `.vigil-disposable-fixture` marker. Register a synthetic capacity identity for the profile's `endpoint_id`; this URL is never contacted by the fixture driver. `--single-host` is **required** — the command fails without it, because other hosts and external clients are not coordinated. The fixtures in this repository use the ID `fixture-endpoint` by convention, but that literal is not enforced by code: any registered endpoint ID works so long as preparation and the profile agree.
 
 ```sh
 ./bin/vigil resources endpoint fixture-endpoint \
@@ -230,6 +233,8 @@ The current CLI history inspector is intentionally synthetic-only. Record an exp
 
 `--mode fresh_context` accepts `missing`, `corrupt` or `unsupported` history only when writer containment and a full verified checkpoint are available. `--mode remain_blocked` records the safe decision without creating an attempt.
 
+`--history-state` defaults to `missing` and `--history-class` to `interrupted`, so the example above is explicitly not the default path. `--history-automatic-work` records that the native history contains automatic or queued work; setting it **disqualifies** exact resume (`resumed native history has automatic or queued work`) and it is therefore a refusal input, not a convenience flag.
+
 Each exact resume creates immutable generation-scoped workspace authority. Distinct generations may have the same content digest when the workspace is unchanged; this does not reuse attempt identity or reset cumulative allowances.
 
 For eligible exact resume, prepare a new generation and invoke `execution-start` without `--prompt`; a replacement prompt is rejected:
@@ -307,7 +312,18 @@ Operation restrictions are checked when requesting permission, granting it and i
 # or: make dashboard PROJECT=PROJECT_ID
 ```
 
-The dashboard reads one consistent database snapshot for readiness, tasks, the first 100 pending/expired decisions and the latest 100 history events. It refreshes asynchronously every two seconds; Tab or 1–4 changes views, arrows/Page Up/Page Down scroll, `r` refreshes and `q` quits. Failed refreshes retain the previous snapshot with a visible warning. Project text is stripped of terminal control sequences. Decisions remain read-only here; use `project inbox` for full context and `project apply` for versioned human actions. No dashboard key starts a model, approves a request, accepts a task or performs delivery.
+The dashboard reads one consistent database snapshot for readiness, tasks, the first 100 pending/expired decisions and the latest 100 history events. It refreshes asynchronously every two seconds. Failed refreshes retain the previous snapshot with a visible warning. Project text is stripped of terminal control sequences. Decisions remain read-only here; use `project inbox` for full context and `project apply` for versioned human actions. No dashboard key starts a model, approves a request, accepts a task or performs delivery.
+
+Keys:
+
+| Key | Action |
+| --- | --- |
+| `1`–`4`, `tab`, `right` / `shift+tab`, `left` | Change view. Note the **horizontal** arrows change the view; they do not scroll |
+| `j` / `down`, `k` / `up` | Scroll one line |
+| `pgdown`, `pgup` | Scroll one page |
+| `home`, `end` | Jump to start / end |
+| `r` | Refresh now |
+| `q`, `esc`, `ctrl+c` | Quit |
 
 
 ## Resource intent inspection
@@ -389,3 +405,33 @@ Task acceptance can move the completed task to `accepted`; once all tasks are ac
 `vigil project discover PROJECT_ID` validates the registered root identity and reports existing nested Git roots, canonical/common-Git identities, current HEAD commit/ref when available, gitfile layouts and explicit unsupported/unborn issues. It excludes Git administration trees from traversal and skips directory symlinks. Discovery is bounded to 100 repositories, 100,000 entries and 15 seconds. Git output is bounded, ambient Git overrides are removed, and no status/filter/hook, repository script, submodule update or mutation runs.
 
 This is an observed inventory. It does not enroll repositories, select bases, create branches, infer a dirty-work choice or qualify unsupported layouts. Those remain explicit setup and execution steps.
+
+
+## Development-only spike runner
+
+`spike` is a bounded Stage 1–3 experiment runner, not a production path. It probes
+or drives a prepared harness fixture outside the persisted core, writes no
+application state, and is never a fallback for any `project` command. Both
+`--manifest` and `--harness` are **required**; the command fails without them.
+
+```sh
+# metadata probe only; starts no model turn
+./bin/vigil spike --manifest .cache/spike/stage1-EXAMPLE/launch.json --harness hermes
+
+# one live model-backed fixture turn
+./bin/vigil spike --manifest .cache/spike/stage1-EXAMPLE/launch.json --harness codex --live
+```
+
+| Flag | Required | Default | Meaning |
+| --- | --- | --- | --- |
+| `--manifest PATH` | yes | — | Prepared launch manifest from `scripts/spike/prepare.py` |
+| `--harness NAME` | yes | — | `codex` or `hermes` |
+| `--live` | no | `false` | Perform the real fixture turn instead of a metadata probe |
+| `--llama-key-file PATH` | no | — | Private key file for a local llama route; avoids putting the key in argv or the manifest |
+| `--scenario NAME` | no | — | Lifecycle scenario: `resume`, `interrupt`, `child`, `loss`, `clarify`, `approval-allow`, `approval-deny` |
+
+`--live` starts a real model turn and therefore costs money and touches the
+configured harness account. It is the only model-backed path in the binary and is
+not part of any gate. Scenarios may intentionally fail and leave partial fixture
+files; prepare a fresh fixture for every attempt. See
+[Stage 1 contract](adapter-spike.md) and the [Stage 3 plan](stage-3-plan.md).
