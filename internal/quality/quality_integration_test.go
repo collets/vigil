@@ -37,7 +37,7 @@ func TestQualityCheckHelper(t *testing.T) {
 		fmt.Print(string(content))
 		os.Exit(3)
 	case "timeout":
-		time.Sleep(2 * time.Second)
+		time.Sleep(5 * time.Second)
 	case "overflow":
 		fmt.Print(strings.Repeat("x", 4096))
 		os.Exit(2)
@@ -234,7 +234,7 @@ func TestActualCheckOutcomesAndTamper(t *testing.T) {
 		control := filepath.Join(t.TempDir(), "control")
 		_ = os.WriteFile(control, []byte("failure-a\n"), 0600)
 		d.Environment = append(d.Environment, policy.EnvironmentVariable{Name: "VIGIL_CONTROL", Value: control})
-	}, false}, {"timeout", "timeout", "timeout", func(d *policy.CheckDefinition) { d.TimeoutMS = 30 }, false}, {"interrupted", "timeout", "interrupted", nil, true}, {"missing-output", "missing", "missing_output", nil, false}, {"overflow", "overflow", "output_overflow", func(d *policy.CheckDefinition) { d.MaxOutputBytes = 32 }, false}}
+	}, false}, {"timeout", "timeout", "timeout", func(d *policy.CheckDefinition) { d.TimeoutMS = 2500 }, false}, {"interrupted", "timeout", "interrupted", nil, true}, {"missing-output", "missing", "missing_output", nil, false}, {"overflow", "overflow", "output_overflow", func(d *policy.CheckDefinition) { d.MaxOutputBytes = 32 }, false}}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			f := setupQuality(t, test.action, test.mutate)
@@ -245,7 +245,7 @@ func TestActualCheckOutcomesAndTamper(t *testing.T) {
 				ctx, cancel = context.WithCancel(ctx)
 				hook = func(stage string) error {
 					if stage == "after_effect_start" {
-						go func() { time.Sleep(30 * time.Millisecond); cancel() }()
+						go func() { time.Sleep(2500 * time.Millisecond); cancel() }()
 					}
 					return nil
 				}

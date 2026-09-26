@@ -95,10 +95,14 @@ func supervisorMain() int {
 	if _, err := proof.Write([]byte(linuxContainmentCompletion)); err != nil {
 		return linuxContainmentFailureExit
 	}
-	code := command.ProcessState.ExitCode()
-	if code < 0 {
-		return 128 + (-code)
+	status, ok := command.ProcessState.Sys().(syscall.WaitStatus)
+	if !ok {
+		return linuxContainmentFailureExit
 	}
+	if status.Signaled() {
+		return 128 + int(status.Signal())
+	}
+	code := command.ProcessState.ExitCode()
 	if code == linuxContainmentFailureExit {
 		// Reserve the containment status for the supervisor itself.
 		return linuxContainmentFailureExit - 1

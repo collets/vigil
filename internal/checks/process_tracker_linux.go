@@ -4,6 +4,7 @@ package checks
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 const linuxContainmentFailureExit = 125
 const linuxContainmentCompletion = "vigil-check-cleanup-complete-v1\n"
 const linuxContainmentReady = "vigil-check-supervisor-ready-v1\n"
+const linuxContainmentReadinessTimeout = 4 * time.Second
 
 type processContainment struct {
 	configRead  *os.File
@@ -94,7 +96,7 @@ func prepareProcessContainment(command *exec.Cmd) (*processContainment, error) {
 	return boundary, nil
 }
 
-func (p *processContainment) started() error {
+func (p *processContainment) started(ctx context.Context) error {
 	_ = p.configRead.Close()
 	p.configRead = nil
 	_ = p.proofWrite.Close()
@@ -104,7 +106,33 @@ func (p *processContainment) started() error {
 	if err := p.waitForConfigWriter(); err != nil {
 		return err
 	}
-	ready, err := io.ReadAll(io.LimitReader(p.readyRead, int64(len(linuxContainmentReady)+1)))
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("supervisor readiness canceled: %w", err)
+	}
+	type readinessResult struct {
+		proof []byte
+		err   error
+	}
+	readinessDone := make(chan readinessResult, 1)
+	go func() {
+		ready, err := io.ReadAll(io.LimitReader(p.readyRead, int64(len(linuxContainmentReady)+1)))
+		readinessDone <- readinessResult{proof: ready, err: err}
+	}()
+	readinessTimer := time.NewTimer(linuxContainmentReadinessTimeout)
+	defer readinessTimer.Stop()
+	var result readinessResult
+	select {
+	case result = <-readinessDone:
+	case <-ctx.Done():
+		_ = p.readyRead.Close()
+		result = <-readinessDone
+		return errors.Join(fmt.Errorf("supervisor readiness canceled: %w", ctx.Err()), result.err)
+	case <-readinessTimer.C:
+		_ = p.readyRead.Close()
+		result = <-readinessDone
+		return errors.Join(errors.New("supervisor readiness timed out"), result.err)
+	}
+	ready, err := result.proof, result.err
 	if err != nil {
 		return fmt.Errorf("read supervisor readiness: %w", err)
 	}

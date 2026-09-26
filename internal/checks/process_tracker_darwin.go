@@ -3,6 +3,7 @@
 package checks
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -35,11 +36,11 @@ func prepareProcessContainment(command *exec.Cmd) (*processContainment, error) {
 	return &processContainment{}, nil
 }
 
-func (*processContainment) started() error            { return nil }
-func (*processContainment) completed(*exec.Cmd) error { return nil }
-func (*processContainment) close()                    {}
-func (*processContainment) authoritative() bool       { return false }
-func processContainmentShutdownGrace() time.Duration  { return 250 * time.Millisecond }
+func (*processContainment) started(context.Context) error { return nil }
+func (*processContainment) completed(*exec.Cmd) error     { return nil }
+func (*processContainment) close()                        {}
+func (*processContainment) authoritative() bool           { return false }
+func processContainmentShutdownGrace() time.Duration      { return 250 * time.Millisecond }
 
 // The fixed wrapper stops before exec, so NOTE_FORK is registered before
 // approved code can fork. Current Darwin kernels do not support NOTE_TRACK;

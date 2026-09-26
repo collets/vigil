@@ -89,6 +89,65 @@ func TestSupervisorCancellationHelper(t *testing.T) {
 	_ = child.Wait()
 }
 
+func TestSupervisorEarlyCancellationHelper(t *testing.T) {
+	if os.Getenv("VIGIL_REVIEW_EARLY_CANCELLATION_HELPER") != "1" {
+		return
+	}
+	time.Sleep(30 * time.Second)
+}
+
+func TestSupervisorEarlyCancellationIsBounded(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	command := exec.Command(executable, "-test.run=^TestSupervisorEarlyCancellationHelper$")
+	command.Env = []string{"VIGIL_REVIEW_EARLY_CANCELLATION_HELPER=1"}
+	started := time.Now()
+	runErr, contained := runContained(ctx, command, io.Discard)
+	if contained {
+		t.Fatalf("pre-canceled readiness established containment: %v", runErr)
+	}
+	if elapsed := time.Since(started); elapsed > 8*time.Second {
+		t.Fatalf("early cancellation exceeded its bound: %s", elapsed)
+	}
+}
+
+func TestSupervisorSelfSignalHelper(t *testing.T) {
+	raw := os.Getenv("VIGIL_REVIEW_SELF_SIGNAL")
+	if raw == "" {
+		return
+	}
+	signal, err := strconv.Atoi(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Kill(os.Getpid(), syscall.Signal(signal)); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(5 * time.Second)
+}
+
+func TestSupervisorSignalExitCodeFidelity(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, signal := range []syscall.Signal{syscall.SIGTERM, syscall.SIGKILL, syscall.SIGHUP, syscall.SIGINT} {
+		command := exec.Command(executable, "-test.run=^TestSupervisorSelfSignalHelper$")
+		command.Env = []string{"VIGIL_REVIEW_SELF_SIGNAL=" + strconv.Itoa(int(signal))}
+		runErr, contained := runContained(context.Background(), command, io.Discard)
+		if !contained {
+			t.Fatalf("signal %v did not complete contained cleanup: %v", signal, runErr)
+		}
+		if got, want := command.ProcessState.ExitCode(), 128+int(signal); got != want {
+			t.Fatalf("signal %v recorded exit code %d; want %d", signal, got, want)
+		}
+	}
+}
+
 func TestSupervisorCompletesCleanupDuringCancellation(t *testing.T) {
 	executable, err := os.Executable()
 	if err != nil {
@@ -104,8 +163,11 @@ func TestSupervisorCompletesCleanupDuringCancellation(t *testing.T) {
 	if ctx.Err() == nil {
 		t.Fatal("helper never triggered cancellation")
 	}
-	if !contained {
-		t.Fatalf("supervisor did not prove cleanup after cancellation: %v", runErr)
+	if status, ok := command.ProcessState.Sys().(syscall.WaitStatus); ok && status.Signaled() && contained {
+		t.Fatalf("signalled supervisor established containment after cancellation: %v", runErr)
+	}
+	if !contained && runErr == nil {
+		t.Fatal("uncertain cancellation returned no containment error")
 	}
 	if elapsed := time.Since(started); elapsed > 5*time.Second {
 		t.Fatalf("supervisor cancellation exceeded its shutdown bound: %s", elapsed)

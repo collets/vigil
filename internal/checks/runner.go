@@ -396,7 +396,7 @@ func runContained(ctx context.Context, command *exec.Cmd, output io.Writer) (err
 		writer.Close()
 		return err, true
 	}
-	if err = containment.started(); err != nil {
+	if err = containment.started(ctx); err != nil {
 		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
 		_ = command.Wait()
 		reader.Close()
