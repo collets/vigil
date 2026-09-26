@@ -103,6 +103,7 @@ section instead.
 | [`research/stage-5.5-blockers.md`](research/stage-5.5-blockers.md) | Append-only Stage 5.5 user/runtime blocker log |
 | [`research/stage-5.5-user-decisions.md`](research/stage-5.5-user-decisions.md) | Review packet for remaining Stage 5.5 product, live-route and validation choices |
 | [`research/stage-5.5-qualification-input.md`](research/stage-5.5-qualification-input.md) | Visible credential-free review copy of the immutable Stage 5.5 qualification Markdown input |
+| [`research/stage-5.5-qualification-proposal.md`](research/stage-5.5-qualification-proposal.md) | Human-readable review copy of exact pending qualification proposal revision 1 |
 | [`research/stage-5.2-review/`](research/stage-5.2-review/) | Retained inert Stage 5.2 review probes (`.go.txt`) |
 | [`research/stage-5.3-review/`](research/stage-5.3-review/) | Retained inert Stage 5.3 review probes (`.go.txt`) |
 | [`research/stage-5.4-review/`](research/stage-5.4-review/) | Retained inert Stage 5.4 review probes (`.go.txt`) |

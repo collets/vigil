@@ -160,6 +160,9 @@ disposable fixture and added the 952-byte qualification specification (digest
 The ignored fixture path is hidden by many file browsers; an exact credential-free
 [visible review copy](stage-5.5-qualification-input.md) is indexed without
 creating a new specification revision or approval.
+The actual persisted proposal is separately rendered as an indexed
+[human-readable proposal review](stage-5.5-qualification-proposal.md), preserving
+revision 1 and digest `d90d3e5b…64a6b`; the review copy does not approve or apply it.
 
 Two explicitly authorized local Hermes planning turns used
 `custom/qwen3.8-27b-local` through the existing loopback llama route. The final
