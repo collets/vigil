@@ -384,15 +384,24 @@ func runContained(ctx context.Context, command *exec.Cmd, output io.Writer) (err
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	marker := "VIGIL_CHECK_CONTAINMENT_ID=" + store.ID()
 	command.Env = append(command.Env, marker)
-	if err = prepareProcessContainment(command); err != nil {
+	containment, err := prepareProcessContainment(command)
+	if err != nil {
 		reader.Close()
 		writer.Close()
 		return err, false
 	}
+	defer containment.close()
 	if err = command.Start(); err != nil {
 		reader.Close()
 		writer.Close()
 		return err, true
+	}
+	if err = containment.started(); err != nil {
+		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		_ = command.Wait()
+		reader.Close()
+		writer.Close()
+		return fmt.Errorf("retire supervisor configuration: %w", err), false
 	}
 	pid := command.Process.Pid
 	if err = activateProcessContainment(pid); err != nil {
@@ -417,32 +426,39 @@ func runContained(ctx context.Context, command *exec.Cmd, output io.Writer) (err
 	select {
 	case runErr = <-waited:
 	case <-ctx.Done():
-		tracker.signal(syscall.SIGTERM)
+		// The supervisor owns authoritative descendant cleanup. Ask it to stop
+		// first and do not kill the proof-producing process on the same deadline
+		// as its child termination phase.
+		tracker.signalRoot(syscall.SIGTERM)
 		select {
 		case runErr = <-waited:
-		case <-time.After(250 * time.Millisecond):
+		case <-time.After(processContainmentShutdownGrace()):
 			tracker.signal(syscall.SIGKILL)
 			runErr = <-waited
 		}
 	}
-	supervisorContainmentFailed := processContainmentFailed(command)
+	completionErr := containment.completed(command)
 	tracker.stop()
-	groupHadDescendants := syscall.Kill(-pid, 0) == nil
-	// A successful direct parent may have children in its process group or in
-	// detached sessions. Signal both sets and prove that both are gone.
-	tracker.signal(syscall.SIGTERM)
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for tracker.alive() && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
+	lifecycleStopped, reliable := true, true
+	if completionErr != nil || !containment.authoritative() {
+		groupHadDescendants := syscall.Kill(-pid, 0) == nil
+		// Without authoritative supervisor proof, signal both the process group
+		// and every observed detached process. This is best-effort cleanup only;
+		// completionErr still prevents it from creating containment authority.
+		tracker.signal(syscall.SIGTERM)
+		deadline := time.Now().Add(500 * time.Millisecond)
+		for tracker.alive() && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		tracker.signal(syscall.SIGKILL)
+		deadline = time.Now().Add(2 * time.Second)
+		for tracker.alive() && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		lifecycleStopped = !tracker.alive()
+		reliable = tracker.reliable() && (!unresolvedProcessFork(pid) || groupHadDescendants || tracker.hasDescendants())
 	}
-	tracker.signal(syscall.SIGKILL)
-	deadline = time.Now().Add(2 * time.Second)
-	for tracker.alive() && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	lifecycleStopped := !tracker.alive()
-	reliable := tracker.reliable() && (!unresolvedProcessFork(pid) || groupHadDescendants || tracker.hasDescendants())
-	contained := lifecycleStopped && reliable && !supervisorContainmentFailed
+	contained := lifecycleStopped && reliable && completionErr == nil
 	_ = reader.Close()
 	drainedOutput := true
 	select {
@@ -452,7 +468,14 @@ func runContained(ctx context.Context, command *exec.Cmd, output io.Writer) (err
 		drainedOutput = false
 	}
 	if !contained {
-		containmentErr := tracker.failure()
+		var containmentErr error
+		if !lifecycleStopped || !reliable {
+			containmentErr = tracker.failure()
+		}
+		containmentErr = errors.Join(containmentErr, completionErr)
+		if !drainedOutput {
+			containmentErr = errors.Join(containmentErr, errors.New("check output did not drain"))
+		}
 		if runErr != nil {
 			containmentErr = errors.Join(runErr, containmentErr)
 		}

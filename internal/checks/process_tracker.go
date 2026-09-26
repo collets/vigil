@@ -82,6 +82,10 @@ func (t *processTracker) signal(signal syscall.Signal) {
 	}
 }
 
+func (t *processTracker) signalRoot(signal syscall.Signal) {
+	_ = syscall.Kill(t.root, signal)
+}
+
 func (t *processTracker) alive() bool {
 	t.scan()
 	if syscall.Kill(-t.root, 0) == nil {
