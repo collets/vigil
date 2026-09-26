@@ -161,7 +161,7 @@ Linux validation at `cba322b` passed:
 - all existing `TestStage54` and interrupted-check regressions;
 - `make check`, `make check-race`, `make build`, `make build-boundary`, `make cross-build`, and `git diff --check`.
 
-The exact `git archive` for `cba322b` had SHA-256 `f2951b2628abb2a61752f16d7fc7ab8de1cdfce12b85a159155d4d31b7257833`. Native macOS transfer/execution was not authorized by the execution environment in this session, so native validation remains pending. The local temporary archive was removed. The implementing agent does not self-accept R2/R11.
+The exact `git archive` for `cba322b` had SHA-256 `f2951b2628abb2a61752f16d7fc7ab8de1cdfce12b85a159155d4d31b7257833`. It was transferred to the authorized `Simones-MBP.home` host and reverified before extraction into a fresh private temporary directory. Native Darwin 25.6.0 arm64 with Go 1.27.1 passed `make check`, `make check-race`, `make build`, `make build-boundary` and `make cross-build`. The Linux-only `internal/checks` probes are excluded by build tags on Darwin; the full quality and platform-neutral suites exercised the native path. The remote archive and temporary checkout, and the local temporary archive, were removed and verified absent. The implementing agent does not self-accept R2/R11.
 
 ## Deferred gates and limitations
 
