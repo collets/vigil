@@ -1,0 +1,386 @@
+//go:build linux
+
+// Independent review probes for Stage 5.4 R2/R11 at cba322b.
+//
+// Inert reproduction source. Copy to internal/checks/zz_review_probe_test.go
+// and run with the repository's pinned Go environment:
+//
+//	env -u GOROOT .tools/go/bin/go test ./internal/checks -run TestReviewProbe -count=1 -v
+//
+// Each behavioural assertion below FAILED against the reviewed implementation,
+// or asserts a property the submitted permanent suite does not cover. No
+// production source is modified. Helpers only act on processes they own.
+
+package checks
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+)
+
+// --- R2: only exact supervisor-owned proof may establish containment --------
+
+func TestReviewProbeForgedProofHelper(t *testing.T) {
+	if os.Getenv("VIGIL_REVIEW_FORGE") != "1" {
+		return
+	}
+	// The whole R2 argument rests on the cleanup proof being unforgeable by the
+	// approved check. Try every descriptor the check can see, then destroy the
+	// only component able to complete authoritative cleanup.
+	entries, _ := os.ReadDir("/proc/self/fd")
+	for _, entry := range entries {
+		fd, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue
+		}
+		target, err := os.Readlink(filepath.Join("/proc/self/fd", entry.Name()))
+		if err != nil || !strings.HasPrefix(target, "pipe:") {
+			continue
+		}
+		if _, err := syscall.Write(fd, []byte(linuxContainmentCompletion)); err == nil {
+			fmt.Printf("FORGE ok fd=%d target=%s\n", fd, target)
+		} else {
+			fmt.Printf("FORGE refused fd=%d target=%s err=%v\n", fd, target, err)
+		}
+	}
+	for fd := 3; fd <= 8; fd++ {
+		if _, err := syscall.Write(fd, []byte(linuxContainmentCompletion)); err == nil {
+			fmt.Printf("FORGE-BARE ok fd=%d\n", fd)
+		} else {
+			fmt.Printf("FORGE-BARE refused fd=%d err=%v\n", fd, err)
+		}
+	}
+	_ = syscall.Kill(os.Getppid(), syscall.SIGKILL)
+	os.Exit(0)
+}
+
+// A hostile approved check that writes the proof token everywhere it can and
+// then kills its supervisor must not obtain containment authority.
+// Observed at cba322b: contained=false, fds 3-8 all "bad file descriptor"
+// (FD_CLOEXEC on the supervisor's private pipes holds), so PASSES.
+func TestReviewProbeForgedProofCannotEstablishContainment(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(executable, "-test.run=^TestReviewProbeForgedProofHelper$")
+	cmd.Env = []string{"VIGIL_REVIEW_FORGE=1"}
+	var seen bytes.Buffer
+	runErr, contained := runContained(context.Background(), cmd, &seen)
+	t.Logf("child report:\n%s", seen.String())
+	t.Logf("contained=%t state=%v err=%v", contained, cmd.ProcessState, runErr)
+	if contained {
+		t.Fatalf("forged proof after supervisor loss established containment: %v", runErr)
+	}
+	if !strings.Contains(seen.String(), "FORGE-BARE refused fd=3") {
+		t.Fatalf("helper produced no descriptor report: %q", seen.String())
+	}
+}
+
+// The approved child must genuinely be unable to reach the private pipes.
+func TestReviewProbeChildCannotReachPrivatePipes(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(executable, "-test.run=^TestReviewProbeForgedProofHelper$")
+	cmd.Env = []string{"VIGIL_REVIEW_FORGE=1"}
+	var seen bytes.Buffer
+	_, _ = runContained(context.Background(), cmd, &seen)
+	// fds 1/2 are the combined output pipe and are legitimately writable; only
+	// the supervisor-private pipes matter.
+	for _, line := range strings.Split(seen.String(), "\n") {
+		if strings.HasPrefix(line, "FORGE-BARE ok") ||
+			(strings.HasPrefix(line, "FORGE ok") && !strings.Contains(line, "fd=1 ") && !strings.Contains(line, "fd=2 ")) {
+			t.Fatalf("approved child reached a supervisor-private pipe: %s", line)
+		}
+	}
+}
+
+func TestReviewProbeEscapeHelper(t *testing.T) {
+	if os.Getenv("VIGIL_REVIEW_ESCAPE") != "1" {
+		return
+	}
+	child := exec.Command("/bin/sleep", "25")
+	child.Env = []string{}
+	child.Dir = "/"
+	child.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if path := os.Getenv("VIGIL_REVIEW_LEAKFILE"); path != "" {
+		_ = os.WriteFile(path, []byte(strconv.Itoa(child.Process.Pid)), 0o600)
+	}
+	os.Exit(0)
+}
+
+// A detached, empty-environment child that the approved check orphans by
+// exiting immediately. Under the former polling design this escaped. It must
+// now be genuinely reaped, and contained=true must be backed by a real proof.
+func TestReviewProbeDetachedEmptyEnvChildIsReaped(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 0; attempt < 8; attempt++ {
+		leak := filepath.Join(t.TempDir(), "pid")
+		cmd := exec.Command(executable, "-test.run=^TestReviewProbeEscapeHelper$")
+		cmd.Env = []string{"VIGIL_REVIEW_ESCAPE=1", "VIGIL_REVIEW_LEAKFILE=" + leak}
+		runErr, contained := runContained(context.Background(), cmd, io.Discard)
+		raw, readErr := os.ReadFile(leak)
+		if readErr != nil {
+			t.Fatalf("attempt %d: helper did not record its detached child: %v", attempt, readErr)
+		}
+		pid, _ := strconv.Atoi(strings.TrimSpace(string(raw)))
+		if pid <= 1 {
+			t.Fatalf("attempt %d: bad recorded pid %q", attempt, raw)
+		}
+		if err := syscall.Kill(pid, 0); err == nil {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+			t.Fatalf("attempt %d: detached empty-environment child %d survived (contained=%t err=%v)", attempt, pid, contained, runErr)
+		}
+	}
+}
+
+// --- R2: cancellation timing and supervisor-loss invariants ----------------
+
+func assertSupervisorInvariant(t *testing.T, label string, cmd *exec.Cmd, contained bool) {
+	t.Helper()
+	if cmd.ProcessState == nil {
+		return
+	}
+	if status, ok := cmd.ProcessState.Sys().(syscall.WaitStatus); ok && status.Signaled() && contained {
+		t.Fatalf("%s: signalled supervisor produced contained=true (state=%v)", label, cmd.ProcessState)
+	}
+}
+
+func TestReviewProbeSleepHelper(t *testing.T) {
+	if os.Getenv("VIGIL_REVIEW_SLEEP") != "1" {
+		return
+	}
+	time.Sleep(30 * time.Second)
+}
+
+func TestReviewProbeStubbornHelper(t *testing.T) {
+	if os.Getenv("VIGIL_REVIEW_STUBBORN") != "1" {
+		return
+	}
+	child := exec.Command("/bin/sh", "-c", "trap '' TERM INT HUP; while :; do sleep 1; done")
+	child.Env = []string{}
+	child.Dir = "/"
+	child.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if path := os.Getenv("VIGIL_REVIEW_LEAKFILE"); path != "" {
+		_ = os.WriteFile(path, []byte(strconv.Itoa(child.Process.Pid)), 0o600)
+	}
+	fmt.Println("stubborn-ready")
+	_ = child.Wait()
+}
+
+// The prior review required early cancellation in permanent coverage; the
+// submitted suite omits it. Early cancellation is legitimate and may be
+// contained=true when the supervisor genuinely completes cleanup, but it must
+// stay bounded and a signalled supervisor may never be contained.
+func TestReviewProbeEarlyCancellation(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd := exec.Command(executable, "-test.run=^TestReviewProbeSleepHelper$")
+	cmd.Env = []string{"VIGIL_REVIEW_SLEEP=1"}
+	started := time.Now()
+	runErr, contained := runContained(ctx, cmd, io.Discard)
+	elapsed := time.Since(started)
+	t.Logf("early cancel: contained=%t elapsed=%s state=%v err=%v", contained, elapsed, cmd.ProcessState, runErr)
+	assertSupervisorInvariant(t, "early cancel", cmd, contained)
+	if elapsed > 8*time.Second {
+		t.Fatalf("early cancellation did not stay bounded: %s", elapsed)
+	}
+}
+
+// SIGTERM lands at many points of the supervisor's lifecycle, including before
+// its handler is installed and during its own termination/cleanup phase.
+func TestReviewProbeCancellationStartupRace(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 0; attempt < 30; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(attempt)*300*time.Microsecond)
+		cmd := exec.Command(executable, "-test.run=^TestReviewProbeSleepHelper$")
+		cmd.Env = []string{"VIGIL_REVIEW_SLEEP=1"}
+		started := time.Now()
+		runErr, contained := runContained(ctx, cmd, io.Discard)
+		elapsed := time.Since(started)
+		cancel()
+		if elapsed > 12*time.Second {
+			t.Fatalf("attempt %d: cancellation did not stay bounded: %s", attempt, elapsed)
+		}
+		assertSupervisorInvariant(t, "startup race", cmd, contained)
+		_ = runErr
+	}
+}
+
+// Cancellation landing inside the supervisor's own cleanup phase while a
+// detached, empty-environment descendant ignores SIGTERM. Exercises the
+// coordinated shutdown bound.
+func TestReviewProbeCancellationDuringCleanup(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 0; attempt < 12; attempt++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		cmd := exec.Command(executable, "-test.run=^TestReviewProbeStubbornHelper$")
+		cmd.Env = []string{"VIGIL_REVIEW_STUBBORN=1"}
+		go func() { time.Sleep(time.Duration(200+attempt*120) * time.Millisecond); cancel() }()
+		started := time.Now()
+		runErr, contained := runContained(ctx, cmd, io.Discard)
+		elapsed := time.Since(started)
+		if elapsed > 12*time.Second {
+			t.Fatalf("attempt %d: cancellation did not stay bounded: %s", attempt, elapsed)
+		}
+		assertSupervisorInvariant(t, "cleanup-phase cancel", cmd, contained)
+		t.Logf("attempt %d contained=%t elapsed=%s state=%v err=%v", attempt, contained, elapsed, cmd.ProcessState, runErr)
+	}
+}
+
+// --- R11: descriptor and writer retirement on every lifecycle path ---------
+
+func descriptorCount(t *testing.T) int {
+	t.Helper()
+	entries, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(entries)
+}
+
+// The submitted permanent suite covers repeated successful checks and a failed
+// start. This extends it to supervisor loss, cancellation, readiness failure
+// and forced escalation.
+func TestReviewProbeDescriptorRetirementAllPaths(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const runs = 10
+	before := descriptorCount(t)
+
+	for i := 0; i < runs; i++ { // normal execution
+		if err, contained := runContained(context.Background(), exec.Command("/bin/true"), io.Discard); err != nil || !contained {
+			t.Fatalf("normal run %d: %v %v", i, err, contained)
+		}
+	}
+	afterNormal := descriptorCount(t)
+
+	for i := 0; i < runs; i++ { // supervisor loss
+		cmd := exec.Command(executable, "-test.run=^TestReviewProbeForgedProofHelper$")
+		cmd.Env = []string{"VIGIL_REVIEW_FORGE=1"}
+		if _, contained := runContained(context.Background(), cmd, io.Discard); contained {
+			t.Fatalf("supervisor-loss run %d produced containment", i)
+		}
+	}
+	afterLoss := descriptorCount(t)
+
+	for i := 0; i < runs; i++ { // cancellation
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		cmd := exec.Command(executable, "-test.run=^TestReviewProbeSleepHelper$")
+		cmd.Env = []string{"VIGIL_REVIEW_SLEEP=1"}
+		_, _ = runContained(ctx, cmd, io.Discard)
+		cancel()
+	}
+	afterCancel := descriptorCount(t)
+
+	for i := 0; i < runs; i++ { // start failure, configuration beyond pipe capacity
+		command := exec.Command("/bin/true")
+		command.Env = []string{"VIGIL_LARGE_CONFIG=" + strings.Repeat("x", 256<<10)}
+		containment, err := prepareProcessContainment(command)
+		if err != nil {
+			t.Fatal(err)
+		}
+		command.Path = "/vigil-intentionally-missing-supervisor"
+		if err := command.Start(); err == nil {
+			t.Fatal("invalid supervisor unexpectedly started")
+		}
+		started := time.Now()
+		containment.close()
+		if elapsed := time.Since(started); elapsed > 2*time.Second {
+			t.Fatalf("start-failure configuration writer did not retire promptly: %s", elapsed)
+		}
+	}
+	afterStartFail := descriptorCount(t)
+
+	for i := 0; i < runs; i++ { // readiness failure and forced escalation
+		ctx, cancel := context.WithCancel(context.Background())
+		cmd := exec.Command(executable, "-test.run=^TestReviewProbeEscapeHelper$")
+		cmd.Env = []string{"VIGIL_REVIEW_ESCAPE=1", "VIGIL_REVIEW_LEAKFILE=" + filepath.Join(t.TempDir(), "pid")}
+		go func() { time.Sleep(2 * time.Millisecond); cancel() }()
+		if _, contained := runContained(ctx, cmd, io.Discard); contained {
+			t.Logf("escalation run %d: contained (supervisor completed cleanup before escalation)", i)
+		}
+		cancel()
+	}
+	afterEscalation := descriptorCount(t)
+
+	t.Logf("descriptors: baseline=%d normal=%d loss=%d cancel=%d startfail=%d escalation=%d",
+		before, afterNormal, afterLoss, afterCancel, afterStartFail, afterEscalation)
+	if afterEscalation > before+2 {
+		t.Fatalf("descriptors retained across all lifecycle paths: before=%d after=%d", before, afterEscalation)
+	}
+}
+
+// --- evidence fidelity: signal-terminated checks ---------------------------
+
+func TestReviewProbeSelfSignalHelper(t *testing.T) {
+	raw := os.Getenv("VIGIL_REVIEW_SELFSIGNAL")
+	if raw == "" {
+		return
+	}
+	sig, err := strconv.Atoi(raw)
+	if err != nil {
+		return
+	}
+	_ = syscall.Kill(os.Getpid(), syscall.Signal(sig))
+	time.Sleep(5 * time.Second)
+}
+
+// FAILS at cba322b. supervisor_linux.go maps any signal death to exit code 129
+// because ProcessState.ExitCode() returns -1 for every signal, so the durable
+// check-result exit_code is wrong for every signal except SIGHUP.
+func TestReviewProbeSignalExitCodeFidelity(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGKILL, syscall.SIGHUP, syscall.SIGINT} {
+		cmd := exec.Command(executable, "-test.run=^TestReviewProbeSelfSignalHelper$")
+		cmd.Env = []string{"VIGIL_REVIEW_SELFSIGNAL=" + strconv.Itoa(int(sig))}
+		runErr, contained := runContained(context.Background(), cmd, io.Discard)
+		if !contained {
+			t.Logf("signal %v: contained=%t err=%v state=%v", sig, contained, runErr, cmd.ProcessState)
+			continue
+		}
+		code := cmd.ProcessState.ExitCode()
+		want := 128 + int(sig)
+		t.Logf("signal %v: recorded exit_code=%d, conventional 128+signal=%d", sig, code, want)
+		if code != want {
+			t.Errorf("recorded exit_code=%d for signal %v; expected %d", code, sig, want)
+		}
+	}
+}

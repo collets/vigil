@@ -4,7 +4,7 @@ Date: 2026-09-22; updated 2026-09-26
 
 Scope: offline implementation and fixture validation only
 
-Status: R2/R11 remediation is submitted at `cba322b` after the independent follow-up of `49b9fbb`. R10 and R1/R3/R4/R5/R6/R7/R8/R9 remain closed for their reported offline defects. Stage 5.4 remains unaccepted pending independent follow-up. See the [latest findings and retained probes](stage-5.4-astra-review.md#independent-follow-up-of-49b9fbb). Implementation claims below are not self-acceptance.
+Status: R2/R11 remediation at `cba322b` is independently accepted offline. R2 and R11 are closed, and R10 with R1/R3/R4/R5/R6/R7/R8/R9 remain closed for their reported offline defects. P3 findings F1–F3 are remediated at `99cd6c0` and await independent follow-up. The Darwin fork-accounting limitation remains a distinct open observation. See the [findings and retained probes](stage-5.4-astra-review.md#independent-follow-up-of-cba322b). Implementation claims below are not self-acceptance.
 
 Production dispatch: disabled
 
@@ -33,8 +33,9 @@ Stage 5.4 was implemented as these local commits:
 | `253efd2` | Fail closed when a Darwin fork cannot be tied to a contained group or observed PID |
 | `49b9fbb` | Add the Linux subreaper supervisor and umask-independent copied-file modes |
 | `cba322b` | Require private supervisor readiness/cleanup proof and retire configuration resources |
+| `99cd6c0` | Bound readiness, preserve signal exit fidelity and add permanent early-cancellation coverage |
 
-Initial review range: `4b48737..03f65e8`. First remediation range: `c224826..0993a24`. Second follow-up remediation range: `ff0d9c0..253efd2`. Final R2/R10 submission: `253efd2..49b9fbb`. Current R2/R11 submission: `49b9fbb..cba322b`. No commit was pushed and no publication or production activation occurred.
+Initial review range: `4b48737..03f65e8`. First remediation range: `c224826..0993a24`. Second follow-up remediation range: `ff0d9c0..253efd2`. Final R2/R10 submission: `253efd2..49b9fbb`. R2/R11 submission: `49b9fbb..cba322b`. Current P3 remediation: `99cd6c0`. No commit was pushed and no publication or production activation occurred.
 
 ## Independent-review remediation
 
@@ -173,7 +174,7 @@ The exact `git archive` for `cba322b` had SHA-256 `f2951b2628abb2a61752f16d7fc7a
 - Unsupported repository layouts from earlier stages remain unsupported. The check runner intentionally rejects special files and unsupported nested boundaries instead of creating a production fallback.
 - Acceptance ends at task `accepted` or plan `finalizing`; delivery/finalization implementation belongs to later slices. Stage 5.5 was not started.
 
-## Independent review instructions
+## Independent review instructions for cba322b (completed)
 
 Review `49b9fbb..cba322b` against R2/R11 in `docs/research/stage-5.4-astra-review.md`. The earlier remediation ranges remain historical context. Begin from the accepted Stage 5.3 contracts and explicitly preserve every previously closed finding.
 
@@ -188,6 +189,28 @@ Review `49b9fbb..cba322b` against R2/R11 in `docs/research/stage-5.4-astra-revie
 9. Report findings independently. If accepted offline, update the review record and shared status while leaving live qualification and real human/manual gates pending. Do not enable production dispatch, push, publish, self-authorize recovery, or begin Stage 5.5 as part of the review.
 
 
-## Independent review of final remediation
+## Independent review of the final R2/R11 remediation
 
-The independent follow-up of `49b9fbb` closes R10 but leaves R2 (P1) open: signal death of the subreaper can still produce `contained_stopped` without completed cleanup. New R11 (P2) covers configuration-pipe descriptors left to garbage collection. See [the exact findings and reproduction instructions](stage-5.4-astra-review.md#independent-follow-up-of-49b9fbb). Stage 5.4 remains unaccepted and production dispatch remains disabled; submitted passing suites do not supersede these findings.
+The independent follow-up of `cba322b` **closes R2 and R11**. On Linux, containment authority now requires an exact, supervisor-written cleanup token produced only after authoritative subreaper reaping; the former sampling/environment polling path can no longer contribute authority, and signal death, missing or malformed proof, observation failure and forced escalation all remain uncertain and retain claims. Descendant signalling uses pidfds with start-time identity checks. Cancellation is coordinated so the supervisor receives a bounded window to terminate and reap detached descendants. Configuration, readiness and proof pipes and the configuration writer have an explicit lifetime on preparation failure, start failure, normal execution, cancellation, supervisor loss and forced escalation.
+
+R10 and every previously closed safeguard are preserved; all retained Stage 5.4 regressions still pass. Three P3 findings and one stale-documentation defect are recorded, and the Darwin fork-accounting limitation at `internal/checks/runner.go:459` remains a distinct unverified observation. Native macOS execution for `cba322b` was not independently repeated. See [the exact findings and reproduction instructions](stage-5.4-astra-review.md#independent-follow-up-of-cba322b). Production dispatch remains disabled; offline acceptance does not supersede the live gates.
+
+## P3 remediation submission and independent follow-up request
+
+Commit `99cd6c0` remediates only F1–F3 from the independent follow-up of `cba322b`:
+
+- F1: the Linux supervisor readiness read now accepts the caller's context, has a four-second defence-in-depth timeout, closes the read end to unblock and joins the reader on cancellation or timeout, and still requires byte-exact equality with the private readiness token. Missing, malformed, short and unreadable tokens remain uncertainty; the `FD_CLOEXEC` boundary is unchanged.
+- F2: signal-terminated checks now map durable exit evidence through `syscall.WaitStatus.Signal()`, producing 143 for SIGTERM, 137 for SIGKILL, 129 for SIGHUP and 130 for SIGINT. The supervisor's reserved status 125 and its child-status remap to 124 are unchanged.
+- F3: early cancellation and signal-code fidelity are permanent Linux regressions alongside the existing cleanup-time cancellation, supervisor-death and detached clean-environment tests. The cleanup-time assertion permits safe uncertainty under an externally signalled supervisor but still forbids false containment proof.
+
+The existing R11 configuration writer and descriptors retain explicit lifetimes across preparation failure, start failure, normal execution, cancellation, supervisor loss and forced escalation. The writer remains bounded and joined; pidfd plus start-time descendant signalling and the subreaper/handler ordering remain unchanged. The quality timeout/interruption fixtures now wait long enough for race-instrumented supervisor readiness so they continue testing post-readiness outcomes; the new permanent regression separately exercises pre-readiness cancellation.
+
+Linux/WSL2 amd64 with Go 1.27.1 passed:
+
+- `go test ./internal/checks -run 'TestIndependent|TestSupervisor' -count=2 -v`;
+- the same suite with `-race`, twice through `-count=2`;
+- the full retained `TestReviewProbe` file, including signal fidelity and all six descriptor lifecycle paths;
+- `go test ./internal/quality -run TestStage54 -count=1 -v`;
+- `make check`, `make check-race`, `make build`, `make build-boundary`, `make cross-build` and `git diff --check`.
+
+Independent follow-up should review `99cd6c0` only for F1–F3, rerun the commands and retained probe above, and preserve every previously closed safeguard without reopening or re-litigating it. The Darwin exception at `internal/checks/runner.go:459` was not changed and remains a distinct open observation. Native macOS validation is separate and is not claimed here. No Stage 5.5 work, production dispatch or activation, paid/model call, push or publication occurred.

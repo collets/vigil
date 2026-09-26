@@ -249,3 +249,114 @@ Retained new probes: `stage-5.4-review/subreaper_followup_test.go.txt`. Copy to 
 Independent native macOS execution was not repeated. The implementer's submitted evidence remains the exact `49b9fbb` bundle `322b3facdb75a3056c346dc770043e9a97127373cb0328db6dc70059cb21b238`; passing native suites are not live runtime qualification.
 
 Next agent: remediate R2 and R11, preserve R10 and all other closed safeguards, add permanent failure-path regressions, and request independent follow-up. No Stage 5.5 implementation, production activation, paid/model calls, push or publication is authorized by this review. Review documentation and inert reproductions are intentionally left uncommitted for a separate review-artifact checkpoint.
+
+
+## Independent follow-up of cba322b
+
+Date: 2026-09-26. Reviewed implementation `49b9fbb..cba322b` and documentation checkpoint `558c063` (checkout HEAD `4008325`), with every prior finding retained as context.
+
+**Verdict: R2 is closed. R11 is closed. R10 and R1/R3/R4/R5/R6/R7/R8/R9 remain closed. Three new P3 findings and one documentation defect are recorded below; none of them is a containment-escape or a false-proof defect. Stage 5.4 is accepted offline. Production dispatch remains disabled and live qualification remains pending.**
+
+R2's substance is now real rather than asserted. On Linux, containment authority requires an exact, supervisor-written cleanup token produced only after authoritative subreaper cleanup, and the former sampling/environment polling path can no longer contribute to it. I verified the central claim adversarially rather than by reading the passing suite: an approved check that writes the proof token to every descriptor it can reach and then SIGKILLs its own supervisor receives `contained=false`, because the supervisor's private pipes are `FD_CLOEXEC` and the signalled supervisor is rejected independently of exit status. R11's descriptor and configuration-writer ownership is correct on all six lifecycle paths, including the two the submitted permanent tests do not cover.
+
+### R2 — closed: only exact supervisor-owned proof establishes containment
+
+`runContained` (`internal/checks/runner.go:426-484`) computes `contained = lifecycleStopped && reliable && completionErr == nil` at `runner.go:461`. On Linux `containment.authoritative()` is true (`process_tracker_linux.go:187`), so the fallback block at `runner.go:443` is entered only when `completionErr != nil`; polling can therefore never manufacture authority. The remaining work — signalling, drain bounding and reporting — is preserved.
+
+`processContainment.completed` (`process_tracker_linux.go:137-155`) is the sole authority and requires all four conditions independently: a non-nil `ProcessState`; `status.Signaled() == false`; an exit code other than the reserved `125`; and byte-exact equality with `linuxContainmentCompletion` read through a `len+1` limit reader. Each rejection maps to containment uncertainty, `runHeld` returns an error (`runner.go:756-758`), `releaseAllowed` stays false (`runner.go:656`, `runner.go:667-668`) so repository claims are retained, and the effect is marked uncertain (`runner.go:663-666`).
+
+Signal death, missing/malformed proof, observation failure and forced escalation all remain uncertain:
+
+- **Signal death** — `process_tracker_linux.go:141-143`. Probe `TestReviewProbeForgedProofCannotEstablishContainment`: a check that writes the token everywhere and SIGKILLs its supervisor returns `contained=false`, `state=signal: killed`, `supervisor did not exit normally`. The submitted `TestIndependentSupervisorDeathMustBeUncertain` covers the same property and passes.
+- **Missing/malformed proof** — `process_tracker_linux.go:151-153`. Verified by inspection; there is no external injection point, so this is not a runtime reproduction. The exact-equality check under a `len+1` limit also rejects a duplicated or truncated token, so a forged write concatenated with a real one fails closed rather than passing.
+- **Observation error** — `discoverCheckProcesses` (`process_tracker_linux.go:193-255`) returns errors for `ReadDir`, missing `)` and short/invalid `stat` fields, and `processTracker.scanErr` is sticky (`process_tracker.go:31-44,104-108`), so `reliable()` is false and `contained` is false. Verified by inspection; not runtime-probed, because no external injection point exists. This closes the `linuxDescendants` gap recorded against `49b9fbb` (`supervisor_linux.go:205-251` now propagates `ReadDir` failure, distinguishes `ErrNotExist` from other read errors, and rejects short or unparsable `stat`).
+- **Forced escalation** — `runner.go:433-438`. Escalation signals the supervisor's process group with `SIGKILL`, so `status.Signaled()` holds and `completionErr != nil`; the escalation is therefore incapable of yielding `contained=true`.
+
+**The readiness handshake does close the early-cancellation races.** `signal.Notify` is now the first statement of `supervisorMain` (`supervisor_linux.go:27-28`) and `signal.Stop` is deferred to function return (`supervisor_linux.go:29`), so the handler is installed before the approved child starts and remains installed through descendant cleanup and the proof write. At `49b9fbb` it was installed after the child start and removed before cleanup, which is exactly the supervisor-loss window the prior review named. The parent additionally refuses to proceed until it has read the exact readiness token (`process_tracker_linux.go:107-115`), and a missing or malformed token fails the run.
+
+**Cancellation does give the supervisor bounded time to terminate and reap detached descendants.** `tracker.signalRoot(SIGTERM)` targets the supervisor alone (`runner.go:432`, `process_tracker.go:85-87`) instead of signalling the group, and the grace is `processContainmentShutdownGrace()` = 4s (`process_tracker_linux.go:188`), which exceeds the supervisor's own 250ms `SIGTERM`→`SIGKILL` pause plus its cleanup loops (`supervisor_linux.go:123`, `139-181`). Measured: early cancellation completes in 261ms; `TestReviewProbeCancellationDuringCleanup`, which cancels inside the supervisor's own termination phase while a detached, empty-environment descendant ignores `SIGTERM`, is `contained=true` in 12/12 attempts between 469ms and 1.79s; `TestReviewProbeCancellationStartupRace` is bounded and never falsely contained across 30 attempts with `SIGTERM` landing at progressively earlier points of supervisor startup.
+
+Early cancellation legitimately returns `contained=true` when the supervisor genuinely completes cleanup and writes a real proof. That is correct, not a false proof: the alternative — refusing to report containment for a cancellation that was fully cleaned up — would lose the ability to distinguish a clean stop from an unclean one. `status` is separately recorded as `interrupted` (`runner.go:748-749`).
+
+**Descendant signalling uses stable pidfds with start-time identity checks.** `signalObservedProcess` (`supervisor_linux.go:253-282`) opens a pidfd, re-reads `/proc/<pid>/stat`, compares field 19 (`starttime`) against the value captured during enumeration, and only then calls `PidfdSendSignal` on the pidfd. `ESRCH` and `ErrNotExist` are treated as benign exit races; an actual identity mismatch is an error. All three signalling sites use it (`supervisor_linux.go:118-122,131-135,151-155,162-166`), so no signalling path relies on a bare reusable PID. The `49b9fbb` "PID-only signalling still lacks stable process identity" gap is closed.
+
+**The subreaper is a genuinely authoritative descendant boundary, not an improved poll.** Because the supervisor sets `PR_SET_CHILD_SUBREAPER` before starting the approved child (`supervisor_linux.go:65-67`), any descendant orphaned by an intermediate exit is reparented to the supervisor, so the `linuxDescendants` ancestry closure is complete at every snapshot; a descendant cannot become a child of `init` while the subreaper lives. `cleanupDescendants` requires an empty post-reap closure before the proof is written (`supervisor_linux.go:89-97,139-181`). Confirmed empirically: `TestReviewProbeDetachedEmptyEnvChildIsReaped` orphans a `setsid`, empty-environment `/bin/sleep 25` and records its PID; 8/8 attempts find the child retired. Combined with the retained `TestStage54FinalCleanEnvironmentEscape` and `TestStage54FollowupEscapedSession`, the previously demonstrated escape class is closed on the reviewed implementation.
+
+### R11 — closed: configuration, readiness and proof resources have an explicit lifetime
+
+`processContainment` (`process_tracker_linux.go:24-32`) owns all three pipes and the writer channel, and `close()` (`:157-185`) retires every surviving end, is idempotent, and joins the writer. Audited on every path:
+
+| Path | Behaviour | Evidence |
+| --- | --- | --- |
+| Preparation failure | Each already-created pipe pair is closed before returning (`:56-57`, `:62-65`); the writer goroutine is only started after all three pairs exist | inspection |
+| Start failure | `defer containment.close()` (`runner.go:393`) runs; `configRead` is closed first, which makes a blocked oversized write fail with `EPIPE`, then `writeDone` is drained | `TestReviewProbeDescriptorRetirementAllPaths` |
+| Normal execution | `started()` closes the parent's `configRead`, `proofWrite` and `readyWrite` immediately after start (`:98-103`) | probe, 10 runs |
+| Cancellation | same `close()` via defer | probe, 10 runs |
+| Supervisor loss | same `close()` via defer; supervisor death does not orphan the parent's ends | probe, 10 runs |
+| Readiness failure / forced escalation | same `close()` via defer | probe, 10 runs |
+
+The submitted permanent tests cover only repeated success and one failed start. `TestReviewProbeDescriptorRetirementAllPaths` extends this to all six: `/proc/self/fd` count after 60 runs across every path stays at the baseline (10 → 10), with the submitted `TestIndependentSupervisorPipeDescriptors` independently confirming no growth with GC disabled.
+
+**Configuration writers are bounded and joined.** The writer goroutine always closes its end and reports through a capacity-1 buffered channel, so it can never block on a receiver (`process_tracker_linux.go:90-93`). The normal case is bounded by a 1s timer (`:119-135`). The timer path closes the *write* end and then blocks on `writeDone`; in practice that path is unreachable as a hang because `started()` has already closed `configRead` at `:98`, which unblocks any pending write with `EPIPE` first. Verified with a 256 KiB configuration — larger than the 64 KiB pipe capacity — on the start-failure path, where the writer retires well inside 2s. No blocked goroutine or descriptor survived any probe. `waitForConfigWriter` deliberately leaves its own bound unenforced for a still-open reader, which is sound only because of that ordering; a future refactor that moves the `configRead` close after the writer join would reintroduce an unbounded wait.
+
+### Linux/Darwin build separation
+
+`internal/checks/process_tracker_linux.go`, `internal/checks/supervisor_linux.go` and `internal/checks/stage54_independent_test.go` are each `//go:build linux`; `internal/checks/process_tracker_darwin.go` is `//go:build darwin` and supplies the full `processContainment` surface plus `activateProcessContainment`, `closeProcessContainment`, `unresolvedProcessFork` and `discoverCheckProcesses`. `GOOS=darwin GOARCH=arm64 go vet ./...` and `go test -c ./internal/checks` both succeed, and `make cross-build` builds `linux/amd64`, `linux/arm64`, `darwin/amd64` and `darwin/arm64`. The Darwin supervisor and readiness/proof protocol are confined to the Linux files; no Linux-only symbol leaks into `runner.go`.
+
+**Darwin containment behaviour was not weakened.** `authoritative()` returns false on Darwin (`process_tracker_darwin.go:41`), so the fallback branch always runs and `contained` still requires the unchanged `lifecycleStopped && reliable` together with the unchanged `unresolvedProcessFork(pid) || groupHadDescendants || tracker.hasDescendants()` exception (`runner.go:459`). `processContainmentShutdownGrace()` is 250ms on Darwin (`process_tracker_darwin.go:42`) — the same value that was previously hardcoded — and the new root-only `SIGTERM` is still followed by the same `tracker.signal(SIGKILL)` group escalation. The one Darwin-observable difference is that the initial `SIGTERM` now targets the root rather than the whole group, so a `setsid`-escaped descendant gets 250ms of additional grace before the group `SIGKILL`. That is a gracefulness change, not a containment-authority change, and it cannot convert a surviving descendant into a passing result.
+
+The previously recorded Darwin limitation stands unchanged and is **not** a regression: one observed descendant can still excuse an unaccounted additional fork at `runner.go:459`, and the Linux-only `internal/checks` tests do not run natively. It is a distinct, still-open source-level observation. I did not run Darwin natively; see the evidence section.
+
+### New findings
+
+**F1 — P3: the readiness handshake is the only phase of `runContained` that ignores the caller's context.** `internal/checks/process_tracker_linux.go:107` performs an untimed `io.ReadAll` on the readiness pipe, and `started()` runs at `runner.go:399` before any `ctx` is consulted. A supervisor that stalls between `exec` and its readiness write would block the check past its `checkCtx` timeout while `HoldClaims` retains the live owner fence. I could not reach this through any production path: the approved command is not started until after readiness is written, so check code cannot influence this window, and a supervisor that dies produces immediate `EOF` rather than a stall. I initially reproduced a block with `context.Background()`, then established that this was an artifact of the probe — `runHeld` always wraps with `context.WithTimeout` (`runner.go:723`), and 60 attempts against a production-shaped 1s context all returned bounded and never falsely contained. The defect is therefore a missing defence-in-depth bound, not a demonstrated hang. Recommended: bound the readiness read and honour `ctx`, mirroring `waitForConfigWriter`.
+
+**F2 — P3: every signal-terminated check is recorded with exit code 129.** `internal/checks/supervisor_linux.go:98-100` maps a signal death with `128 + (-code)`, but `ProcessState.ExitCode()` returns `-1` for *any* signal, not `-signum`. `TestReviewProbeSignalExitCodeFidelity` shows `SIGTERM` recorded as `129` instead of `143` and `SIGKILL` as `129` instead of `137`; only `SIGHUP` matches by coincidence. This writes a wrong `exit_code` into durable check-result evidence (`runner.go:741-745,790`). It is not an authority defect — status, containment and the reserved-125 mapping are unaffected, and the `125` collision the code is guarding against is real and correctly handled — but recorded evidence should not misreport the observed status. Recommended: use `syscall.WaitStatus.Signal()` for the mapping.
+
+**F3 — P3: the required early-cancellation permanent regression is missing.** The `49b9fbb` follow-up required permanent coverage of "early cancellation, cleanup-time cancellation, explicit supervisor death and detached clean-environment children". `internal/checks/stage54_independent_test.go` covers the latter three (`:92`, `:43`, and `internal/quality/stage54_final_followup_test.go:33`) but not early cancellation. The behaviour is correct — `TestReviewProbeEarlyCancellation` shows a bounded 261ms outcome with a genuine proof — so this is a coverage gap against an explicit requirement rather than a behavioural defect. Recommended: promote the early-cancellation case into the permanent suite.
+
+**F4 — documentation: `docs/next-steps.md:149` is stale.** The "Next concrete action" line still names remediation range `ff0d9c0..253efd2`, which was already reviewed, while `docs/next-steps.md:11` correctly names the `49b9fbb` follow-up against `cba322b`. This has been unchanged since `49b9fbb` and survives at `4008325`, so a resuming agent would be sent to re-review a superseded range. `docs/pending-decisions.md` has the same staleness in the same commit range. Recommended: update both to `cba322b`.
+
+### Residual observations, not findings
+
+- `runner.go:394-398` returns `contained=true` when `command.Start()` fails, without consulting the proof. This is sound: a start failure means no supervisor and no approved child, and Go reaps a child that fails to exec before returning the error (`.tools/go/src/syscall/exec_unix.go:236`). Containment is vacuously established, not assumed.
+- `supervisorMain` uses `exec.Command`, which performs a `LookPath` when `spec.Path` contains no separator, against the *supervisor's* inherited environment rather than the approved `spec.Env`. Not reachable today: `resolveExecutable` (`runner.go:516-545`) only returns absolute paths, and a missing absolute path fails before dispatch.
+- A single descendant identity-verification failure aborts the entire cleanup rather than retrying (`supervisor_linux.go:274-276` into `:139-181`), so an extremely rare PID-reuse race converts a clean shutdown into uncertainty. This is the safe direction and is not a defect.
+- The combined output pipe is outside R2/R11's scope. When containment fails and a surviving descendant still holds its write end, `runner.go:462-469` gives the drain 1s and then abandons the copying goroutine with the descriptor still open. I did not construct that case and am not reporting it as a finding.
+
+### Validation
+
+Pinned Go 1.27.1, Linux. All commands run with the Makefile's environment; `GOROOT` had to be cleared because the ambient value points at an unrelated Go 1.15.2 tree.
+
+```text
+go test ./internal/checks -run 'TestIndependent|TestSupervisor' -count=2 -v          pass
+go test -race ./internal/checks -run 'TestIndependent|TestSupervisor' -count=2 -v  pass
+go test ./internal/quality -run 'TestStage54' -count=1 -v                            pass (all 14)
+go test ./internal/checks -count=1                                                  pass
+make check                                                                             pass
+make check-race                                                                         pass
+make build                                                                             pass
+make build-boundary                                                                     pass
+make cross-build                                                                        pass (4 targets)
+git diff --check / git diff --check HEAD                                              pass, no output
+GOOS=darwin GOARCH=arm64 go vet ./...                                                  pass
+GOOS=darwin GOARCH=arm64 go test -c ./internal/checks                                 pass
+```
+
+Every retained Stage 5.4 regression still passes, including the prior-round reproductions: `TestStage54FinalCleanEnvironmentEscape`, `TestStage54FinalRestrictiveUmask`, `TestStage54FollowupRegularPermissions` (`0600`/`0644`/`0755`), `TestStage54FollowupEscapedSession`, both populated-v12 assessment cases, the acceptance race, the baseline-advance case and the descendant/output cases. R10 and every previously closed safeguard are preserved. No data-race diagnostics were reported in any run.
+
+Retained new probes: `stage-5.4-review/r2r11_followup_test.go.txt`. Copy to `internal/checks/zz_review_probe_test.go` and run `go test ./internal/checks -run TestReviewProbe -count=1 -v`. Every R2/R11 property assertion passes against `cba322b`; only `TestReviewProbeSignalExitCodeFidelity` fails, reproducing F2. Helpers act solely on processes they create. The executable copy was removed; no production source was changed.
+
+### Evidence limits and next handoff
+
+Native macOS validation was **not** independently repeated and remains a distinct evidence item: the implementer's submitted `git archive` of `cba322b`, SHA-256 `f2951b2628abb2a61752f16d7fc7ab8de1cdfce12b85a159155d4d31b7257833`, with `make check`, `make check-race`, `make build`, `make build-boundary` and `make cross-build` reported passing on Darwin 25.6.0 arm64. I verified only the build separation and type-correctness of the Darwin configuration; I make no claim about native runtime behaviour, and the Darwin containment exception at `runner.go:459` remains an unverified source-level observation rather than a reproduced escape.
+
+This review establishes offline implementation acceptance only. Live contained Codex/reviewer qualification, provider-idle proof, shared capacity authority, the real runtime crash matrix, real project check/baseline/manual/human decisions and the Darwin fork-accounting limitation all remain visibly pending. No model or paid call, no production dispatch, no Stage 5.5 work, no push and no publication occurred.
+
+Next agent: record F1–F4 and this acceptance in the Stage 5.4 status documents, correct the stale ranges in `docs/next-steps.md` and `docs/pending-decisions.md`, and add the early-cancellation permanent regression. Do not treat this acceptance as live containment qualification, and do not close the shared live gate from synthetic or offline evidence.
+
+### Implementation response to F1–F3
+
+Date: 2026-09-26. This is implementing-agent evidence, not an independent review amendment. Commit `99cd6c0` bounds and joins the readiness read under both caller cancellation and a four-second timeout while retaining exact-token comparison and `FD_CLOEXEC`; maps signal exits with `syscall.WaitStatus.Signal()` while retaining reserved status 125 and its 124 remap; and promotes early cancellation plus signal fidelity into the permanent Linux suite. No Darwin containment logic changed.
+
+The retained `TestReviewProbe` suite now passes in full, including all six descriptor/configuration-writer lifecycle paths and TERM/KILL/HUP/INT exit values 143/137/129/130. The permanent `TestIndependent`/`TestSupervisor` suite passed twice ordinarily and twice under `-race`; retained `TestStage54`, `make check`, `make check-race`, `make build`, `make build-boundary`, `make cross-build` and `git diff --check` also passed on Linux/WSL2 amd64 with Go 1.27.1. Native macOS validation remains separate. Independent follow-up of `99cd6c0` is requested without reopening R2, R11, R10 or any other closed safeguard; the Darwin observation at `internal/checks/runner.go:459` remains distinct and open.
