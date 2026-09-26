@@ -148,6 +148,17 @@ func setupQuality(t *testing.T, action string, mutate func(*policy.CheckDefiniti
 		t.Fatal(err)
 	}
 	_ = engine.DB.SQL.QueryRow("SELECT revision FROM project").Scan(&revision)
+	if _, err = engine.QueuePlan(ctx, store.ID(), revision, "plan", 0); err != nil {
+		t.Fatal(err)
+	}
+	revision++
+	if _, err = engine.Continue(ctx, store.ID(), revision); err != nil {
+		t.Fatal(err)
+	}
+	revision++
+	if decision, advanceErr := engine.Advance(ctx, store.ID(), revision); advanceErr != nil || decision.TaskID != "task" {
+		t.Fatal("workflow selection", decision, advanceErr)
+	}
 	prepared, err := supervisor.Prepare(ctx, engine, supervisor.PrepareRequest{CommandID: store.ID(), ExpectedProjectRevision: revision, TaskID: "task", RuntimeKind: "synthetic", WallLimitMS: 60000})
 	if err != nil {
 		t.Fatal(err)

@@ -189,6 +189,50 @@ func projectCommand(stateDir *string) *cobra.Command {
 		control.Flags().IntVar(&controlRevision, "expected-revision", 0, "Expected project revision")
 		root.AddCommand(control)
 	}
+	root.AddCommand(&cobra.Command{Use: "queue-list PROJECT_ID", Short: "Show the authoritative ranked plan queue", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			result, err := e.PlanQueue(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, result)
+		})
+	}})
+	var queueCommand string
+	var queueRevision, queueRank int
+	queue := &cobra.Command{Use: "queue PROJECT_ID PLAN_ID", Short: "Queue one exact accepted plan revision at an explicit rank", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		if queueCommand == "" || queueRevision < 1 || queueRank < 0 {
+			return errors.New("--command-id, --expected-revision and a nonnegative --rank required")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			result, err := e.QueuePlan(cmd.Context(), queueCommand, queueRevision, args[1], queueRank)
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, result)
+		})
+	}}
+	queue.Flags().StringVar(&queueCommand, "command-id", "", "Unique replay-safe queue command")
+	queue.Flags().IntVar(&queueRevision, "expected-revision", 0, "Expected project revision")
+	queue.Flags().IntVar(&queueRank, "rank", 0, "Nonnegative plan queue rank; ties use stable plan ID")
+	root.AddCommand(queue)
+	var advanceCommand string
+	var advanceRevision int
+	advance := &cobra.Command{Use: "advance PROJECT_ID", Short: "Explicitly activate the next queued plan and select its next eligible task", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if advanceCommand == "" || advanceRevision < 1 {
+			return errors.New("--command-id and --expected-revision required")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			result, err := e.Advance(cmd.Context(), advanceCommand, advanceRevision)
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, result)
+		})
+	}}
+	advance.Flags().StringVar(&advanceCommand, "command-id", "", "Unique replay-safe scheduling command")
+	advance.Flags().IntVar(&advanceRevision, "expected-revision", 0, "Expected project revision")
+	root.AddCommand(advance)
 	root.AddCommand(&cobra.Command{Use: "reservation PROJECT_ID OPERATION_ID", Short: "Inspect a persisted core resource reservation without acquiring or releasing anything", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
 		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
 			r, err := e.Reservation(cmd.Context(), args[1])

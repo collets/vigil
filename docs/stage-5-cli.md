@@ -187,6 +187,29 @@ Pause prohibits later dispatch; continue rechecks unresolved runs, checkpoint op
   --command-id continue-001 --expected-revision 8
 ```
 
+Queue and task selection are separate, receipt-backed commands. Queueing requires
+the exact accepted plan revision. Equal nonnegative ranks are stable by plan ID.
+`advance` explicitly activates at most one queued plan and selects one eligible
+task by task rank then ID; it launches nothing. Repeating either command ID with
+the same arguments returns its receipt, while stale revisions fail. Automatic
+next-plan advancement is unavailable, including after restart.
+
+```sh
+./bin/vigil project queue-list PROJECT_ID
+./bin/vigil project queue PROJECT_ID PLAN_ID \
+  --command-id queue-001 --expected-revision 8 --rank 10
+./bin/vigil project continue PROJECT_ID \
+  --command-id continue-002 --expected-revision 9
+./bin/vigil project advance PROJECT_ID \
+  --command-id advance-001 --expected-revision 10
+```
+
+An initial `execution-prepare` consumes the selected persisted dispatch and
+rechecks project state, revisions, dependencies, profile/policy/budget and
+repository authority. It cannot bypass pause by changing the project back to
+ready. Check, review and supervisor preparation uses the same persisted project
+dispatch state; stop and recovery retain their Stage 5.3 boundaries.
+
 The available stop driver remains fixture-only. Stop first persists paused dispatch, request retirement and containment intent, then performs bounded interrupt/termination:
 
 ```sh

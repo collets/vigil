@@ -95,6 +95,8 @@ section instead.
 | [`research/stage-5.3-astra-review.md`](research/stage-5.3-astra-review.md) | Stage 5.3 independent review |
 | [`research/stage-5.4-results.md`](research/stage-5.4-results.md) | Stage 5.4 results and validation evidence |
 | [`research/stage-5.4-astra-review.md`](research/stage-5.4-astra-review.md) | **Stage 5.4 independent review record**, R1–R11 and F1–F3 |
+| [`research/stage-5.5-results.md`](research/stage-5.5-results.md) | Stage 5.5 implementation and validation evidence |
+| [`research/stage-5.5-blockers.md`](research/stage-5.5-blockers.md) | Append-only Stage 5.5 user/runtime blocker log |
 | [`research/stage-5.2-review/`](research/stage-5.2-review/) | Retained inert Stage 5.2 review probes (`.go.txt`) |
 | [`research/stage-5.3-review/`](research/stage-5.3-review/) | Retained inert Stage 5.3 review probes (`.go.txt`) |
 | [`research/stage-5.4-review/`](research/stage-5.4-review/) | Retained inert Stage 5.4 review probes (`.go.txt`) |

@@ -82,6 +82,17 @@ func recoverySetup(t *testing.T) recoveryFixture {
 	if err := engine.DB.SQL.QueryRow("SELECT revision FROM project").Scan(&revision); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := engine.QueuePlan(context.Background(), "queue-plan", revision, "plan", 0); err != nil {
+		t.Fatal(err)
+	}
+	revision++
+	if _, err := engine.Continue(context.Background(), "continue-plan", revision); err != nil {
+		t.Fatal(err)
+	}
+	revision++
+	if decision, err := engine.Advance(context.Background(), "advance-plan", revision); err != nil || decision.TaskID != "task" {
+		t.Fatal("workflow selection", decision, err)
+	}
 	prepared, err := supervisor.Prepare(context.Background(), engine, supervisor.PrepareRequest{CommandID: "prepare-run", ExpectedProjectRevision: revision, TaskID: "task", RuntimeKind: "synthetic", WallLimitMS: 60000})
 	if err != nil {
 		t.Fatal(err)
@@ -632,7 +643,19 @@ func multiRecoverySetup(t *testing.T) recoveryFixture {
 			t.Fatal(err)
 		}
 	}
-	prepared, err := supervisor.Prepare(context.Background(), engine, supervisor.PrepareRequest{CommandID: "prepare-run", ExpectedProjectRevision: revision(t, engine), TaskID: "task", RuntimeKind: "synthetic", WallLimitMS: 60000})
+	currentRevision := revision(t, engine)
+	if _, err := engine.QueuePlan(context.Background(), "queue-plan", currentRevision, "plan", 0); err != nil {
+		t.Fatal(err)
+	}
+	currentRevision++
+	if _, err := engine.Continue(context.Background(), "continue-plan", currentRevision); err != nil {
+		t.Fatal(err)
+	}
+	currentRevision++
+	if decision, err := engine.Advance(context.Background(), "advance-plan", currentRevision); err != nil || decision.TaskID != "task" {
+		t.Fatal("workflow selection", decision, err)
+	}
+	prepared, err := supervisor.Prepare(context.Background(), engine, supervisor.PrepareRequest{CommandID: "prepare-run", ExpectedProjectRevision: currentRevision, TaskID: "task", RuntimeKind: "synthetic", WallLimitMS: 60000})
 	if err != nil {
 		t.Fatal(err)
 	}

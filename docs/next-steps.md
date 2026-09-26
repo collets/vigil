@@ -8,7 +8,7 @@ Status: Stage 3 Linux experiments and adapter improvements are complete, with ex
 
 Follow-up [Stage 5.1 validation](research/stage-5.1-astra-review.md) confirms its 5.1-R1–5.1-R4 findings are resolved. The [Stage 5.2 follow-up review](research/stage-5.2-astra-review.md#independent-follow-up-acceptance-of-d34f894) closes 5.2-R6 and 5.2-R8 at `d34f894`, with 5.2-R1–5.2-R5, 5.2-R7 and 5.2-R9 remaining closed. The offline implementation review is accepted. Independent Linux full/race/build/cross-build and retained budget/wait reproductions pass. Production dispatch stays disabled pending live qualification.
 
-The next action is independent follow-up of the F1–F3 remediation at `99cd6c0`. Verify the bounded, context-aware readiness handshake, signal exit-code fidelity and permanent early-cancellation regression without reopening 5.4-R2, 5.4-R11, 5.4-R10 or any other closed safeguard. Preserve the Darwin fork-accounting limitation as a distinct open observation. Do not start Stage 5.5 or enable production dispatch.
+The user explicitly started Stage 5.5 from clean baseline `6e8e986`, treating the 5.4 P3 remediation as the accepted baseline without reopening it. Stage 5.5 checkpoint A is implemented locally: migration 015, explicit ranked plan queue, receipt-backed advance/selection and a shared fail-closed dispatch gate. The next implementation action is checkpoint B, the actionable terminal workflow. Stage 5.5 remains unaccepted and production dispatch remains disabled.
 
 The user has answered the setup questions for 5.1–5.3: existing Codex included subscription usage is authorized after verifying no additional charges (otherwise defer live Codex); use existing local llama; demonstrate repository execution only in disposable repositories; and perform destructive recovery tests only in agent-owned disposable fixtures. Preserve real checkout changes and defer ambiguous real recovery. See the confirmed decisions in each plan and [pending decisions](pending-decisions.md); do not ask for these permissions again.
 
@@ -147,6 +147,6 @@ Acceptance: run the [agreed milestone](mvp-acceptance.md), including actual exec
 - Record the next concrete action and any input needed from the user.
 - Preserve unfinished work and running-session identities; stop experimental processes before ending the session.
 
-Next concrete action: independently follow up the [F1–F3 findings](research/stage-5.4-astra-review.md#independent-follow-up-of-cba322b) over remediation commit `99cd6c0`. Do not begin Stage 5.5 or close the shared live gate from synthetic evidence. Safe Codex/reviewer routes, provider-idle proof, shared capacity authority, the real runtime crash matrix, native macOS validation, the Darwin fork-accounting limitation and real human/manual decisions remain separate gates.
+Next concrete action: implement and validate Stage 5.5 checkpoint B from baseline `6e8e986`, preserving checkpoint A's authoritative queue and the accepted 5.4 safeguards. Do not close any live or human gate from synthetic evidence. Safe Codex/reviewer routes, provider-idle proof, shared capacity authority, the real runtime crash matrix, native macOS validation, the Darwin fork-accounting limitation and real human/manual decisions remain separate gates.
 
 Away-time constraints and deferred user decisions: [pending decisions](pending-decisions.md).

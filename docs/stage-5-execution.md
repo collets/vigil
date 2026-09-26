@@ -4,7 +4,7 @@ Prepared 2026-09-20 before implementation, from the [core specification](core-sp
 
 The remaining work is now organized into [seven standalone execution plans, Stage 5.1–5.7](stage-5/README.md). Use that index to select the next bounded assignment, dependencies, user gates and fresh-context handoff. The A–J sections below preserve the original scope and requirement mapping; consult the dated checkpoints below for delivered state.
 
-Current state, updated 2026-09-26: Stage 5.1–5.3 and Stage 5.4 through `cba322b` are independently accepted offline. Stage 5.4 P3 findings F1–F3 are remediated at `99cd6c0` and await independent follow-up. The accepted 5.4-R2/5.4-R11/5.4-R10 and 5.4-R1/5.4-R3/5.4-R4/5.4-R5/5.4-R6/5.4-R7/5.4-R8/5.4-R9 safeguards remain closed. Production dispatch, live reviewer/runtime qualification, native macOS validation for the latest remediation, the distinct Darwin fork-accounting observation and real human/manual gates remain pending. Stage 5.5 has not started.
+Current state, updated 2026-09-26: Stage 5.1–5.3 and Stage 5.4 through `cba322b` are independently accepted offline. Stage 5.4 P3 findings F1–F3 are remediated at `99cd6c0` and are treated as the accepted Stage 5.5 baseline; all closed safeguards remain closed. Stage 5.5 is in progress from baseline `6e8e986`; checkpoint A implements the explicit ranked queue and authoritative dispatch selection. It remains unaccepted and checkpoints B–D are pending. Production dispatch, live reviewer/runtime qualification, native macOS validation, the distinct Darwin fork-accounting observation and real human/manual gates remain pending.
 
 ## Outcome and boundaries
 

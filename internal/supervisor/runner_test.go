@@ -103,6 +103,19 @@ func setupFixtureWithLimits(t *testing.T, activeLimitMS, wallLimitMS int64) fixt
 	if err := engine.DB.SQL.QueryRow("SELECT revision FROM project").Scan(&revision); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := engine.QueuePlan(ctx, "queue-fixture", revision, "plan", 0); err != nil {
+		t.Fatal(err)
+	}
+	revision++
+	if _, err := engine.Continue(ctx, "continue-fixture", revision); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.DB.SQL.QueryRow("SELECT revision FROM project").Scan(&revision); err != nil {
+		t.Fatal(err)
+	}
+	if decision, err := engine.Advance(ctx, "advance-fixture", revision); err != nil || decision.TaskID != "task" {
+		t.Fatal("workflow selection", decision, err)
+	}
 	prepared, err := Prepare(ctx, engine, PrepareRequest{CommandID: "prepare-run", ExpectedProjectRevision: revision, TaskID: "task", RuntimeKind: "synthetic", WallLimitMS: wallLimitMS})
 	if err != nil {
 		t.Fatal(err)

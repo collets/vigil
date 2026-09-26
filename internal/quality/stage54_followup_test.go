@@ -221,7 +221,7 @@ func downgradeQualityFixtureToV12(t *testing.T, f *fixture) {
 			t.Fatal(err)
 		}
 	}
-	for _, statement := range []string{"DROP TRIGGER quality_budget_segment_no_delete_v2", "DROP TRIGGER quality_budget_segment_update_guard_v2", "DROP TRIGGER quality_assessment_source_no_delete_v2", "DROP TRIGGER quality_assessment_source_update_guard_v2", "DROP TABLE quality_assessment_sources_v2", "DROP TABLE quality_budget_segments_v2", "DROP TABLE quality_authority_v2", "DELETE FROM schema_migrations WHERE version>=13"} {
+	for _, statement := range []string{"DROP TRIGGER blocked_observation_no_update", "DROP TRIGGER blocked_observation_no_delete", "DROP TRIGGER specification_revision_no_update", "DROP TRIGGER specification_revision_no_delete", "DROP TABLE blocked_observations", "DROP TABLE tool_sessions", "DROP TABLE planning_proposals", "DROP TABLE specification_revisions", "DROP TABLE workflow_dispatches", "DROP TABLE workflow_controls", "DROP TRIGGER quality_budget_segment_no_delete_v2", "DROP TRIGGER quality_budget_segment_update_guard_v2", "DROP TRIGGER quality_assessment_source_no_delete_v2", "DROP TRIGGER quality_assessment_source_update_guard_v2", "DROP TABLE quality_assessment_sources_v2", "DROP TABLE quality_budget_segments_v2", "DROP TABLE quality_authority_v2", "DELETE FROM schema_migrations WHERE version>=13"} {
 		if _, err := raw.Exec(statement); err != nil {
 			t.Fatal(err)
 		}

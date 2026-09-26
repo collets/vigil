@@ -237,6 +237,9 @@ func Prepare(ctx context.Context, engine *core.Engine, request PrepareRequest) (
 		return result, err
 	}
 	receipt, err := engine.DB.Command(ctx, command, func(tx *store.Tx) (any, error) {
+		if err := core.EnsureDispatchAllowed(ctx, tx, engine.ProjectID); err != nil {
+			return nil, err
+		}
 		var revision int
 		if err := tx.QueryRowContext(ctx, "SELECT revision FROM project WHERE id=?", engine.ProjectID).Scan(&revision); err != nil {
 			return nil, err
@@ -251,6 +254,13 @@ func Prepare(ctx context.Context, engine *core.Engine, request PrepareRequest) (
 		}
 		if planRevision != observed.planRevision || taskRevision != observed.taskRevision || (taskState != "draft" && taskState != "ready") {
 			return nil, errors.New("task or plan revision/state changed while preparing")
+		}
+		var dispatchID string
+		if err := tx.QueryRowContext(ctx, `SELECT id FROM workflow_dispatches WHERE plan_id=? AND task_id=? AND phase='implementation' AND project_revision=? AND state='selected'`, observed.planID, request.TaskID, revision).Scan(&dispatchID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, errors.New("task was not selected by the authoritative workflow dispatcher")
+			}
+			return nil, err
 		}
 		if err := tx.QueryRowContext(ctx, "SELECT config_id FROM project_configurations ORDER BY revision DESC LIMIT 1").Scan(&configID); err != nil || configID != observed.configID {
 			return nil, errors.New("configuration changed while preparing")
@@ -280,6 +290,9 @@ func Prepare(ctx context.Context, engine *core.Engine, request PrepareRequest) (
 		snapshotJSON, _ := json.Marshal(snapshotValue)
 		snapshotDigest := store.Digest(snapshotJSON)
 		if _, err := tx.ExecContext(ctx, `INSERT INTO runs(id,plan_id,plan_revision,task_id,task_revision,config_id,profile_id,profile_revision,role,attempt_kind,state,writer_state,active_limit_ms,wall_limit_ms,created_at) VALUES(?,?,?,?,?,?,?,?,'implementation','initial','prepared','unconfirmed',?,?,?)`, runID, observed.planID, observed.planRevision, request.TaskID, observed.taskRevision, observed.configID, observed.profileID, observed.profileRev, activeLimit, request.WallLimitMS, store.Now()); err != nil {
+			return nil, err
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE workflow_dispatches SET state='consumed',consumed_run_id=? WHERE id=? AND state='selected'", runID, dispatchID); err != nil {
 			return nil, err
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO run_snapshots VALUES(?,?,?,?,?,?,?,?,?,?,?)`, runID, observed.taskRaw, observed.configRaw, observed.profileRaw, string(budgetSnapshot), string(repositoriesJSON), revision, observed.planRevision, observed.taskRevision, snapshotDigest, store.Now()); err != nil {

@@ -2,7 +2,7 @@
 
 A local control panel for development agents running through existing harnesses, combining frontier and local models.
 
-Status: **pre-release.** The persisted core through Stage 5.4 is implemented and independently accepted offline — project definitions, command receipts, policy, artifacts, workspace ownership, endpoint capacity, crash-reconcilable execution, checkpoint save/clear/restore, contained checks, fresh review, and epoch-fenced task/plan acceptance. Production check, model and reviewer dispatch remain deliberately disabled pending live qualification, and nothing in the acceptance path can commit, push, publish or deliver. A read-only terminal dashboard shows persisted readiness, tasks, inbox and history.
+Status: **pre-release.** The persisted core through Stage 5.4 is independently accepted offline, and Stage 5.5 implementation is in progress from baseline `6e8e986`. Its checkpoint A adds a durable explicit plan queue and authoritative task selection; automatic plan advancement remains disabled. Production check, model and reviewer dispatch remain deliberately disabled pending live qualification, and nothing in the acceptance path can commit, push, publish or deliver. The terminal dashboard still reads authoritative persisted state.
 
 Targets: Linux and macOS, on amd64 and arm64. See [`docs/next-steps.md`](docs/next-steps.md) for current state and [`docs/README.md`](docs/README.md) for the document index.
 
