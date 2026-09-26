@@ -1,6 +1,7 @@
 # Stage 5.5 implementation results
 
-Status: offline implementation through checkpoint A commit `4dbb444` plus the B–D working implementation; Stage 5.5 is unaccepted.
+Status: offline implementation through checkpoint A commit `4dbb444` and the
+validated B–D implementation commit `20ca4d0`; Stage 5.5 is unaccepted.
 
 This record is append-only evidence for the four checkpoints in
 [the Stage 5.5 plan](../stage-5/5.5-workflow-and-planning.md). It distinguishes

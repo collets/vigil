@@ -1,6 +1,6 @@
 # Next steps and resumption plan
 
-Updated: 2026-09-26. Stage 5.3 remains independently accepted offline. Stage 5.4 is the accepted baseline and is not reopened. Stage 5.5 checkpoint A is committed at `4dbb444`; B is partial and the offline C/D implementation is under validation. Stage 5.5 is unaccepted. Production dispatch and all live/human/native-macOS gates remain pending.
+Updated: 2026-09-26. Stage 5.3 remains independently accepted offline. Stage 5.4 is the accepted baseline and is not reopened. Stage 5.5 implementation is committed through `20ca4d0` (checkpoint A `4dbb444`); B is partial and the offline C/D implementation is validated. Stage 5.5 is unaccepted. Production dispatch and all live/human/native-macOS gates remain pending.
 
 Status: Stage 3 Linux experiments and adapter improvements are complete, with explicit unresolved qualification gates. See [Stage 3 results](research/stage-3-results.md). Both Stage 3 and Stage 4 plans were prepared before implementation. Stage 4 is complete: [core specification](core-spec.md), [validated draft schemas](spec/project.sql), and [Stage 5 backlog/requirements map](stage-5-plan.md). [Stage 3.5 macOS checks](research/stage-3.5-results.md) are also complete: basic runtime behavior passed, but both harnesses left writers after abrupt loss and strict production containment remains unsupported.
 
@@ -8,7 +8,7 @@ Status: Stage 3 Linux experiments and adapter improvements are complete, with ex
 
 Follow-up [Stage 5.1 validation](research/stage-5.1-astra-review.md) confirms its 5.1-R1–5.1-R4 findings are resolved. The [Stage 5.2 follow-up review](research/stage-5.2-astra-review.md#independent-follow-up-acceptance-of-d34f894) closes 5.2-R6 and 5.2-R8 at `d34f894`, with 5.2-R1–5.2-R5, 5.2-R7 and 5.2-R9 remaining closed. The offline implementation review is accepted. Independent Linux full/race/build/cross-build and retained budget/wait reproductions pass. Production dispatch stays disabled pending live qualification.
 
-The user explicitly started Stage 5.5 from clean baseline `6e8e986`. Checkpoint A at `4dbb444` adds migration 015, the explicit ranked queue and authoritative dispatch selection. B's safe TUI subset, C's offline Markdown/proposal path and D's bounded handler/fixture transport path are implemented locally. B remains partial because active-run stop/recovery stays on the existing owner-aware commands. Live planning/native tool integration is blocked as recorded. Production dispatch remains disabled.
+The user explicitly started Stage 5.5 from clean baseline `6e8e986`. Checkpoint A at `4dbb444` adds migration 015, the explicit ranked queue and authoritative dispatch selection. Commit `20ca4d0` adds B's safe TUI subset, C's offline Markdown/proposal path and D's bounded handler/fixture transport path. B remains partial because active-run stop/recovery stays on the existing owner-aware commands. Live planning/native tool integration is blocked as recorded. Production dispatch remains disabled.
 
 The user has answered the setup questions for 5.1–5.3: existing Codex included subscription usage is authorized after verifying no additional charges (otherwise defer live Codex); use existing local llama; demonstrate repository execution only in disposable repositories; and perform destructive recovery tests only in agent-owned disposable fixtures. Preserve real checkout changes and defer ambiguous real recovery. See the confirmed decisions in each plan and [pending decisions](pending-decisions.md); do not ask for these permissions again.
 
@@ -147,6 +147,6 @@ Acceptance: run the [agreed milestone](mvp-acceptance.md), including actual exec
 - Record the next concrete action and any input needed from the user.
 - Preserve unfinished work and running-session identities; stop experimental processes before ending the session.
 
-Next concrete action: independently review Stage 5.5 beginning with checkpoint A commit `4dbb444`, then finish or explicitly accept checkpoint B's owner-aware TUI boundary. Do not close any live or human gate from synthetic evidence. Safe Codex/reviewer routes, provider-idle proof, shared capacity authority, the real runtime crash matrix, native macOS validation, the Darwin fork-accounting limitation and real human/manual decisions remain separate gates.
+Next concrete action: independently review Stage 5.5 commits `4dbb444..20ca4d0`, then finish or explicitly accept checkpoint B's owner-aware TUI boundary. Do not close any live or human gate from synthetic evidence. Safe Codex/reviewer routes, provider-idle proof, shared capacity authority, the real runtime crash matrix, native macOS validation, the Darwin fork-accounting limitation and real human/manual decisions remain separate gates.
 
 Away-time constraints and deferred user decisions: [pending decisions](pending-decisions.md).

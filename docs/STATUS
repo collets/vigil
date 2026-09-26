@@ -9,7 +9,7 @@
 
 stage=5.5
 stage_accepted=false
-implementation_commit=4dbb444
+implementation_commit=20ca4d0
 review_record=docs/research/stage-5.5-results.md
 project_migrations=15
 coordination_migrations=2
