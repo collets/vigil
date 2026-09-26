@@ -1,8 +1,9 @@
 # Stage 5.5 implementation results
 
 Status: implementation through checkpoint A commit `4dbb444`, initial B–D
-commit `20ca4d0`, bounded planning/control commit `192c6ba` and native-tool
-isolation fix `959eaaf`; Stage 5.5 is unaccepted.
+commit `20ca4d0`, bounded planning/control commit `192c6ba`, native-tool
+isolation fix `959eaaf` and revision-bound quality controls `669467e`; Stage 5.5
+is unaccepted.
 
 This record is append-only evidence for the four checkpoints in
 [the Stage 5.5 plan](../stage-5/5.5-workflow-and-planning.md). It distinguishes
@@ -279,6 +280,42 @@ Linux focused validation for the fix passed before commit:
 go test ./internal/tools ./internal/mcp ./internal/spike  PASS
 make check                                                PASS
 ```
+
+## 2026-09-27 actionable quality-control follow-up
+
+Commit `669467e` adds visibly focused task actions without adding a UI-owned state
+machine. `h` records the existing human-acceptance decision, `m` records Pass for
+the exact manual criterion rendered beside the task, and `t` invokes the existing
+core acceptor through a registered coordinator owner. All three run outside the
+Bubble Tea input loop and retain pending/success/failure feedback. The displayed
+task revision is included in the receipt arguments; human/manual writes recheck it
+inside their command transactions, while acceptance also preserves its final
+scope, authority-epoch and task/plan revision fencing.
+
+The first read-only review found a check/use race and an ambiguous first-manual-
+criterion action. After the transactional expected-revision field and explicit
+rendered criterion binding were added, the reviewer reported no findings. It also
+confirmed that the Inbox now says native clarification is unavailable. This is an
+intentional partial boundary: there is no production supervisor driver that can
+persist a native request and let the owning dispatcher deliver the exact answer,
+so Vigil does not offer a fake UI-only response.
+
+Focused Linux tests passed:
+
+```text
+go test ./internal/tui ./internal/core ./internal/cli ./internal/quality  PASS
+make check                                                            PASS
+```
+
+Because `669467e` changes native terminal and SQLite quality paths, the earlier
+`959eaaf` Mac result was not reused as coverage. A second Git bundle (SHA-256
+`698bb5fd349c26970affb049620684d8565738abf8672b3c8026c8205e9b39ea`)
+was reverified on the same host and detached at exact commit
+`669467e49b40b634e9104fda972854dae261b104`. Native `make check`,
+`make check-race`, `make build`, `make docs-check`, `make build-boundary` and
+`make cross-build` all passed. The fresh isolated cache downloaded public Go
+modules; it made no model/provider call. The remote tree/cache and local bundle
+were removed and verified absent, and the normal Mac checkout was untouched.
 
 ## Combined B–D validation
 

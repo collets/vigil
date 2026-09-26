@@ -68,6 +68,14 @@ evidence that require the unavailable user. Fixture actors never resolve these i
 - Logged: 2026-09-26
 
 ## B4 — Native macOS Stage 5.5 validation
+- REVALIDATED 2026-09-27 — after the checkpoint-B quality-control follow-up,
+  bundle SHA-256
+  `698bb5fd349c26970affb049620684d8565738abf8672b3c8026c8205e9b39ea`
+  was reverified and detached at exact commit
+  `669467e49b40b634e9104fda972854dae261b104`; the same native full, race,
+  application, documentation, boundary and four-target cross-build gates passed.
+  The second isolated remote tree/cache and local bundle were removed and verified
+  absent.
 - RESOLVED 2026-09-27 — the corrected host `192.168.0.108` received a verified
   Git bundle (SHA-256
   `bf3c75cdd6ea0bed1be3382a5d9e40d3e91280445ec57719e19a71d6df3ce436`)
