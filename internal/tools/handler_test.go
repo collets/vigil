@@ -178,7 +178,7 @@ func TestBoundedRoleScopedHandlersAndSharedTransport(t *testing.T) {
 	if err := (&mcp.Server{Handler: f.handler, SessionID: planning.ID}).Serve(ctx, bytes.NewReader(append(wire, '\n')), &output); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), `"state":"draft"`) {
+	if !strings.Contains(output.String(), `\"state\":\"draft\"`) {
 		t.Fatal("MCP did not reuse handler", output.String())
 	}
 }

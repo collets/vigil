@@ -91,6 +91,58 @@ func TestStopPersistsIntentRetiresRequestsAndDoesNotRepeatEffects(t *testing.T) 
 	}
 }
 
+func TestRequestedStopIsRevisionBoundAndExecutedOnlyByOwner(t *testing.T) {
+	fixture := setupFixture(t)
+	requester := Runner{Engine: fixture.engine}
+	if _, err := requester.RequestStop(context.Background(), StopRequest{CommandID: "stale-stop", ExpectedRevision: projectRevision(t, fixture) + 1, RunID: fixture.prepared.RunID, TerminateGrace: time.Second}); err == nil {
+		t.Fatal("stale dashboard stop was accepted")
+	}
+	receipt, err := requester.RequestStop(context.Background(), StopRequest{CommandID: "requested-stop", ExpectedRevision: projectRevision(t, fixture), RunID: fixture.prepared.RunID, InterruptGrace: 0, TerminateGrace: time.Second})
+	if err != nil || receipt.State != "prepared" || fixture.driver.Calls["stop"] != 0 {
+		t.Fatal(receipt, fixture.driver.Calls, err)
+	}
+	owner := Runner{Engine: fixture.engine, Driver: fixture.driver}
+	stopped, err := owner.executeRequestedStop(context.Background(), fixture.prepared)
+	if !stopped || !errors.Is(err, ErrStopRequested) || fixture.driver.Calls["stop"] != 1 {
+		t.Fatal(stopped, fixture.driver.Calls, err)
+	}
+	var state string
+	if err := fixture.engine.DB.SQL.QueryRow("SELECT state FROM execution_controls WHERE id=?", receipt.ControlID).Scan(&state); err != nil || state != "observed" {
+		t.Fatal(state, err)
+	}
+	stopped, err = owner.executeRequestedStop(context.Background(), fixture.prepared)
+	if stopped || err != nil || fixture.driver.Calls["stop"] != 1 {
+		t.Fatal("observed request replayed", stopped, fixture.driver.Calls, err)
+	}
+}
+
+func TestConcurrentStopOwnersClaimExternalEffectOnce(t *testing.T) {
+	fixture := setupFixture(t)
+	requester := Runner{Engine: fixture.engine}
+	receipt, err := requester.RequestStop(context.Background(), StopRequest{CommandID: "concurrent-stop", ExpectedRevision: projectRevision(t, fixture), RunID: fixture.prepared.RunID, TerminateGrace: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	errorsOut := make(chan error, 2)
+	for range 2 {
+		go func() {
+			<-start
+			_, runErr := (&Runner{Engine: fixture.engine, Driver: fixture.driver}).executeStop(context.Background(), fixture.prepared, receipt, 0, time.Second, false)
+			errorsOut <- runErr
+		}()
+	}
+	close(start)
+	<-errorsOut
+	<-errorsOut
+	fixture.driver.mu.Lock()
+	stopCalls := fixture.driver.Calls["stop"]
+	fixture.driver.mu.Unlock()
+	if stopCalls != 1 {
+		t.Fatalf("concurrent stop owners executed external stop %d times", stopCalls)
+	}
+}
+
 type failedStopDriver struct{ *FixtureDriver }
 
 func (d *failedStopDriver) Stop(context.Context, PreparedRun) (Observation, error) {

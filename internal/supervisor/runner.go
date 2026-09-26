@@ -651,6 +651,9 @@ func (r *Runner) runAuthorized(ctx context.Context, prepared PreparedRun, reserv
 	}
 	observation, err := r.awaitWithLease(ctx, prepared)
 	if err != nil {
+		if errors.Is(err, ErrStopRequested) {
+			return result, err
+		}
 		return contain(err)
 	}
 	if err := r.checkpoint("after_terminal_observe"); err != nil {
@@ -900,6 +903,13 @@ func (r *Runner) awaitWithLease(ctx context.Context, prepared PreparedRun) (Obse
 		case response := <-done:
 			return response.observation, response.err
 		case <-ticker.C:
+			if stopped, err := r.executeRequestedStop(ctx, prepared); stopped {
+				cancel()
+				return Observation{}, err
+			} else if err != nil {
+				cancel()
+				return Observation{}, err
+			}
 			if err := r.checkpointSegment(ctx, prepared); err != nil {
 				cancel()
 				return Observation{}, err

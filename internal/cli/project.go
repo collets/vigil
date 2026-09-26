@@ -18,10 +18,13 @@ import (
 	"vigil/internal/checks"
 	"vigil/internal/coordinator"
 	"vigil/internal/core"
+	"vigil/internal/mcp"
 	"vigil/internal/quality"
 	"vigil/internal/review"
+	"vigil/internal/spike"
 	"vigil/internal/store"
 	"vigil/internal/supervisor"
+	modeltools "vigil/internal/tools"
 )
 
 type fixtureReviewer struct{ raw []byte }
@@ -301,6 +304,95 @@ func projectCommand(stateDir *string) *cobra.Command {
 	proposalCreate.Flags().IntVar(&proposalExpected, "expected-revision", 0, "Expected project revision")
 	proposalCreate.Flags().BoolVar(&proposalFixture, "synthetic-fixture", false, "Use deterministic offline proposal input; no model call")
 	root.AddCommand(proposalCreate)
+	var planningManifest, planningKeyFile, planningCommand, planningProposal, planningPlan, planningSpec, planningProfile string
+	var planningExpected, planningSpecRevision, planningProfileRevision int
+	var planningActiveMS int64
+	var planningLiveLocal bool
+	planningRun := &cobra.Command{Use: "planning-run PROJECT_ID", Short: "Run one receipt-backed bounded proposal turn through the prepared local Hermes route", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if !planningLiveLocal {
+			return errors.New("--live-local required; planning inference is never implicit")
+		}
+		if planningManifest == "" || planningCommand == "" || planningProposal == "" || planningPlan == "" || planningSpec == "" || planningProfile == "" || planningExpected < 1 || planningSpecRevision < 1 || planningProfileRevision < 1 || planningActiveMS < 1 || planningActiveMS > core.MaxPlanningAttempt.Milliseconds() {
+			return errors.New("manifest, exact identities/revisions and active-limit-ms (1..300000) required")
+		}
+		provider, err := spike.NewPlanningProvider(cmd.Context(), planningManifest, planningKeyFile)
+		if err != nil {
+			return err
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			result, err := e.RunPlanning(cmd.Context(), core.PlanningRunRequest{CommandID: planningCommand, ExpectedRevision: planningExpected, ProposalID: planningProposal, ExpectedPlanID: planningPlan, SpecificationID: planningSpec, SpecificationRevision: planningSpecRevision, ProfileID: planningProfile, ProfileRevision: planningProfileRevision, ActiveLimit: time.Duration(planningActiveMS) * time.Millisecond}, provider)
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, result)
+		})
+	}}
+	planningRun.Flags().BoolVar(&planningLiveLocal, "live-local", false, "Authorize one local llama turn through the prepared Hermes fixture route")
+	planningRun.Flags().StringVar(&planningManifest, "manifest", "", "Prepared qualification manifest")
+	planningRun.Flags().StringVar(&planningKeyFile, "key-file", "", "Optional private local llama key file (mode 600)")
+	planningRun.Flags().StringVar(&planningCommand, "command-id", "", "Unique replay-safe planning command")
+	planningRun.Flags().IntVar(&planningExpected, "expected-revision", 0, "Expected project revision")
+	planningRun.Flags().StringVar(&planningProposal, "proposal-id", "", "Stable proposal identifier")
+	planningRun.Flags().StringVar(&planningPlan, "plan-id", "", "Server-selected expected plan identifier")
+	planningRun.Flags().StringVar(&planningSpec, "spec-id", "", "Exact immutable specification identifier")
+	planningRun.Flags().IntVar(&planningSpecRevision, "spec-revision", 0, "Exact immutable specification revision")
+	planningRun.Flags().StringVar(&planningProfile, "profile-id", "", "Explicit eligible planning profile identifier")
+	planningRun.Flags().IntVar(&planningProfileRevision, "profile-revision", 0, "Explicit current planning profile revision")
+	planningRun.Flags().Int64Var(&planningActiveMS, "active-limit-ms", core.MaxPlanningAttempt.Milliseconds(), "Active planning cap, maximum 300000ms")
+	root.AddCommand(planningRun)
+	var planningReconcileCommand string
+	planningReconcile := &cobra.Command{Use: "planning-reconcile PROJECT_ID ATTEMPT_ID", Short: "Explicitly charge a crashed planning attempt as unknown", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		if planningReconcileCommand == "" {
+			return errors.New("--command-id required")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			if err := e.ReconcilePlanningAttempt(cmd.Context(), planningReconcileCommand, args[1]); err != nil {
+				return err
+			}
+			return printJSON(cmd, map[string]string{"attempt_id": args[1], "state": "unknown"})
+		})
+	}}
+	planningReconcile.Flags().StringVar(&planningReconcileCommand, "command-id", "", "Unique replay-safe human recovery command")
+	root.AddCommand(planningReconcile)
+	root.AddCommand(&cobra.Command{Use: "tool-server PROJECT_ID SESSION_ID", Short: "Serve bounded MCP tools for one pre-opened injected session over stdio", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			return (&mcp.Server{Handler: &modeltools.Handler{Engine: e}, SessionID: args[1]}).Serve(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
+		})
+	}})
+	var toolQualificationManifest, toolQualificationCommand string
+	var toolQualificationLive bool
+	toolQualification := &cobra.Command{Use: "tool-qualify PROJECT_ID", Short: "Run one bounded native Hermes MCP isolation qualification", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if !toolQualificationLive || toolQualificationManifest == "" || toolQualificationCommand == "" {
+			return errors.New("--live-local, --manifest and --command-id required")
+		}
+		dir := *stateDir
+		if dir == "" {
+			var err error
+			dir, err = core.DefaultStateDir()
+			if err != nil {
+				return err
+			}
+		}
+		binary, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		binary, err = filepath.Abs(binary)
+		if err != nil {
+			return err
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			result, err := spike.RunHermesToolQualification(cmd.Context(), spike.ToolQualificationRequest{Engine: e, StateDir: dir, VigilBinary: binary, Manifest: toolQualificationManifest, CommandID: toolQualificationCommand})
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, result)
+		})
+	}}
+	toolQualification.Flags().BoolVar(&toolQualificationLive, "live-local", false, "Authorize one local Hermes tool-integration turn")
+	toolQualification.Flags().StringVar(&toolQualificationManifest, "manifest", "", "Prepared Hermes qualification manifest")
+	toolQualification.Flags().StringVar(&toolQualificationCommand, "command-id", "", "Unique injected tool-session command")
+	root.AddCommand(toolQualification)
 	root.AddCommand(&cobra.Command{Use: "proposal-show PROJECT_ID PROPOSAL_ID REVISION", Short: "Show one exact immutable planning proposal revision", Args: cobra.ExactArgs(3), RunE: func(cmd *cobra.Command, args []string) error {
 		revision, err := strconv.Atoi(args[2])
 		if err != nil || revision < 1 {

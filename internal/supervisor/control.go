@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,30 @@ type StopReceipt struct {
 	Repeated       bool   `json:"repeated,omitempty"`
 }
 
+type StopRequest struct {
+	CommandID        string        `json:"command_id"`
+	ExpectedRevision int           `json:"expected_revision"`
+	RunID            string        `json:"run_id"`
+	InterruptGrace   time.Duration `json:"-"`
+	TerminateGrace   time.Duration `json:"-"`
+}
+
+var ErrStopRequested = errors.New("execution stopped by explicit control")
+
+// RequestStop records a revision-bound stop intent for the dispatcher that
+// owns the runtime. It deliberately does not construct or call a driver.
+func (r *Runner) RequestStop(ctx context.Context, request StopRequest) (StopReceipt, error) {
+	var receipt StopReceipt
+	if r == nil || r.Engine == nil || r.Engine.DB == nil || !store.SafeID(request.CommandID) || !store.SafeID(request.RunID) || request.ExpectedRevision < 1 {
+		return receipt, errors.New("persisted run, valid command and expected revision required")
+	}
+	prepared, err := LoadPrepared(ctx, r.Engine, request.RunID)
+	if err != nil {
+		return receipt, err
+	}
+	return r.prepareStop(ctx, prepared, request.CommandID, "stop", request.ExpectedRevision, request.InterruptGrace, request.TerminateGrace)
+}
+
 func (r *Runner) Stop(ctx context.Context, prepared PreparedRun, commandID string, interruptGrace, terminateGrace time.Duration) (StopReceipt, error) {
 	return r.stop(ctx, prepared, commandID, "stop", interruptGrace, terminateGrace)
 }
@@ -38,19 +63,40 @@ func (r *Runner) stop(ctx context.Context, prepared PreparedRun, commandID, kind
 	if interruptGrace < 0 || interruptGrace > 30*time.Second || terminateGrace <= 0 || terminateGrace > 30*time.Second {
 		return receipt, errors.New("bounded interrupt and termination grace required")
 	}
+	receipt, err := r.prepareStop(ctx, prepared, commandID, kind, 0, interruptGrace, terminateGrace)
+	if err != nil {
+		return receipt, err
+	}
+	return r.executeStop(ctx, prepared, receipt, interruptGrace, terminateGrace, true)
+}
+
+func (r *Runner) prepareStop(ctx context.Context, prepared PreparedRun, commandID, kind string, expectedRevision int, interruptGrace, terminateGrace time.Duration) (StopReceipt, error) {
+	var receipt StopReceipt
+	if interruptGrace < 0 || interruptGrace > 30*time.Second || terminateGrace <= 0 || terminateGrace > 30*time.Second {
+		return receipt, errors.New("bounded interrupt and termination grace required")
+	}
 	controlID := store.Digest([]byte(prepared.GenerationID + "\x00control\x00" + kind))
 	effectID := store.Digest([]byte(prepared.GenerationID + "\x00containment_stop"))
 	actor := string(core.Human)
 	if kind != "stop" {
 		actor = string(core.Core)
 	}
-	args, _ := json.Marshal(map[string]any{"run_id": prepared.RunID, "generation_id": prepared.GenerationID, "kind": kind, "interrupt_grace_ms": interruptGrace.Milliseconds(), "terminate_grace_ms": terminateGrace.Milliseconds()})
+	args, _ := json.Marshal(map[string]any{"run_id": prepared.RunID, "generation_id": prepared.GenerationID, "kind": kind, "expected_revision": expectedRevision, "interrupt_grace_ms": interruptGrace.Milliseconds(), "terminate_grace_ms": terminateGrace.Milliseconds()})
 	_, found, err := r.Engine.DB.Receipt(ctx, store.Command{ID: commandID, Actor: actor, Kind: "execution." + kind, Args: args})
 	if err != nil {
 		return receipt, err
 	}
 	if !found {
 		_, err = r.Engine.DB.Command(ctx, store.Command{ID: commandID, Actor: actor, Kind: "execution." + kind, Args: args}, func(tx *store.Tx) (any, error) {
+			if expectedRevision > 0 {
+				var revision int
+				if err := tx.QueryRowContext(ctx, "SELECT revision FROM project WHERE id=?", r.Engine.ProjectID).Scan(&revision); err != nil {
+					return nil, err
+				}
+				if revision != expectedRevision {
+					return nil, fmt.Errorf("stale project revision: expected %d, current %d", expectedRevision, revision)
+				}
+			}
 			var runState string
 			if err := tx.QueryRowContext(ctx, "SELECT state FROM runs WHERE id=?", prepared.RunID).Scan(&runState); err != nil {
 				return nil, err
@@ -72,7 +118,7 @@ func (r *Runner) stop(ctx context.Context, prepared PreparedRun, commandID, kind
 			if _, err := tx.ExecContext(ctx, "UPDATE tasks SET state='stopped',block_reason='stopped by explicit control' WHERE id=? AND state!='accepted'", prepared.TaskID); err != nil {
 				return nil, err
 			}
-			intent, _ := json.Marshal(map[string]string{"control_id": controlID, "kind": kind})
+			intent, _ := json.Marshal(map[string]any{"control_id": controlID, "kind": kind, "interrupt_grace_ms": interruptGrace.Milliseconds(), "terminate_grace_ms": terminateGrace.Milliseconds()})
 			if _, err := tx.ExecContext(ctx, `INSERT INTO execution_effects(id,run_id,generation_id,ordinal,kind,state,stable_identity,intent_json,prepared_at) VALUES(?,?,?,10,'containment_stop','prepared',?,?,?) ON CONFLICT(id) DO NOTHING`, effectID, prepared.RunID, prepared.GenerationID, prepared.RuntimeResourceID, string(intent), store.Now()); err != nil {
 				return nil, err
 			}
@@ -88,11 +134,22 @@ func (r *Runner) stop(ctx context.Context, prepared PreparedRun, commandID, kind
 	if err := r.loadStopReceipt(ctx, controlID, &receipt); err != nil {
 		return receipt, err
 	}
-	r.cancelActiveExecution(prepared.GenerationID)
 	receipt.Repeated = found
+	return receipt, nil
+}
+
+func (r *Runner) executeStop(ctx context.Context, prepared PreparedRun, receipt StopReceipt, interruptGrace, terminateGrace time.Duration, retire bool) (StopReceipt, error) {
+	controlID := receipt.ControlID
+	effectID := store.Digest([]byte(prepared.GenerationID + "\x00containment_stop"))
+	if retire {
+		r.cancelActiveExecution(prepared.GenerationID)
+	}
+	found := receipt.Repeated
 	if receipt.State == "observed" {
-		if err := r.awaitExecutionRetirement(ctx, prepared.GenerationID, terminateGrace); err != nil {
-			return receipt, err
+		if retire {
+			if err := r.awaitExecutionRetirement(ctx, prepared.GenerationID, terminateGrace); err != nil {
+				return receipt, err
+			}
 		}
 		return receipt, nil
 	}
@@ -108,8 +165,10 @@ func (r *Runner) stop(ctx context.Context, prepared PreparedRun, commandID, kind
 		if inspectErr != nil || observation.WriterState != "contained_stopped" {
 			return receipt, errors.New("prior containment is recorded but current writer safety cannot be proven")
 		}
-		if retireErr := r.awaitExecutionRetirement(ctx, prepared.GenerationID, terminateGrace); retireErr != nil {
-			return receipt, retireErr
+		if retire {
+			if retireErr := r.awaitExecutionRetirement(ctx, prepared.GenerationID, terminateGrace); retireErr != nil {
+				return receipt, retireErr
+			}
 		}
 		return r.finishStop(ctx, controlID, effectID, "unsupported", observation, nil, found)
 	}
@@ -117,11 +176,20 @@ func (r *Runner) stop(ctx context.Context, prepared PreparedRun, commandID, kind
 		return receipt, errors.New("prior containment outcome is unresolved; external effects will not be replayed")
 	}
 	if err := r.Engine.DB.Write(ctx, func(tx *store.Tx) error {
-		if _, err := tx.ExecContext(ctx, "UPDATE execution_controls SET state='executing' WHERE id=? AND state='prepared'", controlID); err != nil {
+		controlResult, err := tx.ExecContext(ctx, "UPDATE execution_controls SET state='executing' WHERE id=? AND state='prepared'", controlID)
+		if err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, "UPDATE execution_effects SET state='executing' WHERE id=? AND state IN('prepared','cancelled')", effectID)
-		return err
+		effectResult, err := tx.ExecContext(ctx, "UPDATE execution_effects SET state='executing' WHERE id=? AND state IN('prepared','cancelled')", effectID)
+		if err != nil {
+			return err
+		}
+		controls, controlErr := controlResult.RowsAffected()
+		effects, effectErr := effectResult.RowsAffected()
+		if controlErr != nil || effectErr != nil || controls != 1 || effects != 1 {
+			return errors.New("stop ownership was already claimed; external effects will not be replayed")
+		}
+		return nil
 	}); err != nil {
 		return receipt, err
 	}
@@ -139,7 +207,10 @@ func (r *Runner) stop(ctx context.Context, prepared PreparedRun, commandID, kind
 		for time.Now().Before(deadline) {
 			observation, inspectErr := r.Driver.Inspect(ctx, prepared)
 			if inspectErr == nil && observation.WriterState == "contained_stopped" {
-				retireErr := r.awaitExecutionRetirement(ctx, prepared.GenerationID, terminateGrace)
+				var retireErr error
+				if retire {
+					retireErr = r.awaitExecutionRetirement(ctx, prepared.GenerationID, terminateGrace)
+				}
 				return r.finishStop(ctx, controlID, effectID, interruptState, observation, retireErr, found)
 			}
 			select {
@@ -152,10 +223,39 @@ func (r *Runner) stop(ctx context.Context, prepared PreparedRun, commandID, kind
 	stopCtx, cancel := context.WithTimeout(context.Background(), terminateGrace)
 	observation, stopErr := r.Driver.Stop(stopCtx, prepared)
 	cancel()
-	if retireErr := r.awaitExecutionRetirement(context.Background(), prepared.GenerationID, terminateGrace); stopErr == nil {
-		stopErr = retireErr
+	if retire {
+		if retireErr := r.awaitExecutionRetirement(context.Background(), prepared.GenerationID, terminateGrace); stopErr == nil {
+			stopErr = retireErr
+		}
 	}
 	return r.finishStop(context.Background(), controlID, effectID, interruptState, observation, stopErr, found)
+}
+
+func (r *Runner) executeRequestedStop(ctx context.Context, prepared PreparedRun) (bool, error) {
+	var receipt StopReceipt
+	var intentJSON string
+	err := r.Engine.DB.SQL.QueryRowContext(ctx, `SELECT c.id,c.run_id,c.generation_id,c.state,c.interrupt_state,c.writer_state,c.inference_state,e.intent_json
+		FROM execution_controls c JOIN execution_effects e ON e.run_id=c.run_id AND e.generation_id=c.generation_id AND e.kind='containment_stop'
+		WHERE c.run_id=? AND c.generation_id=? AND c.kind='stop' AND c.state='prepared'`, prepared.RunID, prepared.GenerationID).
+		Scan(&receipt.ControlID, &receipt.RunID, &receipt.GenerationID, &receipt.State, &receipt.InterruptState, &receipt.WriterState, &receipt.InferenceState, &intentJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var intent struct {
+		InterruptGraceMS int64 `json:"interrupt_grace_ms"`
+		TerminateGraceMS int64 `json:"terminate_grace_ms"`
+	}
+	if err := json.Unmarshal([]byte(intentJSON), &intent); err != nil || intent.InterruptGraceMS < 0 || intent.InterruptGraceMS > 30000 || intent.TerminateGraceMS < 1 || intent.TerminateGraceMS > 30000 {
+		return true, errors.New("persisted stop intent has invalid bounded grace")
+	}
+	_, err = r.executeStop(ctx, prepared, receipt, time.Duration(intent.InterruptGraceMS)*time.Millisecond, time.Duration(intent.TerminateGraceMS)*time.Millisecond, false)
+	if err != nil {
+		return true, err
+	}
+	return true, ErrStopRequested
 }
 
 func (r *Runner) cancelActiveExecution(generationID string) {

@@ -7,6 +7,7 @@ import (
 
 type DashboardSnapshot struct {
 	Readiness Readiness        `json:"readiness"`
+	ActiveRun string           `json:"active_run,omitempty"`
 	Queue     []PlanQueueEntry `json:"queue"`
 	Tasks     []TaskDetail     `json:"task_details"`
 	Plans     []PlanDetail     `json:"plan_details"`
@@ -46,6 +47,7 @@ func (e *Engine) Dashboard(ctx context.Context) (DashboardSnapshot, error) {
 	if snapshot.Readiness, err = e.readiness(ctx, tx); err != nil {
 		return snapshot, err
 	}
+	_ = tx.QueryRowContext(ctx, `SELECT id FROM runs WHERE state IN('prepared','starting','active','stopping','unknown') ORDER BY created_at DESC,id DESC LIMIT 1`).Scan(&snapshot.ActiveRun)
 	if snapshot.Queue, err = readPlanQueue(ctx, tx); err != nil {
 		return snapshot, err
 	}

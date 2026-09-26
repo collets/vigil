@@ -459,6 +459,97 @@ Finally, atomically recheck every current revision, fingerprint, artifact, selec
 
 Task acceptance can move the completed task to `accepted`; once all tasks are accepted, the plan moves to `verifying`. Staleness invalidates the prior acceptance, and a later task check can reopen the task for fresh evidence. Plan checks/review/manual/decision commands use `--plan-wide` and charge the plan-services ledger. Plan acceptance re-observes each child task and revalidates its non-invalidated acceptance, current gates and artifacts before moving only to `finalizing`. Neither acceptance command authorizes or performs a commit, push, publication or delivery.
 
+## Bounded planning turn
+
+`planning-run PROJECT_ID` performs one explicitly authorized local llama turn
+through a freshly prepared Hermes fixture. It persists the intent and reserves
+the pre-plan services budget before inference, accepts only a closed proposal,
+and creates an approval inbox item; it never applies or approves the proposal.
+The same command ID returns the persisted proposal without replaying inference.
+
+```sh
+./bin/vigil project planning-run PROJECT_ID \
+  --live-local --manifest .cache/spike/stage1-EXAMPLE/launch.json \
+  --command-id planning-001 --expected-revision 4 \
+  --proposal-id proposal-001 --plan-id example-plan \
+  --spec-id example-spec --spec-revision 1 \
+  --profile-id local --profile-revision 1 --active-limit-ms 300000
+```
+
+| Flag | Required | Default | Meaning |
+| --- | --- | --- | --- |
+| `--live-local` | yes | `false` | Explicitly authorize this one prepared local inference turn |
+| `--manifest PATH` | yes | — | Fresh prepared qualification manifest |
+| `--key-file PATH` | no | — | Optional private mode-600 key for the loopback llama endpoint |
+| `--command-id ID` | yes | — | Replay-safe planning command identity |
+| `--expected-revision N` | yes | — | Exact displayed project revision |
+| `--proposal-id ID` | yes | — | Stable proposal identity |
+| `--plan-id ID` | yes | — | Server-selected plan identity the model cannot change |
+| `--spec-id ID` | yes | — | Immutable imported specification identity |
+| `--spec-revision N` | yes | — | Exact specification revision |
+| `--profile-id ID` | yes | — | Explicit eligible planning profile |
+| `--profile-revision N` | yes | — | Exact latest profile revision |
+| `--active-limit-ms N` | no | `300000` | Active turn cap, 1–300000 ms |
+
+If the controller restarts while a planning attempt is executing, inspect the
+persisted attempt and explicitly reconcile that exact identity before retrying
+or approving its proposal:
+
+```sh
+./bin/vigil project planning-reconcile PROJECT_ID ATTEMPT_ID \
+  --command-id planning-reconcile-001
+```
+
+This receipt-backed human recovery marks the full reserved attempt cap unknown;
+it never assumes the provider outcome or retries inference. Proposal application
+fails while an attempt for that plan remains unresolved.
+
+Provider requests for tools, approval or clarification are denied and fail the
+turn. A crash leaves an executing attempt unresolved and prevents replay until
+an explicit recovery records its entire reserved cap as unknown. Applying the
+exact proposal later transfers completed/failed/unknown planning charges into
+the ordinary 30-minute plan-services ledger. This command does not support a
+Codex route: contained included-subscription use remains fail-closed until a
+supported route avoids copying credentials or exposing the account home.
+
+## Bounded native tool transport
+
+`tool-server PROJECT_ID SESSION_ID` is the small stdio MCP adapter used by a
+native harness after the application has opened an injected tool session. It is
+not an operator authorization command: it cannot create a session, select a
+project/role/run/generation, or widen capabilities. Its newline-delimited
+JSON-RPC surface supports `initialize`, `tools/list` and `tools/call`; all calls
+reuse the bounded application handlers, caps, persisted generation checks and
+audit receipts.
+
+```sh
+./bin/vigil --state-dir STATE project tool-server PROJECT_ID SESSION_ID
+```
+
+`tool-qualify PROJECT_ID` performs one explicitly enabled local Hermes turn in
+the prepared disposable fixture. It exposes only the injected Vigil MCP server,
+requires exactly one audited `project.read`, proves native idle, retires the
+generation and verifies that a stale call is rejected. It grants no execution,
+acceptance, spending, delivery or publishing authority.
+
+```sh
+./bin/vigil --state-dir STATE project tool-qualify PROJECT_ID \
+  --live-local --manifest .cache/spike/stage1-EXAMPLE/launch.json \
+  --command-id hermes-tool-qualification-001
+```
+
+| Flag | Required | Default | Meaning |
+| --- | --- | --- | --- |
+| `--live-local` | yes | `false` | Authorize this one existing-local-llama qualification turn |
+| `--manifest PATH` | yes | — | Prepared Hermes qualification manifest |
+| `--command-id ID` | yes | — | Receipt and injected tool-session identity |
+
+The qualifier copies only credential-free configuration into a temporary
+private home and supplies the loopback credential by environment reference.
+The existing llama service must already be reachable; Vigil does not start or
+reconfigure it. Codex native-tool qualification remains unavailable until a
+contained supported ChatGPT-auth route exists.
+
 
 ## Read-only repository discovery
 
@@ -490,8 +581,9 @@ application state, and is never a fallback for any `project` command. Both
 | `--llama-key-file PATH` | no | — | Private key file for a local llama route; avoids putting the key in argv or the manifest |
 | `--scenario NAME` | no | — | Lifecycle scenario: `resume`, `interrupt`, `child`, `loss`, `clarify`, `approval-allow`, `approval-deny` |
 
-`--live` starts a real model turn and therefore costs money and touches the
-configured harness account. It is the only model-backed path in the binary and is
-not part of any gate. Scenarios may intentionally fail and leave partial fixture
+`--live` starts a real model turn and therefore may consume configured model
+capacity and touches the configured harness account. The separate
+`project planning-run` command is the only model-backed persisted-core path and
+is local-Hermes-only. Spike scenarios may intentionally fail and leave partial fixture
 files; prepare a fresh fixture for every attempt. See
 [Stage 1 contract](adapter-spike.md) and the [Stage 3 plan](stage-3-plan.md).

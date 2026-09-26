@@ -139,7 +139,7 @@ func load(path, kind string) (Manifest, Launch, harness.Profile, Preparation, er
 	if err != nil || canonical != m.Workspace || m.Workspace != filepath.Join(parent, "fixture") || filepath.Base(filepath.Dir(parent)) != "spike" {
 		return m, Launch{}, harness.Profile{}, p, errors.New("workspace must be the prepared disposable fixture")
 	}
-	if len(p.Configs) != 2 {
+	if len(p.Configs) < 1 || len(p.Configs) > 2 || p.Configs["hermes-home/config.yaml"] == "" {
 		return m, Launch{}, harness.Profile{}, p, errors.New("missing configuration digests")
 	}
 	for name, expected := range p.Configs {

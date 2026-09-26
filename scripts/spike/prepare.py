@@ -5,6 +5,7 @@ Development helper, not an application runtime or a transport adapter. No infere
 """
 import argparse
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -12,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tarfile
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -36,16 +38,21 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--hermes-root", type=Path)
     parser.add_argument("--codex", default="codex")
+    parser.add_argument("--harness", choices=("both", "hermes"), default="both")
     parser.add_argument("--base-url")
     parser.add_argument("--model")
+    parser.add_argument("--fixture-source", type=Path,
+                        help="Read-only Git repository whose HEAD populates the disposable fixture")
+    parser.add_argument("--qualification-spec", type=Path,
+                        help="Bounded Markdown copied into the disposable fixture before its baseline")
     args = parser.parse_args()
     profiles = read_json(TEMPLATES / "profiles.json")
     hermes = profiles["hermes"]
     installation = (args.hermes_root or Path(hermes["installation"]).expanduser()).resolve()
     interpreter = installation / hermes["python_relative"]
     codex = shutil.which(args.codex)
-    if not codex or not interpreter.is_file():
-        raise ValueError("Both pinned harness installations are required")
+    if not interpreter.is_file() or (args.harness == "both" and not codex):
+        raise ValueError("The selected pinned harness installations are required")
     if (installation / ".env").exists():
         raise ValueError("Hermes installation .env would be inherited; use a clean installation (do not delete the user's file)")
     hermes["base_url"] = args.base_url or hermes["base_url"]
@@ -56,9 +63,10 @@ def main():
         raise ValueError("This spike requires a credential-free loopback HTTP /v1 endpoint")
     if not hermes["model"].strip():
         raise ValueError("Explicit model required")
-    version = run([codex, "--version"], cwd=ROOT)
+    version = run([codex, "--version"], cwd=ROOT) if args.harness == "both" else ""
     commit = run(["git", "rev-parse", "HEAD"], cwd=installation)
-    if version != "codex-cli " + profiles["codex"]["version"] or commit != hermes["source_commit"]:
+    if ((args.harness == "both" and version != "codex-cli " + profiles["codex"]["version"])
+            or commit != hermes["source_commit"]):
         raise ValueError("Harness version changed; refresh source/protocol evidence before preparing")
 
     # A new private directory every time; never reuse/reset a previous experiment.
@@ -67,14 +75,33 @@ def main():
     parent.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="stage1-", dir=parent))
     fixture = work / "fixture"
-    shutil.copytree(ROOT / "testdata/spike", fixture)
+    if args.fixture_source:
+        source = args.fixture_source.expanduser().resolve()
+        run(["git", "rev-parse", "--verify", "HEAD"], cwd=source)
+        archive = subprocess.run(["git", "archive", "--format=tar", "HEAD"], cwd=source,
+                                 check=True, capture_output=True, timeout=30).stdout
+        fixture.mkdir()
+        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as bundle:
+            for member in bundle.getmembers():
+                target = (fixture / member.name).resolve()
+                if not target.is_relative_to(fixture.resolve()):
+                    raise ValueError("fixture archive contains an escaping path")
+            bundle.extractall(fixture, filter="data")
+    else:
+        shutil.copytree(ROOT / "testdata/spike", fixture)
+    if args.qualification_spec:
+        spec_source = args.qualification_spec.expanduser().resolve()
+        if not spec_source.is_file() or spec_source.is_symlink() or spec_source.stat().st_size > 65536:
+            raise ValueError("qualification spec must be one regular Markdown file of at most 64 KiB")
+        shutil.copyfile(spec_source, fixture / "VIGIL-QUALIFICATION.md")
     native_home = work / "hermes-home"
     native_home.mkdir()
     user_home = work / "user-home"
     user_home.mkdir()
     codex_home = work / "codex-home"
-    codex_home.mkdir()
-    shutil.copyfile(TEMPLATES / "codex.toml", codex_home / "config.toml")
+    if args.harness == "both":
+        codex_home.mkdir()
+        shutil.copyfile(TEMPLATES / "codex.toml", codex_home / "config.toml")
     evidence = work / "evidence"
     evidence.mkdir()
     env = {
@@ -96,7 +123,7 @@ def main():
         "GIT_CONFIG_GLOBAL": os.devnull,
     }
     run(["git", "init", "-q", "-b", "spike"], cwd=fixture, env=env)
-    run(["git", "add", "README.md", "message.txt", "check.sh"], cwd=fixture, env=env)
+    run(["git", "add", "--all"], cwd=fixture, env=env)
     run(["git", "-c", "user.name=Adapter Spike", "-c", "user.email=spike@invalid",
          "-c", "commit.gpgsign=false", "commit", "-qm", "Disposable fixture baseline"], cwd=fixture, env=env)
     baseline = run(["git", "rev-parse", "HEAD"], cwd=fixture, env=env)
@@ -133,17 +160,19 @@ def main():
                    "env": env, "secret_env_reference": hermes["api_key_env"],
                    "session_create": {"cwd": str(fixture), "model": hermes["model"],
                                       "provider": "custom", "close_on_disconnect": True}},
-        "codex": {"argv": [codex, "app-server", "--stdio"], "cwd": str(fixture),
-                  "env": {k: env[k] for k in ("PATH", "HOME", "LANG", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL")},
-                  "auth_file_reference": str(Path(profiles["codex"]["auth_file_reference"]).expanduser()),
-                  "thread_start": {"model": profiles["codex"]["model"], "modelProvider": "openai",
-                                   "cwd": str(fixture), "approvalPolicy": "on-request", "approvalsReviewer": "user",
-                                   "sandbox": "workspace-write", "ephemeral": False}}
+        "codex": {}
     }
-    launch["codex"]["env"]["CODEX_HOME"] = str(codex_home)
-    features = run([codex, "features", "list"], cwd=fixture, env=launch["codex"]["env"])
-    if not any(line.startswith("multi_agent") and line.rstrip().endswith("false") for line in features.splitlines()):
-        raise ValueError("Codex effective multi_agent setting is not disabled")
+    if args.harness == "both":
+        launch["codex"] = {"argv": [codex, "app-server", "--stdio"], "cwd": str(fixture),
+                           "env": {k: env[k] for k in ("PATH", "HOME", "LANG", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL")},
+                           "auth_file_reference": str(Path(profiles["codex"]["auth_file_reference"]).expanduser()),
+                           "thread_start": {"model": profiles["codex"]["model"], "modelProvider": "openai",
+                                            "cwd": str(fixture), "approvalPolicy": "on-request", "approvalsReviewer": "user",
+                                            "sandbox": "workspace-write", "ephemeral": False}}
+        launch["codex"]["env"]["CODEX_HOME"] = str(codex_home)
+        features = run([codex, "features", "list"], cwd=fixture, env=launch["codex"]["env"])
+        if not any(line.startswith("multi_agent") and line.rstrip().endswith("false") for line in features.splitlines()):
+            raise ValueError("Codex effective multi_agent setting is not disabled")
     write_json(work / "launch.json", launch)
     source_files = ["hermes_cli/config_defaults.py", "hermes_cli/env_loader.py", "hermes_cli/fallback_config.py",
                     "agent/auxiliary_client.py", "tui_gateway/server.py", "tui_gateway/session_auto_continue.py",
@@ -153,17 +182,18 @@ def main():
                     "tui_gateway/contracts/server_requests.py", "tools/approval.py",
                     "tools/terminal_tool.py", "toolsets.py"]
     report = {"codex_version": version, "hermes_commit": commit,
-              "model_turns_started": 0, "codex_config_parse_passed": True,
-              "codex_multi_agent_disabled": True, "effective_checks": effective,
+              "model_turns_started": 0, "codex_config_parse_passed": args.harness == "both",
+              "codex_multi_agent_disabled": args.harness == "both", "effective_checks": effective,
               "source_sha256": {f: hashlib.sha256((installation / f).read_bytes()).hexdigest() for f in source_files}}
     report["manifest_sha256"] = hashlib.sha256((work / "launch.json").read_bytes()).hexdigest()
     report["config_sha256"] = {
-        "codex-home/config.toml": hashlib.sha256((codex_home / "config.toml").read_bytes()).hexdigest(),
         "hermes-home/config.yaml": hashlib.sha256((native_home / "config.yaml").read_bytes()).hexdigest(),
     }
+    if args.harness == "both":
+        report["config_sha256"]["codex-home/config.toml"] = hashlib.sha256((codex_home / "config.toml").read_bytes()).hexdigest()
     write_json(evidence / "preparation.json", report)
     print(f"Prepared: {work}\nHermes effective settings verified; no inference started.\n"
-          "Codex credentials are referenced, not copied. See docs/adapter-spike.md before live launch.")
+          "Codex credentials are only referenced when --harness=both. See docs/adapter-spike.md before live launch.")
 
 
 if __name__ == "__main__":

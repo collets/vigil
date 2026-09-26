@@ -315,12 +315,32 @@ func (e *Engine) applyPlanningProposal(ctx context.Context, tx *store.Tx, cmd En
 			return nil, errors.New("stale proposal plan revision")
 		}
 	}
+	var executingAttempts int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM planning_attempts WHERE expected_plan_id=? AND state='executing'`, plan.ID).Scan(&executingAttempts); err != nil {
+		return nil, err
+	}
+	if executingAttempts != 0 {
+		return nil, errors.New("planning attempt outcome is unresolved; reconcile it before proposal approval")
+	}
 	plan.Approved = true
 	plan.AuthorizeCriteriaChanges = p.AuthorizeCriteriaChanges
 	payload, _ := json.Marshal(plan)
 	result, err := e.putPlan(ctx, tx, Envelope{CommandID: cmd.CommandID, ExpectedRevision: cmd.ExpectedRevision, Kind: "plan.put", Payload: payload})
 	if err != nil {
 		return nil, err
+	}
+	var planningCharged, planningUnknown int64
+	if err := tx.QueryRowContext(ctx, `SELECT coalesce(sum(a.charged_ms),0),coalesce(sum(a.unknown_ms),0) FROM planning_attempts a LEFT JOIN planning_budget_transfers x ON x.attempt_id=a.id WHERE a.expected_plan_id=? AND a.state IN('completed','failed','unknown') AND x.attempt_id IS NULL`, plan.ID).Scan(&planningCharged, &planningUnknown); err != nil {
+		return nil, err
+	}
+	if planningCharged+planningUnknown > 0 {
+		ledgerID := store.Digest([]byte("plan-services\x00" + plan.ID))
+		if _, err := tx.ExecContext(ctx, `INSERT INTO budget_ledgers(id,scope,plan_id,active_limit_ms,charged_ms,unknown_ms,updated_at) VALUES(?,'plan_services',?,1800000,?,?,?) ON CONFLICT(id) DO UPDATE SET charged_ms=charged_ms+excluded.charged_ms,unknown_ms=unknown_ms+excluded.unknown_ms,revision=revision+1,updated_at=excluded.updated_at`, ledgerID, plan.ID, planningCharged, planningUnknown, store.Now()); err != nil {
+			return nil, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO planning_budget_transfers(attempt_id,plan_id,charged_ms,unknown_ms,transferred_at) SELECT a.id,?,a.charged_ms,a.unknown_ms,? FROM planning_attempts a LEFT JOIN planning_budget_transfers x ON x.attempt_id=a.id WHERE a.expected_plan_id=? AND a.state IN('completed','failed','unknown') AND x.attempt_id IS NULL`, plan.ID, store.Now(), plan.ID); err != nil {
+			return nil, err
+		}
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE planning_proposals SET state='applied',approved_at=?,applied_at=? WHERE id=? AND revision=? AND state='proposed'", store.Now(), store.Now(), p.ProposalID, p.ProposalRevision); err != nil {
 		return nil, err

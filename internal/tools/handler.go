@@ -62,7 +62,7 @@ func (h *Handler) OpenSession(ctx context.Context, commandID string, a Authority
 			return out, err
 		}
 	}
-	out = Session{ID: store.ID(), ProjectID: h.Engine.ProjectID, Role: a.Role, RunID: a.RunID, NativeSessionID: a.NativeSessionID, Generation: a.Generation, Capabilities: append([]string(nil), caps...)}
+	out = Session{ID: store.Digest([]byte(commandID + "\x00tool-session")), ProjectID: h.Engine.ProjectID, Role: a.Role, RunID: a.RunID, NativeSessionID: a.NativeSessionID, Generation: a.Generation, Capabilities: append([]string(nil), caps...)}
 	args, _ := json.Marshal(a)
 	receipt, err := h.Engine.DB.Command(ctx, store.Command{ID: commandID, Actor: "core", Kind: "tool.session.open", Args: args}, func(tx *store.Tx) (any, error) {
 		raw, _ := json.Marshal(caps)
@@ -74,6 +74,58 @@ func (h *Handler) OpenSession(ctx context.Context, commandID string, a Authority
 	}
 	err = json.Unmarshal(receipt, &out)
 	return out, err
+}
+
+func (h *Handler) Capabilities(ctx context.Context, sessionID string) ([]string, error) {
+	var raw string
+	var project string
+	var retired int64
+	if h == nil || h.Engine == nil || h.Engine.DB == nil || !store.SafeID(sessionID) {
+		return nil, errors.New("valid tool session required")
+	}
+	if err := h.Engine.DB.SQL.QueryRowContext(ctx, `SELECT project_id,capabilities_json,coalesce(retired_at,0) FROM tool_sessions WHERE id=?`, sessionID).Scan(&project, &raw, &retired); err != nil || project != h.Engine.ProjectID || retired != 0 {
+		return nil, errors.New("foreign or retired tool session")
+	}
+	var out []string
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (h *Handler) AuditCall(ctx context.Context, sessionID string, requestID json.RawMessage, name string, input, result []byte) error {
+	if len(requestID) == 0 || len(requestID) > 256 {
+		return errors.New("bounded native tool request identity required")
+	}
+	var role string
+	if err := h.Engine.DB.SQL.QueryRowContext(ctx, `SELECT role FROM tool_sessions WHERE id=? AND retired_at IS NULL`, sessionID).Scan(&role); err != nil {
+		return errors.New("active injected tool session required")
+	}
+	args, _ := json.Marshal(map[string]string{"session_id": sessionID, "request_id_digest": store.Digest(requestID), "tool": name, "input_digest": store.Digest(input), "result_digest": store.Digest(result)})
+	commandID := store.Digest([]byte(sessionID + "\x00" + string(requestID) + "\x00" + name))
+	_, err := h.Engine.DB.Command(ctx, store.Command{ID: commandID, Actor: "model:" + role, Kind: "tool.call.audit", Args: args}, func(*store.Tx) (any, error) {
+		return map[string]string{"session_id": sessionID, "tool": name, "result_digest": store.Digest(result)}, nil
+	})
+	return err
+}
+
+func (h *Handler) RetireSession(ctx context.Context, commandID, sessionID, generation string) error {
+	if h == nil || h.Engine == nil || h.Engine.DB == nil || !store.SafeID(commandID) || !store.SafeID(sessionID) || !store.SafeID(generation) {
+		return errors.New("exact tool session retirement required")
+	}
+	args, _ := json.Marshal(map[string]string{"session_id": sessionID, "generation": generation})
+	_, err := h.Engine.DB.Command(ctx, store.Command{ID: commandID, Actor: "core", Kind: "tool.session.retire", Args: args}, func(tx *store.Tx) (any, error) {
+		result, err := tx.ExecContext(ctx, `UPDATE tool_sessions SET retired_at=? WHERE id=? AND generation=? AND retired_at IS NULL`, store.Now(), sessionID, generation)
+		if err != nil {
+			return nil, err
+		}
+		n, err := result.RowsAffected()
+		if err != nil || n != 1 {
+			return nil, errors.New("tool session is missing, stale or already retired")
+		}
+		return map[string]string{"session_id": sessionID, "state": "retired"}, nil
+	})
+	return err
 }
 
 func nullable(v string) any {

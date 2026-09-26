@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"vigil/internal/core"
 	"vigil/internal/store"
+	"vigil/internal/supervisor"
 )
 
 type source func(context.Context) (core.DashboardSnapshot, error)
@@ -95,6 +96,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				action = "advance"
 			case "u":
 				action = "queue"
+			case "s":
+				action = "stop"
+			case "g":
+				if m.tab == 2 && len(m.snapshot.Inbox) > 0 {
+					action = "apply-proposal:" + m.snapshot.Inbox[m.inbox].ID
+				}
+			case "b":
+				if m.tab == 2 && len(m.snapshot.Inbox) > 0 {
+					action = "remain-blocked:" + m.snapshot.Inbox[m.inbox].ID
+				}
 			case "y":
 				if m.tab == 2 && len(m.snapshot.Inbox) > 0 {
 					action = "allow:" + m.snapshot.Inbox[m.inbox].ID
@@ -198,7 +209,7 @@ func (m model) lines() []string {
 			lines = []string{"No tasks defined."}
 		}
 	case 2:
-		lines = []string{"Resolve the displayed revision only: y allow once · n deny.", "Permission, acceptance, manual Pass and clarification remain distinct.", "Showing up to 100 pending/expired decisions.", ""}
+		lines = []string{"Resolve the displayed revision only: y allow once · n deny · g apply proposal · b remain blocked.", "Permission, task acceptance, manual Pass and native clarification remain distinct actions.", "Showing up to 100 pending/expired decisions.", ""}
 		for index, entry := range s.Inbox {
 			marker := "  "
 			if index == m.inbox {
@@ -278,7 +289,7 @@ func (m model) lines() []string {
 func (m model) View() tea.View {
 	tabs := []string{"1 Overview", "2 Tasks", "3 Inbox", "4 History", "5 Detail"}
 	tabs[m.tab] = "[" + tabs[m.tab] + "]"
-	status := "Persisted state · read-only"
+	status := "Persisted state · interactive controls"
 	if m.loading {
 		status += " · refreshing"
 	}
@@ -294,7 +305,7 @@ func (m model) View() tea.View {
 	end := min(len(lines), start+space)
 	output := []string{"Vigil  " + strings.Join(tabs, "  "), status, ""}
 	output = append(output, lines[start:end]...)
-	output = append(output, "", fmt.Sprintf("p pause · c continue · a advance · u queue · y/n decision · q quit  (%d–%d/%d)", start+1, end, len(lines)))
+	output = append(output, "", fmt.Sprintf("p pause · c continue · s stop · a advance · u queue · y/n permission · g proposal · b blocked · q quit  (%d–%d/%d)", start+1, end, len(lines)))
 	for n, line := range output {
 		output[n] = ansi.Truncate(line, max(1, m.width), "…")
 	}
@@ -340,9 +351,15 @@ func projectMutator(engine *core.Engine) mutator {
 				}
 			}
 			return fmt.Errorf("no queueable plan")
+		case "stop":
+			if s.ActiveRun == "" {
+				return fmt.Errorf("no active persisted run")
+			}
+			_, err := (&supervisor.Runner{Engine: engine}).RequestStop(ctx, supervisor.StopRequest{CommandID: store.ID(), ExpectedRevision: revision, RunID: s.ActiveRun, InterruptGrace: 2 * time.Second, TerminateGrace: 5 * time.Second})
+			return err
 		default:
 			decision, requestID, found := strings.Cut(action, ":")
-			if (decision != "allow" && decision != "deny") || !found || requestID == "" {
+			if (decision != "allow" && decision != "deny" && decision != "apply-proposal" && decision != "remain-blocked") || !found || requestID == "" {
 				return fmt.Errorf("unknown dashboard action")
 			}
 			if len(s.Inbox) == 0 {
@@ -357,6 +374,28 @@ func projectMutator(engine *core.Engine) mutator {
 			}
 			if entry.ID == "" {
 				return fmt.Errorf("focused request is no longer displayed")
+			}
+			if decision == "apply-proposal" {
+				if entry.Kind != "approval" {
+					return fmt.Errorf("displayed request is not a planning approval")
+				}
+				var proposal struct {
+					ID       string `json:"proposal_id"`
+					Revision int    `json:"proposal_revision"`
+				}
+				if err := json.Unmarshal(entry.Context, &proposal); err != nil || !store.SafeID(proposal.ID) || proposal.Revision < 1 {
+					return fmt.Errorf("displayed approval is not a closed planning proposal")
+				}
+				payload, _ := json.Marshal(map[string]any{"proposal_id": proposal.ID, "proposal_revision": proposal.Revision, "authorize_criteria_changes": false})
+				_, err := engine.Apply(ctx, core.Human, core.Envelope{CommandID: store.ID(), ExpectedRevision: revision, Kind: "planning.proposal.apply", Payload: payload})
+				return err
+			}
+			if decision == "remain-blocked" {
+				if entry.Kind != "recovery" || entry.RunID == "" {
+					return fmt.Errorf("displayed request is not a recovery choice")
+				}
+				_, err := (&supervisor.Runner{Engine: engine}).ChooseRecovery(ctx, supervisor.RecoveryChoiceRequest{CommandID: store.ID(), ExpectedRevision: revision, RunID: entry.RunID, Mode: "remain_blocked"}, nil)
+				return err
 			}
 			if entry.Kind != "approval" {
 				return fmt.Errorf("displayed request requires its distinct %s action", entry.Kind)

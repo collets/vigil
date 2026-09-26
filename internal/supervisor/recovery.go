@@ -279,7 +279,15 @@ func (r *Runner) ChooseRecovery(ctx context.Context, request RecoveryChoiceReque
 		}
 		return receipt, nil
 	}
-	eligibility, observation, inspectErr := r.RecoveryEligibility(ctx, prepared, inspector)
+	var eligibility RecoveryEligibility
+	var observation HistoryObservation
+	var inspectErr error
+	if request.Mode != "remain_blocked" {
+		if inspector == nil {
+			return receipt, errors.New("qualified recovery inspector required for resume choices")
+		}
+		eligibility, observation, inspectErr = r.RecoveryEligibility(ctx, prepared, inspector)
+	}
 	receipt.Eligibility = eligibility
 	eligible := request.Mode == "exact_resume" && eligibility.ExactResume || request.Mode == "fresh_context" && eligibility.FreshContext
 	eligibilityBytes, _ := json.Marshal(map[string]any{"eligibility": eligibility, "history": observation, "inspection_error": errorString(inspectErr)})

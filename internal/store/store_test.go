@@ -26,7 +26,12 @@ func TestProjectV6UpgradeAndRollback(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, object := range []string{"blocked_observations", "tool_sessions", "planning_proposals", "specification_revisions", "workflow_dispatches", "workflow_controls", "quality_assessment_sources_v2", "quality_authority_v2", "quality_budget_segments_v2", "supervisor_assessments_v2", "quality_acceptances_v2", "quality_acceptance_attempts_v2", "evidence_staleness_v2", "human_decisions_v2", "manual_results_v2", "quality_findings_v2", "review_results_v2", "baseline_exceptions_v2", "check_results_v2", "quality_effects_v2", "quality_scopes_v2", "generation_recovery_snapshots", "budget_exhaustions", "recovery_choice_checkpoints", "recovery_attempt_links"} {
+	for _, trigger := range []string{"planning_attempt_terminal_no_update", "planning_attempt_no_delete"} {
+		if _, err = db.SQL.Exec("DROP TRIGGER " + trigger); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, object := range []string{"planning_budget_transfers", "planning_attempts", "planning_service_ledgers", "blocked_observations", "tool_sessions", "planning_proposals", "specification_revisions", "workflow_dispatches", "workflow_controls", "quality_assessment_sources_v2", "quality_authority_v2", "quality_budget_segments_v2", "supervisor_assessments_v2", "quality_acceptances_v2", "quality_acceptance_attempts_v2", "evidence_staleness_v2", "human_decisions_v2", "manual_results_v2", "quality_findings_v2", "review_results_v2", "baseline_exceptions_v2", "check_results_v2", "quality_effects_v2", "quality_scopes_v2", "generation_recovery_snapshots", "budget_exhaustions", "recovery_choice_checkpoints", "recovery_attempt_links"} {
 		if _, err = db.SQL.Exec("DROP TABLE " + object); err != nil {
 			t.Fatal(err)
 		}
@@ -77,7 +82,7 @@ func TestProjectV6UpgradeAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer upgraded.Close()
-	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 15 {
+	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 16 {
 		t.Fatal("v6 database was not upgraded", versions, err)
 	}
 	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM config_snapshots WHERE id='existing'").Scan(&existing); err != nil || existing != 1 {
@@ -104,6 +109,12 @@ func TestProjectV14UpgradeAndRollback(t *testing.T) {
 	}
 	for _, statement := range []string{
 		"PRAGMA foreign_keys=OFF",
+		"DROP TRIGGER planning_attempt_terminal_no_update",
+		"DROP TRIGGER planning_attempt_no_delete",
+		"DROP TABLE planning_budget_transfers",
+		"DROP TABLE planning_attempts",
+		"DROP TABLE planning_service_ledgers",
+		"DELETE FROM schema_migrations WHERE version=16",
 		"DROP TRIGGER blocked_observation_no_update",
 		"DROP TRIGGER blocked_observation_no_delete",
 		"DROP TRIGGER specification_revision_no_update",
@@ -151,11 +162,74 @@ func TestProjectV14UpgradeAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer upgraded.Close()
-	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 15 {
+	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 16 {
 		t.Fatal("v14 database was not upgraded", versions, err)
 	}
 	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM config_snapshots WHERE id='pre15'").Scan(&retained); err != nil || retained != 1 {
 		t.Fatal("v15 upgrade lost populated data", retained, err)
+	}
+}
+
+func TestProjectV15UpgradeAndRollback(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "private", "state.sqlite")
+	db, err := Open(ctx, path, "project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.SQL.Exec("INSERT INTO config_snapshots VALUES('pre16','pre16-digest',1,'{}','{}',1)"); err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{
+		"DROP INDEX one_active_tool_generation",
+		"DROP TRIGGER planning_attempt_terminal_no_update",
+		"DROP TRIGGER planning_attempt_no_delete",
+		"DROP TABLE planning_budget_transfers",
+		"DROP TABLE planning_attempts",
+		"DROP TABLE planning_service_ledgers",
+		"DELETE FROM schema_migrations WHERE version=16",
+	} {
+		if _, err = db.SQL.Exec(statement); err != nil {
+			t.Fatal(statement, err)
+		}
+	}
+	if err = db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = raw.Exec("CREATE TABLE planning_service_ledgers(conflict TEXT)"); err != nil {
+		t.Fatal(err)
+	}
+	if failed, openErr := Open(ctx, path, "project"); openErr == nil {
+		failed.Close()
+		t.Fatal("migration 016 conflict was accepted")
+	}
+	var versions, retained int
+	if err = raw.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 15 {
+		t.Fatal("failed migration changed history", versions, err)
+	}
+	if err = raw.QueryRow("SELECT count(*) FROM config_snapshots WHERE id='pre16'").Scan(&retained); err != nil || retained != 1 {
+		t.Fatal("failed migration lost populated data", retained, err)
+	}
+	if _, err = raw.Exec("DROP TABLE planning_service_ledgers"); err != nil {
+		t.Fatal(err)
+	}
+	if err = raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	upgraded, err := Open(ctx, path, "project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer upgraded.Close()
+	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 16 {
+		t.Fatal("v15 database was not upgraded", versions, err)
+	}
+	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM config_snapshots WHERE id='pre16'").Scan(&retained); err != nil || retained != 1 {
+		t.Fatal("v16 upgrade lost populated data", retained, err)
 	}
 }
 
@@ -200,6 +274,11 @@ func TestProjectV8UpgradePreservesRecoverySnapshotsAndPermitsEqualDigests(t *tes
 	}
 	statements := []string{
 		"PRAGMA foreign_keys=OFF",
+		"DROP TRIGGER planning_attempt_terminal_no_update",
+		"DROP TRIGGER planning_attempt_no_delete",
+		"DROP TABLE planning_budget_transfers",
+		"DROP TABLE planning_attempts",
+		"DROP TABLE planning_service_ledgers",
 		"DROP TRIGGER blocked_observation_no_update",
 		"DROP TRIGGER blocked_observation_no_delete",
 		"DROP TRIGGER specification_revision_no_update",
