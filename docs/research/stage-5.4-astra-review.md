@@ -1,6 +1,6 @@
 # Stage 5.4 independent security/correctness review
 
-Latest verdict: [follow-up of 253efd2](#independent-follow-up-of-253efd2) leaves R2 (P1) and R10 (P2) open. R1/R3/R4/R5/R6/R7/R8/R9 are closed for the reported offline defects. Earlier sections are historical.
+Latest verdict: [follow-up of 49b9fbb](#independent-follow-up-of-49b9fbb) closes R10, leaves R2 (P1) open, and adds R11 (P2). R1/R3/R4/R5/R6/R7/R8/R9 remain closed for the reported offline defects. Stage 5.4 is not accepted. Earlier sections are historical.
 
 Date: 2026-09-22. Reviewed `4b48737..405b8c9`; implementation head `03f65e8`.
 
@@ -208,3 +208,44 @@ Next agent: fix R2 and R10, retain all closed safeguards and forward migrations,
 
 
 Final validation for this follow-up: independent submitted-suite `make check`, `make check-race`, `make build`, `make build-boundary` and four cross-builds passed. All permanent `TestStage54Followup` cases passed twice under `-race`. The restrictive-umask probe failed in ordinary and both race repetitions. The clean-environment escape failed on attempt zero in the initial ordinary run, then on attempts zero and four in subsequent ordinary repetitions; both race-instrumented repetitions exhausted twelve attempts without reproducing it. The scheduling-sensitive limitation is retained explicitly, rather than treating race-test passage as proof. No data-race diagnostics were reported. Executable probe copies were removed; only review documentation and inert reproduction source remain changed.
+
+
+## Independent follow-up of 49b9fbb
+
+Date: 2026-09-22. Reviewed final remediation `49b9fbb67d31dd604da673bd0b92cc9bbb15a27c` and documentation through `e77a17c`, with the prior findings retained as context.
+
+**Verdict: changes requested. R10 is closed; R2 remains P1. New R11 is P2.** Previously closed R1/R3/R4/R5/R6/R7/R8/R9 remain closed for their reported offline defects. Stage 5.4 is not independently accepted; production dispatch remains disabled.
+
+The normal Linux subreaper path closes the demonstrated clean-environment orphan case: the orphan is adopted and retired before normal supervisor exit. The explicit post-creation chmod fixes R10 under the restrictive umask. These improvements should be retained. Successful normal execution does not establish containment after losing the supervisor.
+
+### R2 remains open — P1: supervisor death is accepted as containment completion
+
+Locations: `internal/checks/process_tracker_linux.go:56–57`; `internal/checks/runner.go:419–445,733–735,644–646`; `internal/checks/supervisor_linux.go:51–60,81`.
+
+`processContainmentFailed` rejects only exit status 125. A supervisor terminated by a signal has exit code -1 and is therefore treated as having passed this check. When the polling tracker sees no remaining known processes, `runContained` returns `contained=true` even though the supervisor never finished descendant cleanup/reaping. `runHeld` can persist an ordinary failed check, and `Run` then issues `contained_stopped` and releases its claims. This is false containment authority, even though the check status itself is not pass.
+
+`TestIndependentSupervisorDeathMustBeUncertain` launches only an owned helper which sends SIGKILL to its own supervisor parent and exits. Both ordinary repetitions and both race repetitions return `contained=true` alongside `signal: killed`. The probe deliberately creates no surviving writer; it directly demonstrates the invalid proof on supervisor loss. With descendants, the fallback is the same partial PID/environment polling whose blind spots motivated the subreaper.
+
+This is also relevant to normal cancellation: the outer runner sends SIGKILL after 250 ms, while the supervisor's own termination routine sleeps 250 ms before its SIGKILL phase and can spend further time reaping. The outer deadline can kill the component needed to establish the cleanup proof. Signal handlers are installed only after the approved child starts, and are removed before cleanup, creating further supervisor-loss windows.
+
+Required correction: require positive, supervisor-owned completion evidence after authoritative cleanup, and reject signal termination/missing or malformed evidence independently of command exit status. Keep claims and effects uncertain when the supervisor is lost. Coordinate outer cancellation with bounded supervisor shutdown; escalation that kills the supervisor must never infer successful containment from the old polling mechanism. Include early cancellation, cleanup-time cancellation, explicit supervisor death and detached clean-environment children in permanent tests.
+
+Related source-level gaps remain within R2: `linuxDescendants` (`supervisor_linux.go:123–149`) converts enumeration/read/parse failures to empty or incomplete sets, and `cleanupDescendants` (`88–107`) treats an empty set as absence. Establish child exhaustion through an authoritative mechanism and propagate observation failure. PID-only signalling still lacks stable process identity. Darwin's unchanged `unresolvedProcessFork || observed-group/descendant` exception at `runner.go:444` still allows one observed child to excuse an unaccounted additional fork; there was no independent native reproduction in this follow-up. Do not describe these source observations as newly reproduced escapes.
+
+### R11 — P2: configuration-pipe read descriptors have no explicit retirement
+
+Locations: `internal/checks/process_tracker_linux.go:29–49`; `internal/checks/runner.go:385–395`.
+
+`prepareProcessContainment` appends the read end of a newly created pipe to `command.ExtraFiles`. Neither the successful start path nor the failed start path closes the parent's read end. `os/exec` does not own/close caller-supplied ExtraFiles in the parent. Consequently every check retains a descriptor until nondeterministic garbage collection; a long-running scheduler can exhaust its descriptor budget independently of concurrent execution limits. Start failures can also leave a configuration writer blocked if its payload exceeds pipe capacity and the unclosed read end has no reader.
+
+`TestIndependentSupervisorPipeDescriptors` runs twelve successful `/bin/true` checks with automatic garbage collection disabled only for the test and restored afterward. The open descriptor count grows by exactly twelve in both ordinary and race repetitions (for example 7 to 19). Disabling GC exposes the missing explicit close; the claim is not that these descriptors survive all future garbage collections.
+
+Required correction: give the preparation resources an explicit cleanup lifetime. Close the parent's inherited read descriptor immediately after Start, close both ends on preparation/start failure, and bound or join the configuration writer so failed launches cannot leave blocked goroutines. Cover repeated successful checks and failed starts with payloads larger than pipe capacity. Preserve the private, fixed supervisor invocation and command binding.
+
+### Validation and implementing-agent handoff
+
+Retained new probes: `stage-5.4-review/subreaper_followup_test.go.txt`. Copy to `internal/checks/stage54_independent_test.go` and run `go test ./internal/checks -run TestIndependent -count=2 -v`, then the same command with `-race`, using the repository's pinned Go environment. The two behavioral assertions fail on the reviewed implementation; the helper is not an independent finding. Temporary executable review tests were removed. No production source was changed.
+
+Independent native macOS execution was not repeated. The implementer's submitted evidence remains the exact `49b9fbb` bundle `322b3facdb75a3056c346dc770043e9a97127373cb0328db6dc70059cb21b238`; passing native suites are not live runtime qualification.
+
+Next agent: remediate R2 and R11, preserve R10 and all other closed safeguards, add permanent failure-path regressions, and request independent follow-up. No Stage 5.5 implementation, production activation, paid/model calls, push or publication is authorized by this review. Review documentation and inert reproductions are intentionally left uncommitted for a separate review-artifact checkpoint.

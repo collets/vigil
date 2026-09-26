@@ -1,10 +1,10 @@
 # Stage 5.4 implementation results
 
-Date: 2026-09-22
+Date: 2026-09-22; updated 2026-09-26
 
 Scope: offline implementation and fixture validation only
 
-Status: independent follow-up of `253efd2` leaves **R2 (P1) and R10 (P2) open**. R5/R8 are now closed, alongside R1/R3/R4/R6/R7/R9 at the reported offline scope. Stage 5.4 remains unaccepted. See the [latest findings and retained probes](stage-5.4-astra-review.md#independent-follow-up-of-253efd2). Implementation claims below are subject to this verdict.
+Status: R2/R11 remediation is submitted at `cba322b` after the independent follow-up of `49b9fbb`. R10 and R1/R3/R4/R5/R6/R7/R8/R9 remain closed for their reported offline defects. Stage 5.4 remains unaccepted pending independent follow-up. See the [latest findings and retained probes](stage-5.4-astra-review.md#independent-follow-up-of-49b9fbb). Implementation claims below are not self-acceptance.
 
 Production dispatch: disabled
 
@@ -31,8 +31,10 @@ Stage 5.4 was implemented as these local commits:
 | `f3057aa` | Add terminal budget accounting, migration 014, permission fidelity and descendant tracking |
 | `9c31eaa` | Add pre-exec Darwin fork observation |
 | `253efd2` | Fail closed when a Darwin fork cannot be tied to a contained group or observed PID |
+| `49b9fbb` | Add the Linux subreaper supervisor and umask-independent copied-file modes |
+| `cba322b` | Require private supervisor readiness/cleanup proof and retire configuration resources |
 
-Initial review range: `4b48737..03f65e8`. First remediation range: `c224826..0993a24`. Second follow-up remediation range: `ff0d9c0..253efd2`. No commit was pushed and no publication or production activation occurred.
+Initial review range: `4b48737..03f65e8`. First remediation range: `c224826..0993a24`. Second follow-up remediation range: `ff0d9c0..253efd2`. Final R2/R10 submission: `253efd2..49b9fbb`. Current R2/R11 submission: `49b9fbb..cba322b`. No commit was pushed and no publication or production activation occurred.
 
 ## Independent-review remediation
 
@@ -146,11 +148,24 @@ The temporary Mac directory `/tmp/vigil-stage54-f3057aa.VvWBtx`, all remote bund
 
 Commit `49b9fbb` adds a Linux-only re-exec supervisor that enables `PR_SET_CHILD_SUBREAPER`, starts the approved command from a canonical serialized specification, handles cancellation, recursively signals descendants, and reaps adopted children before returning. A reserved supervisor exit status makes cleanup uncertainty fail closed. The copy path now calls `Chmod` after regular-file creation, eliminating umask-dependent source evidence. `internal/quality/stage54_final_followup_test.go` permanently covers both the empty-environment detached child and `umask(077)` cases; the retained inert probe remains at `docs/research/stage-5.4-review/final_followup_test.go.txt`.
 
-The implementing agent does not self-accept these corrections. Independent review must inspect `ff0d9c0..49b9fbb`, rerun all ten retained/permanent probes (including both final regressions twice under ordinary and race runs), and decide whether R2/R10 are closed.
+Independent follow-up closed R10 but retained R2 because supervisor signal death could still be interpreted through non-authoritative polling, and added R11 for configuration descriptors/writers left to garbage collection.
+
+Commit `cba322b` addresses those findings. Linux containment now uses private readiness and cleanup-proof pipes: cancellation is sent only after the subreaper and its signal handler are ready, and only an exact completion token written after authoritative cleanup can create containment authority. Signal death, missing/malformed proof, supervisor status 125, process-observation failure and shutdown escalation remain uncertain and retain claims. Descendant signals use pidfds after `/proc` start-time verification rather than reusable bare PIDs. Normal success bypasses the former polling authority; polling after supervisor loss is cleanup-only and cannot authorize release.
+
+The containment resource object closes parent copies of every inherited descriptor immediately after start, closes all ends on preparation/start failure, and synchronously joins the bounded configuration writer. Permanent Linux tests cover explicit supervisor death, repeated successful descriptor use with GC disabled, cleanup-time cancellation with an empty-environment detached child, and a failed start with a configuration larger than pipe capacity.
+
+Linux validation at `cba322b` passed:
+
+- `go test ./internal/checks -run 'TestIndependent|TestSupervisor' -count=2 -v`;
+- the same focused suite twice under `-race`;
+- all existing `TestStage54` and interrupted-check regressions;
+- `make check`, `make check-race`, `make build`, `make build-boundary`, `make cross-build`, and `git diff --check`.
+
+The exact `git archive` for `cba322b` had SHA-256 `f2951b2628abb2a61752f16d7fc7ab8de1cdfce12b85a159155d4d31b7257833`. Native macOS transfer/execution was not authorized by the execution environment in this session, so native validation remains pending. The local temporary archive was removed. The implementing agent does not self-accept R2/R11.
 
 ## Deferred gates and limitations
 
-- Stage 5.4 remediation requires independent follow-up acceptance; this implementation report is not self-acceptance and does not close R2/R5/R8/R10 by assertion.
+- Stage 5.4 remediation requires independent follow-up acceptance; this implementation report is not self-acceptance and does not close R2/R11 by assertion.
 - Darwin 25 rejects kernel `NOTE_TRACK`. Vigil registers `NOTE_FORK` before approved code executes; an otherwise unaccounted fork makes the effect uncertain instead of passing. This is intentionally fail-closed and can reject a legitimate forking check until a qualified production containment boundary exists.
 - Production check/model/reviewer dispatch remains disabled. No real fresh model review was attempted.
 - Safe contained Codex subscription routing, effective Luna/low selection, provider-idle proof, shared Mac/WSL capacity authority and live recovery across advertised harness/platform combinations remain pending. No paid fallback or larger-model fallback is authorized.
@@ -160,7 +175,7 @@ The implementing agent does not self-accept these corrections. Independent revie
 
 ## Independent review instructions
 
-Review second follow-up remediation range `ff0d9c0..253efd2` against R2/R5/R8/R10 in `docs/research/stage-5.4-astra-review.md`. The first remediation range remains `c224826..0993a24`. Begin from the accepted Stage 5.3 contracts and explicitly preserve every previously closed finding.
+Review `49b9fbb..cba322b` against R2/R11 in `docs/research/stage-5.4-astra-review.md`. The earlier remediation ranges remain historical context. Begin from the accepted Stage 5.3 contracts and explicitly preserve every previously closed finding.
 
 1. Verify migrations 010–014 on both a fresh database and populated older databases. Confirm historical migration bytes/digests are unchanged and migration 014 preserves observed source consumption while conservatively reconciling failed/executing legacy assessment effects and their ledger charge.
 2. Audit `internal/quality/scope.go` field by field. Reproduce repository, task/plan revision, criteria/definition, configuration/check-set, reviewer profile/instruction and artifact invalidation. Confirm a harmless plan reorder does not stale task evidence but an enclosing restriction change does.
@@ -171,3 +186,8 @@ Review second follow-up remediation range `ff0d9c0..253efd2` against R2/R5/R8/R1
 7. Audit manual/human commands and `Acceptor`. Re-run the competing-WAL pending-manual probe at the gate-read/write-transaction boundary. Exercise code, criteria, definition/config/profile, stale child acceptance and artifact races. Confirm the committed manifest names the final selected gates, only current explicit manual `pass` satisfies a manual gate, and plan acceptance creates no delivery.
 8. Run `make check`, `make check-race`, `make build`, `make build-boundary`, `make cross-build` and `git diff --check` without models, Docker or hosting. Re-run native process/filesystem/locking validation if review changes those paths.
 9. Report findings independently. If accepted offline, update the review record and shared status while leaving live qualification and real human/manual gates pending. Do not enable production dispatch, push, publish, self-authorize recovery, or begin Stage 5.5 as part of the review.
+
+
+## Independent review of final remediation
+
+The independent follow-up of `49b9fbb` closes R10 but leaves R2 (P1) open: signal death of the subreaper can still produce `contained_stopped` without completed cleanup. New R11 (P2) covers configuration-pipe descriptors left to garbage collection. See [the exact findings and reproduction instructions](stage-5.4-astra-review.md#independent-follow-up-of-49b9fbb). Stage 5.4 remains unaccepted and production dispatch remains disabled; submitted passing suites do not supersede these findings.
