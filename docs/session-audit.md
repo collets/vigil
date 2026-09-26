@@ -58,6 +58,7 @@ Provenance limit: several available user messages answer numbered questions with
 | Commits/delivery | Per-task commits, multiple for clarity, governed by policy; GitHub/GitLab draft requests; self-hosted support unresolved | R44, R50; requirements open questions |
 | Profiles/skills/onboarding | Manual profiles first; reference existing resources and project/role instructions. Guided exploration, generated testing/deployment skills and sandbox setup desirable but deferred; developer supplies initial setup | R42, R58; discovery rounds 4/8 |
 | Local inference | Existing llama.cpp service; no installation/loading/unloading management. Local-only inference does not automatically mean offline operation | R59–R60; presets; harness investigation |
+| Local llama credential discovery | `OPENAI_API_KEY` is inherited by authorized local turns and `OPENAI_BASE_URL` must match the prepared loopback endpoint; inspect presence/route only, never expose or persist the value, and never infer paid-fallback authority | AGENTS.md; Stage 5 shared contract; 2026-09-27 user clarification |
 | Finalization | Visible final task, factual evidence plus narrative proposed, local Git-ignored plan archive, explicit export/commit. Failure pending, retry summary only, explicit draft delivery still possible | R65–R67; plan finalization |
 | Retention | Durable records indefinite by default; transcripts default 30 days after completion, configurable; preserve unfinished recovery. Native harness histories distinct from app records | R64, R68; finalization; harness investigation |
 | Initial UI/session scope | Terminal only; manage only app-launched sessions. Browser UI, adoption of external sessions, background execution deferred/excluded as documented | R69–R71; requirements scope |
@@ -91,6 +92,13 @@ The [requirements open-question list](requirements.md#open-design-and-feasibilit
 ## Persistence and verification status
 
 Stage 5.1-5.4 update (2026-09-26): the offline core is implemented and independently accepted. Stage 5.1 added execution qualification and boundary evidence; 5.2 repositories, execution and supervision; 5.3 recovery, pause/stop and cumulative budgets; 5.4 contained checks, fresh review, repair and epoch-fenced acceptance. The installed schema is `internal/store/migrations` (project 001-014, coordination 001-002), embedded and forward-only. Production check, model and reviewer dispatch remain disabled by construction, and no acceptance path can commit, push, publish or deliver. Decisions above that changed during this work: the checkpoint mechanism question in [checkpoints.md](checkpoints.md) is now decided (application-owned verified checkpoint sets, not the user's stash), and Linux containment uses a subreaper supervisor with supervisor-owned cleanup proof. Unchanged: approval-first default, no automatic merging, draft PR/MR as the delivery endpoint, manual profiles first, and the live qualification gate. Current state, pending findings and the next action are in [next steps](next-steps.md).
+
+Stage 5.5 credential-entrypoint clarification (2026-09-27): the user confirmed
+that `OPENAI_API_KEY` is already present in the agent environment and asked that
+future agents be able to discover that fact from a guaranteed repository
+entrypoint. `AGENTS.md` now records the variable name, loopback-route check and
+non-disclosure/no-paid-fallback boundary. No credential value was read into or
+stored in repository documentation.
 
 Stage 3.5 update (2026-09-20): the user authorized SSH takeover after configuring Go, nvm/Node and authenticated Codex on the Mac. Vigil source was transferred directly; pinned Hermes was installed into a fresh Python environment. macOS arm64 runtime and native policy experiments are complete with [explicit limits](research/stage-3.5-results.md). Both harnesses left writers after abrupt transport loss; native permissions still do not enforce every Git gate. The user clarified that llama.cpp runs on native Windows, reached from WSL shared localhost and temporarily tunneled to the Mac. No Mac model server or VM runtime was installed. Temporary connections/processes were cleaned up; the next implementation is Stage 5 A–C, with D gating strict production editing.
 

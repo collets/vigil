@@ -20,6 +20,11 @@ explicit instruction.
 - **No paid or model calls, no Docker, no hosting, no network egress** unless the
   user authorizes it in this session. The default test suite must stay runnable
   offline with no credentials.
+- The existing local llama route takes `OPENAI_API_KEY` from the inherited
+  environment and requires `OPENAI_BASE_URL` to name the prepared loopback
+  endpoint. Check presence and route identity only: never print, copy, persist or
+  document the key value, and never turn its presence into permission for a paid
+  API fallback. User authorization for a live turn is still required.
 - **Never enable production dispatch.** `qualified_runtime` check dispatch and
   production model/reviewer drivers must fail closed.
 - **Acceptance creates no delivery authority.** Nothing in the quality or

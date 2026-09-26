@@ -36,6 +36,14 @@ evidence that require the unavailable user. Fixture actors never resolve these i
 - Logged: 2026-09-26
 
 ## B3 — Native model-tool integration qualification
+- Hermes portion: RESOLVED 2026-09-27 — exact pinned Hermes `0.21.3`
+  (`6a627e6…`) in a disposable clone performed exactly one
+  `mcp__vigil__project_read` through generation `tool-qualification-1`, then
+  reached native idle and rejected a stale post-retirement call. Commit
+  `959eaaf` reloads MCP only after the injected session exists, permits only
+  reserved transport `_meta`, and reduces the planning role to the one required
+  capability. The installed Hermes canary was not changed. Codex native-tool
+  qualification remains pending for a supported contained ChatGPT route.
 - User authorization: RESOLVED 2026-09-26 — qualify both Hermes and Codex, using
   local llama where it is the available safe route and only included ChatGPT quota
   for Codex. The actual native/session evidence remains pending.
@@ -45,24 +53,43 @@ evidence that require the unavailable user. Fixture actors never resolve these i
   endpoint at WSL loopback was unavailable. No substitute server was started.
 - Checkpoint: D
 - Requirement or checklist item: R20
-- What is blocked and why it needs the user: Native Codex/Hermes tool-session integration cannot be qualified without an attended live harness turn and eligible runtime/session identity.
-- Exact action/resource/decision needed: Provide an attended qualified native session for each supported harness and verify role/session isolation, stale-generation rejection, and no takeover or steering.
-- What was implemented instead, and what remains unproven: The application handlers and shared bounded transport are tested with injected fixture authority; native harness behavior remains unproven and production dispatch stays disabled.
-- Safe to resume when: A qualified contained runtime is available and the user authorizes the bounded live tool test.
+- What is blocked and why it needs the user: Hermes is qualified for the bounded
+  one-tool path. Native Codex tool integration still lacks a supported contained
+  ChatGPT-subscription route; an API key must not be treated as permission for a
+  paid fallback.
+- Exact action/resource/decision needed: Supply or implement the supported
+  contained Codex ChatGPT route, then run the same role/session isolation,
+  stale-generation and no-takeover qualification without metered API use.
+- What was implemented instead, and what remains unproven: Shared handlers and
+  transport plus native Hermes behavior are proven; Codex native behavior and
+  production model/reviewer qualification remain unproven and disabled.
+- Safe to resume when: The contained Codex subscription route exists and its
+  bounded qualification can run without paid fallback or credential exposure.
 - Logged: 2026-09-26
 
 ## B4 — Native macOS Stage 5.5 validation
+- RESOLVED 2026-09-27 — the corrected host `192.168.0.108` received a verified
+  Git bundle (SHA-256
+  `bf3c75cdd6ea0bed1be3382a5d9e40d3e91280445ec57719e19a71d6df3ce436`)
+  and checked out exact commit `959eaafe8165e45e2805c3089f66bac2739c0617` in
+  an isolated temporary directory. Native Darwin 25.6.0 arm64 with Go 1.27.1
+  passed `make check`, `make check-race`, `make build`, `make docs-check`,
+  `make build-boundary` and `make cross-build`. The normal Mac checkout was not
+  touched. This does not close the inherited Darwin fork-accounting limitation.
 - Host availability: RESOLVED 2026-09-26 — the user made the documented Mac host
-  available and selected native validation. The validation run remains pending the
-  final implementation commit `192c6ba` and documentation handoff.
+  available and selected native validation. The then-pending `192c6ba` handoff is
+  superseded by the completed exact-`959eaaf` run recorded above.
 - Attempted 2026-09-26 — `ssh -o BatchMode=yes -o ConnectTimeout=8
   simonecoletta@192.168.0.203 ...` returned `No route to host`; no remote directory
   or process was created. Native validation therefore remains blocked by host
   reachability, not by missing authorization.
 - Checkpoint: D
 - Requirement or checklist item: R60
-- What is blocked and why it needs the user: Native macOS access and attended validation are unavailable for this task.
-- Exact action/resource/decision needed: Run the Stage 5.5 focused, race, CLI/PTY and migration-upgrade suites natively on the documented macOS host at the exact implementation commit.
-- What was implemented instead, and what remains unproven: Linux tests and Darwin cross-build cover compilation only; native terminal, SQLite locking and runtime behavior remain unproven.
-- Safe to resume when: The documented macOS host is available in an attended session without changing user security settings or checkouts.
+- What is blocked and why it needs the user: RESOLVED; native host access and the
+  exact-commit validation completed.
+- Exact action/resource/decision needed: None for the Stage 5.5 native suite.
+- What was implemented instead, and what remains unproven: Native Stage 5.5
+  full/race/build gates are proven. The pre-existing Darwin fork-accounting
+  limitation and live production runtime crash matrix remain separate gates.
+- Safe to resume when: No resumption is needed for this blocker.
 - Logged: 2026-09-26

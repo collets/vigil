@@ -2,7 +2,7 @@
 
 A local control panel for development agents running through existing harnesses, combining frontier and local models.
 
-Status: **pre-release.** The persisted core through Stage 5.4 is independently accepted offline. Stage 5.5 is implemented through `192c6ba`; its actionable UI and native-tool qualification remain partial, while bounded planning and the shared MCP handlers are implemented. Automatic plan advancement remains disabled. Production check, model and reviewer dispatch remain deliberately disabled pending live qualification, and nothing in planning or acceptance can commit, push, publish or deliver.
+Status: **pre-release.** The persisted core through Stage 5.4 is independently accepted offline. Stage 5.5 is implemented through `959eaaf`; its actionable UI remains partial, while bounded planning, shared MCP handlers, native Hermes one-tool isolation and exact-commit macOS validation are demonstrated. Automatic plan advancement remains disabled. Production check, model and reviewer dispatch remain deliberately disabled pending live qualification, and nothing in planning or acceptance can commit, push, publish or deliver.
 
 Targets: Linux and macOS, on amd64 and arm64. See [`docs/next-steps.md`](docs/next-steps.md) for current state and [`docs/README.md`](docs/README.md) for the document index.
 

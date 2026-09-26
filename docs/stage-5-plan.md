@@ -6,7 +6,7 @@ The [expanded execution plan](stage-5-execution.md) now supplies commit-sized st
 
 For the remaining implementation after the foundation, use the [Stage 5.1–5.7 standalone plans](stage-5/README.md). Their index maps each assignment back to A–J and states dependencies and user decisions. This document remains the complete requirement coverage reference.
 
-Current status, updated 2026-09-26: slices 5.1–5.4 remain accepted offline and `99cd6c0` is the Stage 5.5 baseline without reopening closed safeguards. H has checkpoint A at `4dbb444` plus owner-aware stop and partial actionable TUI work; I is implemented through `192c6ba` with Markdown intake, bounded budgeted local planning, typed handlers and a shared MCP transport. Task-acceptance/manual/native-clarification TUI actions, independent acceptance review, native tool qualification, real decisions and native macOS evidence remain pending. Production dispatch remains disabled.
+Current status, updated 2026-09-27: slices 5.1–5.4 remain accepted offline and `99cd6c0` is the Stage 5.5 baseline without reopening closed safeguards. H has checkpoint A at `4dbb444` plus owner-aware stop and partial actionable TUI work; I is implemented through `959eaaf` with Markdown intake, bounded budgeted local planning, typed handlers, a shared MCP transport and native Hermes one-tool isolation. Exact-commit native macOS validation passes. Task-acceptance/manual/native-clarification TUI actions, independent acceptance review, native Codex/production qualification and real decisions remain pending. Production dispatch remains disabled.
 
 ## Increment order and executable acceptance
 

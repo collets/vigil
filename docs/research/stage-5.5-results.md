@@ -1,8 +1,8 @@
 # Stage 5.5 implementation results
 
 Status: implementation through checkpoint A commit `4dbb444`, initial B–D
-commit `20ca4d0` and bounded planning/control commit `192c6ba`; Stage 5.5 is
-unaccepted.
+commit `20ca4d0`, bounded planning/control commit `192c6ba` and native-tool
+isolation fix `959eaaf`; Stage 5.5 is unaccepted.
 
 This record is append-only evidence for the four checkpoints in
 [the Stage 5.5 plan](../stage-5/5.5-workflow-and-planning.md). It distinguishes
@@ -206,6 +206,80 @@ The full/race suites required permission for their existing loopback-only
 `httptest` listeners. They made no external network call. The final native Hermes
 qualification attempt made no model call because endpoint health failed first.
 
+## 2026-09-27 native Hermes and macOS follow-up
+
+The user confirmed that the existing llama endpoint was listening and that
+`OPENAI_API_KEY` was inherited. Vigil inspected only credential presence and the
+exact loopback route; it did not print or persist the key. The installed Hermes
+source had moved to canary commit `26780d55…`, so the old prepared manifest
+correctly failed its source-version pin. Qualification used a disposable detached
+clone of the locked Hermes `0.21.3` commit `6a627e6…`, reusing its environment
+without changing the user's installed source.
+
+Retained failed attempts exposed three integration boundaries before the passing
+run: the MCP server was discovered before Vigil opened the injected session; the
+SDK supplied reserved `_meta` transport metadata outside application arguments;
+and a planning-role session initially exposed five allowed tools rather than the
+one capability under test. Commit `959eaaf` now opens the injected session before
+an explicit native `reload.mcp`, accepts only the bounded reserved `_meta` member
+at the JSON-RPC transport layer, and lets server-injected capability subsets reduce
+but never expand the role's authority. Application arguments remain recursively
+closed, arbitrary authority fields are rejected, and the subset is receipt-bound.
+
+Fresh Hermes qualification command `hermes-tool-qualification-009` passed with:
+
+```text
+harness                 hermes 0.21.3 (6a627e6…)
+native_session_id       20260927_004604_5c0eec
+generation              tool-qualification-1
+audited calls           1 (mcp__vigil__project_read only)
+native idle observed    true
+post-retirement call    stale rejected
+project observed        7daa3f7bf425433853c3f1bda099077e
+```
+
+The read-only adversarial reviewer first found that merely requiring
+`project.read` did not reject additional exposed tools. After the capability
+reduction and exact-one-tool assertion, its second pass reported no findings. This
+is native Hermes tool integration evidence, not production dispatch qualification
+or Stage acceptance. Native Codex remains pending on a contained supported
+ChatGPT-subscription route.
+
+Native macOS validation used a local Git bundle with SHA-256
+`bf3c75cdd6ea0bed1be3382a5d9e40d3e91280445ec57719e19a71d6df3ce436`.
+The bundle was reverified on `Simones-MBP.home`, cloned into a fresh temporary
+directory, and detached at exact commit
+`959eaafe8165e45e2805c3089f66bac2739c0617`. Darwin 25.6.0 arm64, macOS 26.6.2
+(25G83), Go 1.27.1 passed:
+
+```text
+make check                                             PASS
+make check-race                                        PASS
+make build                                             PASS
+make docs-check                                        PASS
+make build-boundary                                    PASS
+make cross-build (linux/amd64, linux/arm64,
+                  darwin/amd64, darwin/arm64)          PASS
+```
+
+The first source-archive run reached every package but its documentation test
+correctly rejected the absent Git object database; the history-bearing bundle
+rerun passed. The fresh Mac checkout downloaded public Go modules before testing;
+no model, paid API, Docker, hosting or publishing action ran there. The normal Mac
+checkout and Cardtracker checkout were not changed. Native success does not close
+the inherited Darwin fork-accounting observation at
+`internal/checks/runner.go:459` or qualify the production crash matrix.
+The remote temporary checkout/cache and both local transfer archives were removed
+and verified absent after validation; Go module-cache read-only modes required
+making only that temporary tree owner-writable before removal.
+
+Linux focused validation for the fix passed before commit:
+
+```text
+go test ./internal/tools ./internal/mcp ./internal/spike  PASS
+make check                                                PASS
+```
+
 ## Combined B–D validation
 
 Validation ran on Linux/WSL2 x86_64 (`6.18.33.2-microsoft-standard-WSL2`) with
@@ -233,5 +307,7 @@ made. Cross-build is compile coverage only; native macOS execution remains B4.
 ## Limitations and blockers
 
 See the [blocker log](stage-5.5-blockers.md). Stage 5.5 remains unaccepted pending
-independent review. Production dispatch, live model/reviewer qualification, real
-human decisions and native macOS validation remain pending.
+independent review. Production dispatch, production model/reviewer and native
+Codex qualification, real proposal/manual/clarification decisions, the live crash
+matrix and the Darwin fork-accounting observation remain pending. Native Hermes
+one-tool integration and the Stage 5.5 macOS suite are now demonstrated.

@@ -520,7 +520,10 @@ not an operator authorization command: it cannot create a session, select a
 project/role/run/generation, or widen capabilities. Its newline-delimited
 JSON-RPC surface supports `initialize`, `tools/list` and `tools/call`; all calls
 reuse the bounded application handlers, caps, persisted generation checks and
-audit receipts.
+audit receipts. The MCP SDK's reserved top-level `_meta` transport member is
+accepted and ignored within the same 64 KiB frame cap; application arguments
+remain recursively closed and cannot supply project, role, run, session or other
+authority fields.
 
 ```sh
 ./bin/vigil --state-dir STATE project tool-server PROJECT_ID SESSION_ID
@@ -546,6 +549,11 @@ acceptance, spending, delivery or publishing authority.
 
 The qualifier copies only credential-free configuration into a temporary
 private home and supplies the loopback credential by environment reference.
+It opens the injected Vigil session first, then asks the native Hermes gateway to
+reload MCP and refuses the turn unless `tools.list` exposes exactly the single
+reduced capability `mcp__vigil__project_read`; the planning role's other ordinary
+capabilities are not enabled for this qualification. Server-injected capability
+subsets may reduce but never expand role authority and are receipt-bound.
 The existing llama service must already be reachable; Vigil does not start or
 reconfigure it. Codex native-tool qualification remains unavailable until a
 contained supported ChatGPT-auth route exists.
