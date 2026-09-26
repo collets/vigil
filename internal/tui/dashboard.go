@@ -11,7 +11,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"vigil/internal/coordinator"
 	"vigil/internal/core"
+	"vigil/internal/quality"
 	"vigil/internal/store"
 	"vigil/internal/supervisor"
 )
@@ -28,15 +30,15 @@ type mutationResult struct {
 }
 type mutator func(context.Context, core.DashboardSnapshot, string) error
 type model struct {
-	ctx                               context.Context
-	load                              source
-	snapshot                          *core.DashboardSnapshot
-	err                               error
-	loading                           bool
-	mutating                          bool
-	feedback                          string
-	mutate                            mutator
-	tab, offset, inbox, width, height int
+	ctx                                     context.Context
+	load                                    source
+	snapshot                                *core.DashboardSnapshot
+	err                                     error
+	loading                                 bool
+	mutating                                bool
+	feedback                                string
+	mutate                                  mutator
+	tab, offset, inbox, task, width, height int
 }
 
 func (m model) act(action string) tea.Cmd {
@@ -68,6 +70,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			m.snapshot = &msg.snapshot
 			m.inbox = min(m.inbox, max(0, len(msg.snapshot.Inbox)-1))
+			m.task = min(m.task, max(0, len(msg.snapshot.Tasks)-1))
 		}
 	case mutationResult:
 		m.mutating = false
@@ -106,6 +109,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.tab == 2 && len(m.snapshot.Inbox) > 0 {
 					action = "remain-blocked:" + m.snapshot.Inbox[m.inbox].ID
 				}
+			case "h", "m", "t":
+				if (m.tab == 1 || m.tab == 4) && len(m.snapshot.Tasks) > 0 {
+					prefix := map[string]string{"h": "human-accept", "m": "manual-pass", "t": "accept-task"}[msg.String()]
+					task := m.snapshot.Tasks[m.task]
+					if msg.String() == "m" {
+						if len(task.ManualCriteria) > 0 {
+							action = fmt.Sprintf("%s:%s:%d:%s", prefix, task.ID, task.Revision, task.ManualCriteria[0])
+						}
+					} else {
+						action = fmt.Sprintf("%s:%s:%d", prefix, task.ID, task.Revision)
+					}
+				}
 			case "y":
 				if m.tab == 2 && len(m.snapshot.Inbox) > 0 {
 					action = "allow:" + m.snapshot.Inbox[m.inbox].ID
@@ -141,12 +156,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "j", "down":
 			if m.tab == 2 && m.snapshot != nil && len(m.snapshot.Inbox) > 0 {
 				m.inbox = min(len(m.snapshot.Inbox)-1, m.inbox+1)
+			} else if (m.tab == 1 || m.tab == 4) && m.snapshot != nil && len(m.snapshot.Tasks) > 0 {
+				m.task = min(len(m.snapshot.Tasks)-1, m.task+1)
 			} else {
 				m.offset++
 			}
 		case "k", "up":
 			if m.tab == 2 {
 				m.inbox = max(0, m.inbox-1)
+			} else if m.tab == 1 || m.tab == 4 {
+				m.task = max(0, m.task-1)
 			} else {
 				m.offset = max(0, m.offset-1)
 			}
@@ -195,8 +214,12 @@ func (m model) lines() []string {
 		}
 		lines = append(lines, "", fmt.Sprintf("%d tasks · %d pending/expired decisions", len(s.Readiness.Tasks), len(s.Inbox)))
 	case 1:
-		for _, task := range s.Readiness.Tasks {
-			lines = append(lines, fmt.Sprintf("%s · %s · revision %d", clean(task.ID), clean(task.State), task.Revision))
+		for index, task := range s.Readiness.Tasks {
+			marker := "  "
+			if index == m.task {
+				marker = "> "
+			}
+			lines = append(lines, fmt.Sprintf("%s%s · %s · revision %d", marker, clean(task.ID), clean(task.State), task.Revision))
 			for _, issue := range task.Issues {
 				lines = append(lines, "  "+clean(issue))
 			}
@@ -209,7 +232,7 @@ func (m model) lines() []string {
 			lines = []string{"No tasks defined."}
 		}
 	case 2:
-		lines = []string{"Resolve the displayed revision only: y allow once · n deny · g apply proposal · b remain blocked.", "Permission, task acceptance, manual Pass and native clarification remain distinct actions.", "Showing up to 100 pending/expired decisions.", ""}
+		lines = []string{"Resolve the displayed revision only: y allow once · n deny · g apply proposal · b remain blocked.", "Task acceptance and manual Pass are distinct task actions; native clarification is not yet available here.", "Showing up to 100 pending/expired decisions.", ""}
 		for index, entry := range s.Inbox {
 			marker := "  "
 			if index == m.inbox {
@@ -263,8 +286,12 @@ func (m model) lines() []string {
 		for _, plan := range s.Plans {
 			lines = append(lines, fmt.Sprintf("Plan %s · %s · rank %d · services remaining %dms", clean(plan.ID), clean(plan.State), plan.Rank, plan.ServiceBudgetRemainingMS))
 		}
-		for _, task := range s.Tasks {
-			lines = append(lines, "", fmt.Sprintf("Task %s · %s · remaining %dms", clean(task.ID), clean(task.State), task.BudgetRemainingMS))
+		for index, task := range s.Tasks {
+			marker := "  "
+			if index == m.task {
+				marker = "> "
+			}
+			lines = append(lines, "", fmt.Sprintf("%sTask %s r%d · %s · remaining %dms", marker, clean(task.ID), task.Revision, clean(task.State), task.BudgetRemainingMS))
 			if task.BlockReason != "" {
 				lines = append(lines, "  Blocker: "+clean(task.BlockReason))
 			}
@@ -277,6 +304,9 @@ func (m model) lines() []string {
 			}
 			for _, v := range task.ManualOutcomes {
 				lines = append(lines, "  Manual: "+clean(v))
+			}
+			if len(task.ManualCriteria) > 0 {
+				lines = append(lines, "  m manual Pass target: "+clean(task.ManualCriteria[0]))
 			}
 			if task.RecoveryState != "" {
 				lines = append(lines, "  Recovery quarantine: "+clean(task.RecoveryState))
@@ -305,7 +335,7 @@ func (m model) View() tea.View {
 	end := min(len(lines), start+space)
 	output := []string{"Vigil  " + strings.Join(tabs, "  "), status, ""}
 	output = append(output, lines[start:end]...)
-	output = append(output, "", fmt.Sprintf("p pause · c continue · s stop · a advance · u queue · y/n permission · g proposal · b blocked · q quit  (%d–%d/%d)", start+1, end, len(lines)))
+	output = append(output, "", fmt.Sprintf("p/c/s control · a/u plan · y/n permission · h human · m manual Pass · t accept task · q quit  (%d–%d/%d)", start+1, end, len(lines)))
 	for n, line := range output {
 		output[n] = ansi.Truncate(line, max(1, m.width), "…")
 	}
@@ -317,10 +347,10 @@ func (m model) View() tea.View {
 	return view
 }
 
-func RunProject(ctx context.Context, engine *core.Engine, input io.Reader, output io.Writer) error {
+func RunProject(ctx context.Context, engine *core.Engine, coordination *coordinator.Coordinator, input io.Reader, output io.Writer) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	final, err := tea.NewProgram(model{ctx: ctx, load: engine.Dashboard, mutate: projectMutator(engine), loading: true, width: 80, height: 24}, tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output)).Run()
+	final, err := tea.NewProgram(model{ctx: ctx, load: engine.Dashboard, mutate: projectMutator(engine, coordination), loading: true, width: 80, height: 24}, tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output)).Run()
 	if err != nil {
 		return fmt.Errorf("run dashboard: %w", err)
 	}
@@ -330,7 +360,7 @@ func RunProject(ctx context.Context, engine *core.Engine, input io.Reader, outpu
 	return nil
 }
 
-func projectMutator(engine *core.Engine) mutator {
+func projectMutator(engine *core.Engine, coordination *coordinator.Coordinator) mutator {
 	return func(ctx context.Context, s core.DashboardSnapshot, action string) error {
 		revision := s.Readiness.Project.Revision
 		switch action {
@@ -359,6 +389,49 @@ func projectMutator(engine *core.Engine) mutator {
 			return err
 		default:
 			decision, requestID, found := strings.Cut(action, ":")
+			if decision == "human-accept" || decision == "manual-pass" || decision == "accept-task" {
+				taskID, revisionText, ok := strings.Cut(requestID, ":")
+				criterionID := ""
+				if decision == "manual-pass" {
+					revisionText, criterionID, ok = strings.Cut(revisionText, ":")
+				}
+				var displayedRevision int
+				_, scanErr := fmt.Sscanf(revisionText, "%d", &displayedRevision)
+				if !ok || !store.SafeID(taskID) || scanErr != nil || displayedRevision < 1 {
+					return fmt.Errorf("invalid displayed task action")
+				}
+				var planID string
+				var currentRevision int
+				if err := engine.DB.SQL.QueryRowContext(ctx, "SELECT plan_id,revision FROM tasks WHERE id=?", taskID).Scan(&planID, &currentRevision); err != nil {
+					return err
+				}
+				if currentRevision != displayedRevision {
+					return fmt.Errorf("displayed task revision is stale")
+				}
+				target := quality.Target{Kind: "task", PlanID: planID, TaskID: taskID}
+				switch decision {
+				case "human-accept":
+					_, err := quality.RecordHumanDecision(ctx, engine, quality.HumanDecisionRequest{CommandID: store.ID(), Target: target, Action: "accept", Rationale: "Explicit acceptance from Vigil dashboard", Actor: "human", ExpectedTaskRevision: displayedRevision})
+					return err
+				case "manual-pass":
+					if !store.SafeID(criterionID) {
+						return fmt.Errorf("invalid displayed manual criterion")
+					}
+					_, err := quality.RecordManual(ctx, engine, quality.ManualRequest{CommandID: store.ID(), Target: target, CriterionID: criterionID, State: "pass", Evaluator: "Vigil dashboard user", Notes: "Explicit Pass entered in Vigil dashboard", Actor: "human", ExpectedTaskRevision: displayedRevision})
+					return err
+				case "accept-task":
+					if coordination == nil {
+						return fmt.Errorf("acceptance owner unavailable")
+					}
+					owner, err := coordination.Register(ctx)
+					if err != nil {
+						return err
+					}
+					defer owner.Close()
+					_, err = (&quality.Acceptor{Engine: engine, Owner: owner}).Accept(ctx, quality.AcceptanceRequest{CommandID: store.ID(), Target: target, Actor: "core", ExpectedTaskRevision: displayedRevision})
+					return err
+				}
+			}
 			if (decision != "allow" && decision != "deny" && decision != "apply-proposal" && decision != "remain-blocked") || !found || requestID == "" {
 				return fmt.Errorf("unknown dashboard action")
 			}

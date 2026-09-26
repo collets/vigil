@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"vigil/internal/core"
 	"vigil/internal/storage"
 	"vigil/internal/tui"
 )
@@ -41,9 +40,17 @@ func NewCommand() *cobra.Command {
 		Short: "Inspect persisted readiness, tasks, inbox and history",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withProject(cmd, &stateDir, args[0], func(e *core.Engine) error {
-				return tui.RunProject(cmd.Context(), e, cmd.InOrStdin(), cmd.OutOrStdout())
-			})
+			m, err := manager(cmd, &stateDir)
+			if err != nil {
+				return err
+			}
+			defer m.Close()
+			e, err := m.Open(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			defer e.DB.Close()
+			return tui.RunProject(cmd.Context(), e, m.Coordinator, cmd.InOrStdin(), cmd.OutOrStdout())
 		},
 	})
 	return root

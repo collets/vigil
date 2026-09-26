@@ -229,6 +229,25 @@ func (f *fixture) releaseExecutionReservation(t *testing.T) {
 	}
 }
 
+func TestDisplayedTaskRevisionFencesHumanQualityActions(t *testing.T) {
+	f := setupQuality(t, "pass", nil)
+	ctx := context.Background()
+	var revision int
+	if err := f.engine.DB.SQL.QueryRow("SELECT revision FROM tasks WHERE id='task'").Scan(&revision); err != nil {
+		t.Fatal(err)
+	}
+	stale := revision + 1
+	if _, err := quality.RecordManual(ctx, f.engine, quality.ManualRequest{CommandID: store.ID(), Target: f.target(), CriterionID: "device", State: "pass", Evaluator: "fixture", Notes: "stale", Actor: "fixture_human", ExpectedTaskRevision: stale}); err == nil {
+		t.Fatal("stale displayed revision recorded manual Pass")
+	}
+	if _, err := quality.RecordHumanDecision(ctx, f.engine, quality.HumanDecisionRequest{CommandID: store.ID(), Target: f.target(), Action: "accept", Rationale: "stale", Actor: "fixture_human", ExpectedTaskRevision: stale}); err == nil {
+		t.Fatal("stale displayed revision recorded human acceptance")
+	}
+	if _, err := (&quality.Acceptor{Engine: f.engine, Owner: f.owner}).Accept(ctx, quality.AcceptanceRequest{CommandID: store.ID(), Target: f.target(), Actor: "fixture_core", ExpectedTaskRevision: stale}); err == nil {
+		t.Fatal("stale displayed revision attempted task acceptance")
+	}
+}
+
 func TestActualCheckOutcomesAndTamper(t *testing.T) {
 	tests := []struct {
 		name, action, want string

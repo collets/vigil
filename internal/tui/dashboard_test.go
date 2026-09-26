@@ -130,6 +130,42 @@ func TestInboxDecisionIsLimitedToFocusedDisplayedRequest(t *testing.T) {
 	}
 }
 
+func TestTaskActionsAreDistinctAndBindDisplayedRevision(t *testing.T) {
+	s := core.DashboardSnapshot{Tasks: []core.TaskDetail{
+		{ID: "first", Revision: 3},
+		{ID: "second", Revision: 7, ManualCriteria: []string{"device-check"}},
+	}}
+	actions := make(chan string, 3)
+	m := model{ctx: context.Background(), snapshot: &s, mutate: func(_ context.Context, _ core.DashboardSnapshot, action string) error {
+		actions <- action
+		return nil
+	}, width: 100, height: 24, tab: 4}
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	m = updated.(model)
+	if m.task != 1 || !strings.Contains(m.View().Content, "> Task second r7") {
+		t.Fatal("second task was not visibly focused")
+	}
+	for _, key := range []string{"h", "m", "t"} {
+		updated, cmd := m.Update(tea.KeyPressMsg{Code: rune(key[0]), Text: key})
+		m = updated.(model)
+		if cmd == nil {
+			t.Fatalf("%s did not start a task action", key)
+		}
+		msg := cmd().(mutationResult)
+		if msg.err != nil {
+			t.Fatal(msg.err)
+		}
+		updated, _ = m.Update(msg)
+		m = updated.(model)
+	}
+	want := []string{"human-accept:second:7", "manual-pass:second:7:device-check", "accept-task:second:7"}
+	for _, expected := range want {
+		if got := <-actions; got != expected {
+			t.Fatalf("got %q, want %q", got, expected)
+		}
+	}
+}
+
 func TestPersistedDashboardMutationRejectsStaleSnapshotAfterRestart(t *testing.T) {
 	ctx := context.Background()
 	base := t.TempDir()
@@ -154,10 +190,10 @@ func TestPersistedDashboardMutationRejectsStaleSnapshotAfterRestart(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := projectMutator(engine)(ctx, snapshot, "continue"); err != nil {
+	if err := projectMutator(engine, manager.Coordinator)(ctx, snapshot, "continue"); err != nil {
 		t.Fatal(err)
 	}
-	if err := projectMutator(engine)(ctx, snapshot, "continue"); err == nil {
+	if err := projectMutator(engine, manager.Coordinator)(ctx, snapshot, "continue"); err == nil {
 		t.Fatal("stale displayed revision authorized a second mutation")
 	}
 	engine.DB.Close()

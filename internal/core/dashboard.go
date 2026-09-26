@@ -3,6 +3,9 @@ package core
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+
+	"vigil/internal/policy"
 )
 
 type DashboardSnapshot struct {
@@ -18,6 +21,7 @@ type DashboardSnapshot struct {
 type TaskDetail struct {
 	ID                string   `json:"id"`
 	PlanID            string   `json:"plan_id"`
+	Revision          int      `json:"revision"`
 	State             string   `json:"state"`
 	BlockReason       string   `json:"block_reason,omitempty"`
 	BudgetRemainingMS int64    `json:"budget_remaining_ms"`
@@ -25,6 +29,7 @@ type TaskDetail struct {
 	BlockingFindings  int      `json:"blocking_findings"`
 	Suggestions       int      `json:"suggestions"`
 	ManualOutcomes    []string `json:"manual_outcomes"`
+	ManualCriteria    []string `json:"manual_criteria"`
 	RecoveryState     string   `json:"recovery_state,omitempty"`
 	BaselineUnhealthy bool     `json:"baseline_unhealthy"`
 }
@@ -98,13 +103,13 @@ func readDashboardDetails(ctx context.Context, tx *sql.Tx) ([]TaskDetail, []Plan
 	}
 	rows.Close()
 	tasks := []TaskDetail{}
-	rows, err = tx.QueryContext(ctx, `SELECT t.id,t.plan_id,t.state,coalesce(t.block_reason,''),coalesce(b.active_limit_ms-b.charged_ms-b.unknown_ms,t.active_limit_ms) FROM tasks t LEFT JOIN budget_ledgers b ON b.scope='task' AND b.task_id=t.id ORDER BY t.plan_id,t.rank,t.id LIMIT 100`)
+	rows, err = tx.QueryContext(ctx, `SELECT t.id,t.plan_id,t.revision,t.state,coalesce(t.block_reason,''),coalesce(b.active_limit_ms-b.charged_ms-b.unknown_ms,t.active_limit_ms) FROM tasks t LEFT JOIN budget_ledgers b ON b.scope='task' AND b.task_id=t.id ORDER BY t.plan_id,t.rank,t.id LIMIT 100`)
 	if err != nil {
 		return nil, nil, err
 	}
 	for rows.Next() {
 		var v TaskDetail
-		if err := rows.Scan(&v.ID, &v.PlanID, &v.State, &v.BlockReason, &v.BudgetRemainingMS); err != nil {
+		if err := rows.Scan(&v.ID, &v.PlanID, &v.Revision, &v.State, &v.BlockReason, &v.BudgetRemainingMS); err != nil {
 			rows.Close()
 			return nil, nil, err
 		}
@@ -119,6 +124,19 @@ func readDashboardDetails(ctx context.Context, tx *sql.Tx) ([]TaskDetail, []Plan
 	rows.Close()
 	for i := range tasks {
 		t := &tasks[i]
+		var definitionRaw string
+		if err := tx.QueryRowContext(ctx, "SELECT definition_json FROM task_revisions WHERE task_id=? AND revision=?", t.ID, t.Revision).Scan(&definitionRaw); err != nil {
+			return nil, nil, err
+		}
+		var definition policy.Task
+		if err := json.Unmarshal([]byte(definitionRaw), &definition); err != nil {
+			return nil, nil, err
+		}
+		for _, criterion := range definition.Criteria {
+			if criterion.Manual {
+				t.ManualCriteria = append(t.ManualCriteria, criterion.ID)
+			}
+		}
 		checkRows, qerr := tx.QueryContext(ctx, `SELECT c.check_id||':'||c.status||':'||c.output_artifact_id FROM check_results_v2 c JOIN quality_scopes_v2 s ON s.id=c.scope_id WHERE s.task_id=? ORDER BY c.ended_at DESC LIMIT 20`, t.ID)
 		if qerr != nil {
 			return nil, nil, qerr

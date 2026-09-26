@@ -65,7 +65,7 @@ func TestProjectDashboardAcceptsInputThroughPTY(t *testing.T) {
 	defer slave.Close()
 	go io.Copy(io.Discard, master)
 	done := make(chan error, 1)
-	go func() { done <- RunProject(ctx, engine, slave, slave) }()
+	go func() { done <- RunProject(ctx, engine, manager.Coordinator, slave, slave) }()
 	time.Sleep(50 * time.Millisecond)
 	if _, err = master.Write([]byte("q")); err != nil {
 		t.Fatal(err)

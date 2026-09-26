@@ -18,22 +18,24 @@ import (
 )
 
 type ManualRequest struct {
-	CommandID   string `json:"command_id"`
-	Target      Target `json:"target"`
-	CriterionID string `json:"criterion_id"`
-	State       string `json:"state"`
-	Evaluator   string `json:"evaluator"`
-	Notes       string `json:"notes"`
-	ArtifactID  string `json:"artifact_id,omitempty"`
-	Actor       string `json:"actor"`
+	CommandID            string `json:"command_id"`
+	Target               Target `json:"target"`
+	CriterionID          string `json:"criterion_id"`
+	State                string `json:"state"`
+	Evaluator            string `json:"evaluator"`
+	Notes                string `json:"notes"`
+	ArtifactID           string `json:"artifact_id,omitempty"`
+	Actor                string `json:"actor"`
+	ExpectedTaskRevision int    `json:"expected_task_revision,omitempty"`
 }
 
 type HumanDecisionRequest struct {
-	CommandID string `json:"command_id"`
-	Target    Target `json:"target"`
-	Action    string `json:"action"`
-	Rationale string `json:"rationale"`
-	Actor     string `json:"actor"`
+	CommandID            string `json:"command_id"`
+	Target               Target `json:"target"`
+	Action               string `json:"action"`
+	Rationale            string `json:"rationale"`
+	Actor                string `json:"actor"`
+	ExpectedTaskRevision int    `json:"expected_task_revision,omitempty"`
 }
 
 func validFixtureActor(scope Scope, actor string) bool {
@@ -47,6 +49,9 @@ func RecordManual(ctx context.Context, engine *core.Engine, request ManualReques
 	scope, err := Observe(ctx, engine, request.Target)
 	if err != nil {
 		return "", err
+	}
+	if request.ExpectedTaskRevision > 0 && scope.TaskRevision != request.ExpectedTaskRevision {
+		return "", errors.New("displayed task revision is stale")
 	}
 	if !validFixtureActor(scope, request.Actor) {
 		return "", errors.New("manual result requires human authority")
@@ -80,6 +85,12 @@ func RecordManual(ctx context.Context, engine *core.Engine, request ManualReques
 	}
 	args, _ := json.Marshal(request)
 	receipt, err := engine.DB.Command(ctx, store.Command{ID: request.CommandID, Actor: request.Actor, Kind: "quality.manual.record", Args: args}, func(tx *store.Tx) (any, error) {
+		if request.ExpectedTaskRevision > 0 {
+			var current int
+			if err := tx.QueryRowContext(ctx, "SELECT revision FROM tasks WHERE id=?", request.Target.TaskID).Scan(&current); err != nil || current != request.ExpectedTaskRevision {
+				return nil, errors.New("displayed task revision is stale")
+			}
+		}
 		id := store.ID()
 		_, err := tx.ExecContext(ctx, `INSERT INTO manual_results_v2(id,scope_id,criterion_id,state,evaluator,notes,artifact_id,artifact_digest,actor,command_id,evaluated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, id, scope.ID, request.CriterionID, request.State, request.Evaluator, request.Notes, nullable(request.ArtifactID), nullable(artifactDigest), request.Actor, request.CommandID, store.Now())
 		if err != nil {
@@ -114,6 +125,9 @@ func RecordHumanDecision(ctx context.Context, engine *core.Engine, request Human
 	if err != nil {
 		return "", err
 	}
+	if request.ExpectedTaskRevision > 0 && scope.TaskRevision != request.ExpectedTaskRevision {
+		return "", errors.New("displayed task revision is stale")
+	}
 	if !validFixtureActor(scope, request.Actor) {
 		return "", errors.New("decision requires human authority")
 	}
@@ -125,6 +139,12 @@ func RecordHumanDecision(ctx context.Context, engine *core.Engine, request Human
 	}
 	args, _ := json.Marshal(request)
 	receipt, err := engine.DB.Command(ctx, store.Command{ID: request.CommandID, Actor: request.Actor, Kind: "quality.human.decision", Args: args}, func(tx *store.Tx) (any, error) {
+		if request.ExpectedTaskRevision > 0 {
+			var current int
+			if err := tx.QueryRowContext(ctx, "SELECT revision FROM tasks WHERE id=?", request.Target.TaskID).Scan(&current); err != nil || current != request.ExpectedTaskRevision {
+				return nil, errors.New("displayed task revision is stale")
+			}
+		}
 		id := store.ID()
 		_, err := tx.ExecContext(ctx, `INSERT INTO human_decisions_v2(id,scope_id,action,actor,rationale,command_id,decided_at) VALUES(?,?,?,?,?,?,?)`, id, scope.ID, request.Action, request.Actor, request.Rationale, request.CommandID, store.Now())
 		if err != nil {
@@ -307,9 +327,10 @@ func EvaluateHuman(ctx context.Context, engine *core.Engine, scope Scope) (Human
 }
 
 type AcceptanceRequest struct {
-	CommandID string `json:"command_id"`
-	Target    Target `json:"target"`
-	Actor     string `json:"actor"`
+	CommandID            string `json:"command_id"`
+	Target               Target `json:"target"`
+	Actor                string `json:"actor"`
+	ExpectedTaskRevision int    `json:"expected_task_revision,omitempty"`
 }
 type Acceptance struct {
 	ID             string `json:"id"`
@@ -463,6 +484,9 @@ func (a *Acceptor) Accept(ctx context.Context, request AcceptanceRequest) (Accep
 	scope, err := Observe(ctx, a.Engine, request.Target)
 	if err != nil {
 		return accepted, err
+	}
+	if request.ExpectedTaskRevision > 0 && scope.TaskRevision != request.ExpectedTaskRevision {
+		return accepted, errors.New("displayed task revision is stale")
 	}
 	if request.Actor == "fixture_core" && !fixtureScope(scope) {
 		return accepted, errors.New("fixture acceptance requires disposable repositories")
