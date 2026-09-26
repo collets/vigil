@@ -6,8 +6,10 @@ evidence that require the unavailable user. Fixture actors never resolve these i
 ## B1 — Real specification, plan and criteria approval
 - User input: PARTIALLY RESOLVED 2026-09-26 — use a small qualification
   specification in an agent-owned disposable copy of `cardtracker`; never change
-  or commit the real checkout. Exact proposal/criteria inspection and approval
-  cannot be resolved until that immutable revision exists.
+  or commit the real checkout. The immutable proposal now exists as
+  `qualification-proposal` revision 1, digest
+  `d90d3e5b47e30dd66d52e94702859c70e2ce7c9c144519ef787b2f08bfe64a6b`;
+  exact proposal/criteria inspection and approval remain pending.
 - Checkpoint: C
 - Requirement or checklist item: R33
 - What is blocked and why it needs the user: Applying Stage 5.5 to a real project requires the user to select and inspect the specification, answer its clarifications, and approve the exact spec, plan and criteria revisions.
@@ -21,6 +23,10 @@ evidence that require the unavailable user. Fixture actors never resolve these i
   llama route and bounded Codex ChatGPT included-subscription usage are authorized;
   metered API and paid/extra-credit fallback remain prohibited. The supported
   contained Codex route and provider-idle evidence are still technical gates.
+- Local Hermes planning: RESOLVED 2026-09-26 — the exact selected local profile
+  produced proposal revision 1 under the five-minute cap, charged 56,038 ms and
+  persisted terminal provider-idle evidence. This does not qualify production
+  model/reviewer dispatch or the unavailable Codex route.
 - Checkpoint: C
 - Requirement or checklist item: R18
 - What is blocked and why it needs the user: A real Codex or llama-backed planning turn and provider-idle observation are prohibited for this unattended task and could consume an authorized account or live inference resource.
@@ -33,6 +39,10 @@ evidence that require the unavailable user. Fixture actors never resolve these i
 - User authorization: RESOLVED 2026-09-26 — qualify both Hermes and Codex, using
   local llama where it is the available safe route and only included ChatGPT quota
   for Codex. The actual native/session evidence remains pending.
+- Attempted 2026-09-26 — the first Hermes turn correctly failed qualification
+  with zero audited calls because its prepared toolset pin hid MCP. That defect is
+  fixed at `192c6ba`; the rerun stopped before launch because the existing llama
+  endpoint at WSL loopback was unavailable. No substitute server was started.
 - Checkpoint: D
 - Requirement or checklist item: R20
 - What is blocked and why it needs the user: Native Codex/Hermes tool-session integration cannot be qualified without an attended live harness turn and eligible runtime/session identity.
@@ -44,7 +54,11 @@ evidence that require the unavailable user. Fixture actors never resolve these i
 ## B4 — Native macOS Stage 5.5 validation
 - Host availability: RESOLVED 2026-09-26 — the user made the documented Mac host
   available and selected native validation. The validation run remains pending the
-  final implementation commit.
+  final implementation commit `192c6ba` and documentation handoff.
+- Attempted 2026-09-26 — `ssh -o BatchMode=yes -o ConnectTimeout=8
+  simonecoletta@192.168.0.203 ...` returned `No route to host`; no remote directory
+  or process was created. Native validation therefore remains blocked by host
+  reachability, not by missing authorization.
 - Checkpoint: D
 - Requirement or checklist item: R60
 - What is blocked and why it needs the user: Native macOS access and attended validation are unavailable for this task.
