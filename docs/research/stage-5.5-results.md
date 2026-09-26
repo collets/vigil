@@ -157,6 +157,9 @@ The real Cardtracker checkout was inspected read-only at
 `skills-lock.json` were neither copied nor modified. `git archive HEAD` created a
 disposable fixture and added the 952-byte qualification specification (digest
 `364ca28d…`) before the fixture baseline. No Cardtracker commit was created.
+The ignored fixture path is hidden by many file browsers; an exact credential-free
+[visible review copy](stage-5.5-qualification-input.md) is indexed without
+creating a new specification revision or approval.
 
 Two explicitly authorized local Hermes planning turns used
 `custom/qwen3.8-27b-local` through the existing loopback llama route. The final
