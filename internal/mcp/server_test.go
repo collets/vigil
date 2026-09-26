@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"vigil/internal/store"
 	modeltools "vigil/internal/tools"
 )
 
@@ -72,5 +73,23 @@ func TestInputSchemasMatchApplicationArgumentNames(t *testing.T) {
 				t.Fatalf("%s required=%v", tc.name, got)
 			}
 		}
+	}
+}
+
+func TestToolCallParamsAcceptOnlyReservedTransportMetadata(t *testing.T) {
+	for name, raw := range map[string]string{
+		"reserved-meta": `{"name":"project.read","arguments":{"limit":1},"_meta":{"progressToken":1}}`,
+		"unknown":       `{"name":"project.read","arguments":{"limit":1},"authority":"grant"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			var params toolCallParams
+			err := store.Decode([]byte(raw), &params)
+			if name == "reserved-meta" && err != nil {
+				t.Fatal(err)
+			}
+			if name == "unknown" && err == nil {
+				t.Fatal("unknown transport field accepted")
+			}
+		})
 	}
 }

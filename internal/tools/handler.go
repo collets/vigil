@@ -21,10 +21,11 @@ const MaxExcerpt = 32 << 10
 const MaxAffected = 50
 
 type Authority struct {
-	Role            string `json:"role"`
-	RunID           string `json:"run_id,omitempty"`
-	NativeSessionID string `json:"native_session_id"`
-	Generation      string `json:"generation"`
+	Role            string   `json:"role"`
+	RunID           string   `json:"run_id,omitempty"`
+	NativeSessionID string   `json:"native_session_id"`
+	Generation      string   `json:"generation"`
+	Capabilities    []string `json:"capabilities,omitempty"`
 }
 type Session struct {
 	ID              string   `json:"id"`
@@ -53,6 +54,20 @@ func (h *Handler) OpenSession(ctx context.Context, commandID string, a Authority
 	caps, ok := capabilities[a.Role]
 	if !ok {
 		return out, errors.New("unsupported tool role")
+	}
+	if len(a.Capabilities) != 0 {
+		allowed := map[string]bool{}
+		for _, name := range caps {
+			allowed[name] = true
+		}
+		seen := map[string]bool{}
+		for _, name := range a.Capabilities {
+			if !allowed[name] || seen[name] {
+				return out, errors.New("requested session capability is outside the injected role or duplicated")
+			}
+			seen[name] = true
+		}
+		caps = append([]string(nil), a.Capabilities...)
 	}
 	if (a.Role == "implementation" || a.Role == "review") && a.RunID == "" {
 		return out, errors.New("run-bound role requires injected run authority")

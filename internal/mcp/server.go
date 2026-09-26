@@ -33,6 +33,13 @@ type rpcError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
+type toolCallParams struct {
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments"`
+	// _meta is reserved MCP transport metadata supplied by native SDKs. It is
+	// bounded by the frame limit, ignored, and never reaches application tools.
+	Meta json.RawMessage `json:"_meta,omitempty"`
+}
 
 // Serve processes newline-delimited JSON-RPC messages. Native launch code must
 // inject SessionID; no request field can replace it.
@@ -77,10 +84,7 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 			}
 			resp.Result = map[string]any{"tools": definitions}
 		case "tools/call":
-			var params struct {
-				Name      string          `json:"name"`
-				Arguments json.RawMessage `json:"arguments"`
-			}
+			var params toolCallParams
 			if err := store.Decode(req.Params, &params); err != nil {
 				resp.Error = &rpcError{Code: -32602, Message: err.Error()}
 			} else {

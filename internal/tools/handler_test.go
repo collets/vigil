@@ -91,6 +91,13 @@ func TestBoundedRoleScopedHandlersAndSharedTransport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	narrow, err := f.handler.OpenSession(ctx, "open-narrow", modeltools.Authority{Role: "planning", NativeSessionID: "native-narrow", Generation: "generation-narrow", Capabilities: []string{"project.read"}})
+	if err != nil || len(narrow.Capabilities) != 1 || narrow.Capabilities[0] != "project.read" {
+		t.Fatal("valid server-side capability reduction failed", narrow, err)
+	}
+	if _, err := f.handler.OpenSession(ctx, "open-expanded", modeltools.Authority{Role: "planning", NativeSessionID: "native-expanded", Generation: "generation-expanded", Capabilities: []string{"project.read", "plan.reorder"}}); err == nil {
+		t.Fatal("session capability expansion was accepted")
+	}
 	implementation, err := f.handler.OpenSession(ctx, "open-implementation", modeltools.Authority{Role: "implementation", RunID: "run", NativeSessionID: "native-implementation", Generation: "generation-implementation"})
 	if err != nil {
 		t.Fatal(err)
