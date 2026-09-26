@@ -57,7 +57,7 @@ should do*, not for what is implemented. Implementation status lives in
 | [`stage-5/5.2-repositories-and-execution.md`](stage-5/5.2-repositories-and-execution.md) | Stage 5.2 repositories, execution and supervision |
 | [`stage-5/5.3-recovery-and-controls.md`](stage-5/5.3-recovery-and-controls.md) | Stage 5.3 recovery, pause/stop and budgets |
 | [`stage-5/5.4-quality-and-acceptance.md`](stage-5/5.4-quality-and-acceptance.md) | Stage 5.4 checks, review, repair and acceptance |
-| [`stage-5/5.5-workflow-and-planning.md`](stage-5/5.5-workflow-and-planning.md) | Stage 5.5 workflow and planning (**not started**) |
+| [`stage-5/5.5-workflow-and-planning.md`](stage-5/5.5-workflow-and-planning.md) | Stage 5.5 workflow and planning (**implemented offline, partial and unaccepted**) |
 | [`stage-5/5.6-delivery-and-finalization.md`](stage-5/5.6-delivery-and-finalization.md) | Stage 5.6 delivery and finalization (**not started**) |
 | [`stage-5/5.7-end-to-end-qualification.md`](stage-5/5.7-end-to-end-qualification.md) | Stage 5.7 end-to-end qualification (**not started**) |
 
@@ -101,6 +101,7 @@ section instead.
 | [`research/stage-5.4-astra-review.md`](research/stage-5.4-astra-review.md) | **Stage 5.4 independent review record**, R1–R11 and F1–F3 |
 | [`research/stage-5.5-results.md`](research/stage-5.5-results.md) | Stage 5.5 implementation and validation evidence |
 | [`research/stage-5.5-blockers.md`](research/stage-5.5-blockers.md) | Append-only Stage 5.5 user/runtime blocker log |
+| [`research/stage-5.5-user-decisions.md`](research/stage-5.5-user-decisions.md) | Review packet for remaining Stage 5.5 product, live-route and validation choices |
 | [`research/stage-5.2-review/`](research/stage-5.2-review/) | Retained inert Stage 5.2 review probes (`.go.txt`) |
 | [`research/stage-5.3-review/`](research/stage-5.3-review/) | Retained inert Stage 5.3 review probes (`.go.txt`) |
 | [`research/stage-5.4-review/`](research/stage-5.4-review/) | Retained inert Stage 5.4 review probes (`.go.txt`) |
