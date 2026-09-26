@@ -1,6 +1,6 @@
 # Stage 3.5 — macOS runtime qualification
 
-Completed 2026-09-20 as a bounded investigation. Adapter/runtime evidence is established for the versions below; strict production editing remains **unsupported**. This stage did not implement the scheduler or a production containment boundary. [Sanitized machine-readable evidence](stage-3.5-results.json) includes all passing and failing cases, process ancestry and native policy probes.
+Completed 2026-09-20 as a bounded investigation. Adapter/runtime evidence is established for the versions below; strict production editing remains **unsupported**. This stage did not implement the scheduler or a production containment boundary. [Sanitized machine-readable evidence](results.json) includes all passing and failing cases, process ancestry and native policy probes.
 
 ## Environment and access
 

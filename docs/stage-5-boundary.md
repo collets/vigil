@@ -31,7 +31,7 @@ The real Hermes gateway and one local model turn per platform pass through the W
 5. Repeat cleanup, mounts, socket routing and ownership tests with the macOS container runtime. Cross-builds and native core tests do not qualify this VM boundary.
 6. Bind evidence to runtime/image/guardian/profile/harness versions and digests. Only the trusted core may consume successful evidence to enable dispatch; profile declarations cannot manufacture it.
 
-See [foundation results](research/stage-5-foundation-results.md), [Stage 5.1 results](research/stage-5.1-results.md) and the [expanded execution plan](stage-5-execution.md) for evidence and remaining application work.
+See [foundation results](research/stage-5/foundation-results.md), [Stage 5.1 results](research/stage-5/5.1/results.md) and the [expanded execution plan](stage-5-execution.md) for evidence and remaining application work.
 
 
 ## OrbStack host-provider route

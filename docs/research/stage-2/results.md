@@ -1,6 +1,6 @@
 # Stage 2 validation — bounded harness execution
 
-Completed 2026-09-20 on Linux amd64. Both selected transports executed the editing fixture and passed independent result/file/Git verification. The [expanded plan](../stage-2-plan.md) is complete; [sanitized machine-readable evidence](stage-2-results.json) retains successful and failed experiments. This proves the development spike's execution path, not production workflow readiness.
+Completed 2026-09-20 on Linux amd64. Both selected transports executed the editing fixture and passed independent result/file/Git verification. The [expanded plan](../../stage-2-plan.md) is complete; [sanitized machine-readable evidence](results.json) retains successful and failed experiments. This proves the development spike's execution path, not production workflow readiness.
 
 ## Implementation
 

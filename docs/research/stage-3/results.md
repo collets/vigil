@@ -1,6 +1,6 @@
 # Stage 3 — Linux lifecycle and policy findings
 
-Completed available-platform investigation on 2026-09-20. This closes the planned Linux experiments with explicit failed/unqualified guarantees; it does **not** qualify the native profiles for strict autonomous execution. [Machine-readable evidence](stage-3-results.json) retains successes and failures. [Stage 3.5](../stage-3.5-macos.md) is reserved for the user's Mac after their return; [Stage 4](../core-spec.md) incorporates the limits below.
+Completed available-platform investigation on 2026-09-20. This closes the planned Linux experiments with explicit failed/unqualified guarantees; it does **not** qualify the native profiles for strict autonomous execution. [Machine-readable evidence](results.json) retains successes and failures. [Stage 3.5](../../stage-3.5-macos.md) is reserved for the user's Mac after their return; [Stage 4](../../core-spec.md) incorporates the limits below.
 
 Versions stayed pinned: Codex 0.155.1, Hermes 0.21.3 at `6a627e6eb38e28ac421d5ad8df3f676e49d0c287`. Existing ChatGPT authentication / `gpt-6-astra` and exported localhost credentials / `qwen3.8-27b-local` were used. Sixteen model-backed turns were explicitly dispatched across fourteen fresh experiments; a separate controlled provider-error submission was rejected by a loopback relay before inference. No automatic prompt replay, real hosting push, request creation, merge, or global profile change occurred.
 
@@ -56,7 +56,7 @@ The error-injection relay observed native metadata discovery probes (`/api/v1/mo
 
 ## Code and checks
 
-Added exact resume, forced-loss reporting, bounded lifecycle scenarios, offered-choice handling, and focused regression tests. New reproducible helpers: [lifecycle suite](../../scripts/spike/lifecycle_suite.py), [Hermes native probe](../../scripts/spike/native_probe.py), [Codex policy probe](../../scripts/spike/codex_policy_probe.py), and [route/error probe](../../scripts/spike/route_probe.py). `vigil spike --scenario` still requires `--live` and a fresh prepared manifest. These are diagnostic experiments, not product workflows.
+Added exact resume, forced-loss reporting, bounded lifecycle scenarios, offered-choice handling, and focused regression tests. New reproducible helpers: [lifecycle suite](../../../scripts/spike/lifecycle_suite.py), [Hermes native probe](../../../scripts/spike/native_probe.py), [Codex policy probe](../../../scripts/spike/codex_policy_probe.py), and [route/error probe](../../../scripts/spike/route_probe.py). `vigil spike --scenario` still requires `--live` and a fresh prepared manifest. These are diagnostic experiments, not product workflows.
 
 Passed normal Go checks, race checks, and Linux/macOS amd64/arm64 cross-builds. Stage 4 additionally validates its draft schema against the bundled SQLite engine. Raw protocol bodies/stderr/credentials remain out of durable reports; an early approval-choice diagnostic was reduced to choice names before publication. Normal-exit auth copies/runner locks were removed; no experimental native processes remain. Private failed workspaces and histories are retained in ignored `.cache/spike`.
 

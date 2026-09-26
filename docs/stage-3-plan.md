@@ -1,6 +1,6 @@
 # Stage 3 — lifecycle and policy validation plan
 
-Prepared 2026-09-20 before implementation; Linux investigation completed the same day. Builds on [Stage 2](research/stage-2-results.md). Delivered native adapter improvements, reproducible bounded experiments, and an [evidence-based report](research/stage-3-results.md). No scheduler, production delivery, or global harness reconfiguration. Unsupported enforcement/recovery guarantees remain explicit qualification gates; completion does not mean those guarantees passed.
+Prepared 2026-09-20 before implementation; Linux investigation completed the same day. Builds on [Stage 2](research/stage-2/results.md). Delivered native adapter improvements, reproducible bounded experiments, and an [evidence-based report](research/stage-3/results.md). No scheduler, production delivery, or global harness reconfiguration. Unsupported enforcement/recovery guarantees remain explicit qualification gates; completion does not mean those guarantees passed.
 
 ## Inputs and decisions before unattended work
 

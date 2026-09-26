@@ -1,6 +1,6 @@
 # Minimal architecture
 
-Status: Stage 4 specified on 2026-09-20. The [application core specification](core-spec.md), [draft schemas](spec/project.sql), and [implementation backlog/requirement map](stage-5-plan.md) are the detailed contracts. [Linux](research/stage-3-results.md) and [macOS](research/stage-3.5-results.md) runtime findings constrain strict execution.
+Status: Stage 4 specified on 2026-09-20. The [application core specification](core-spec.md), [draft schemas](spec/project.sql), and [implementation backlog/requirement map](stage-5-plan.md) are the detailed contracts. [Linux](research/stage-3/results.md) and [macOS](research/stage-3.5/results.md) runtime findings constrain strict execution.
 
 Implementation status: the offline core described below is now implemented and independently accepted through Stage 5.4; see [next steps](next-steps.md). This document remains the design authority and [next steps](next-steps.md) is the implementation-status authority. **Production** execution, model dispatch and delivery are still not implemented and remain qualification-gated, so the production half of this architecture is still a design.
 

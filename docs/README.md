@@ -84,29 +84,30 @@ section instead.
 
 | Document | Authoritative for |
 | --- | --- |
-| [`research/stage-1-results.json`](research/stage-1-results.json) | Stage 1 harness settings, versions, metadata probes |
-| [`research/harness-probe-results.json`](research/harness-probe-results.json) | Durable harness probe evidence |
-| [`research/stage-2-results.md`](research/stage-2-results.md) / [`.json`](research/stage-2-results.json) | Stage 2 transport validation |
-| [`research/stage-3-results.md`](research/stage-3-results.md) / [`.json`](research/stage-3-results.json) | Stage 3 Linux lifecycle and policy results |
-| [`research/stage-3.5-results.md`](research/stage-3.5-results.md) / [`.json`](research/stage-3.5-results.json) | Stage 3.5 macOS runtime results |
-| [`research/stage-4-results.md`](research/stage-4-results.md) | Stage 4 specification validation |
-| [`research/stage-5-foundation-results.md`](research/stage-5-foundation-results.md) | Stage 5 planning/control foundation |
-| [`research/stage-5.1-results.md`](research/stage-5.1-results.md) | Stage 5.1 results and live gates |
-| [`research/stage-5.1-astra-review.md`](research/stage-5.1-astra-review.md) | Stage 5.1 independent review |
-| [`research/stage-5.2-results.md`](research/stage-5.2-results.md) | Stage 5.2 results |
-| [`research/stage-5.2-astra-review.md`](research/stage-5.2-astra-review.md) | Stage 5.2 independent review |
-| [`research/stage-5.3-results.md`](research/stage-5.3-results.md) | Stage 5.3 results |
-| [`research/stage-5.3-astra-review.md`](research/stage-5.3-astra-review.md) | Stage 5.3 independent review |
-| [`research/stage-5.4-results.md`](research/stage-5.4-results.md) | Stage 5.4 results and validation evidence |
-| [`research/stage-5.4-astra-review.md`](research/stage-5.4-astra-review.md) | **Stage 5.4 independent review record**, R1–R11 and F1–F3 |
-| [`research/stage-5.5-results.md`](research/stage-5.5-results.md) | Stage 5.5 implementation and validation evidence |
-| [`research/stage-5.5-blockers.md`](research/stage-5.5-blockers.md) | Append-only Stage 5.5 user/runtime blocker log |
-| [`research/stage-5.5-user-decisions.md`](research/stage-5.5-user-decisions.md) | Review packet for remaining Stage 5.5 product, live-route and validation choices |
-| [`research/stage-5.5-qualification-input.md`](research/stage-5.5-qualification-input.md) | Visible credential-free review copy of the immutable Stage 5.5 qualification Markdown input |
-| [`research/stage-5.5-qualification-proposal.md`](research/stage-5.5-qualification-proposal.md) | Human-readable review copy of exact pending qualification proposal revision 1 |
-| [`research/stage-5.2-review/`](research/stage-5.2-review/) | Retained inert Stage 5.2 review probes (`.go.txt`) |
-| [`research/stage-5.3-review/`](research/stage-5.3-review/) | Retained inert Stage 5.3 review probes (`.go.txt`) |
-| [`research/stage-5.4-review/`](research/stage-5.4-review/) | Retained inert Stage 5.4 review probes (`.go.txt`) |
+| [`research/README.md`](research/README.md) | Research tree layout, naming and historical-evidence conventions |
+| [`research/stage-1/results.json`](research/stage-1/results.json) | Stage 1 harness settings, versions, metadata probes |
+| [`research/stage-1/harness-probe-results.json`](research/stage-1/harness-probe-results.json) | Durable harness probe evidence |
+| [`research/stage-2/results.md`](research/stage-2/results.md) / [`.json`](research/stage-2/results.json) | Stage 2 transport validation |
+| [`research/stage-3/results.md`](research/stage-3/results.md) / [`.json`](research/stage-3/results.json) | Stage 3 Linux lifecycle and policy results |
+| [`research/stage-3.5/results.md`](research/stage-3.5/results.md) / [`.json`](research/stage-3.5/results.json) | Stage 3.5 macOS runtime results |
+| [`research/stage-4/results.md`](research/stage-4/results.md) | Stage 4 specification validation |
+| [`research/stage-5/foundation-results.md`](research/stage-5/foundation-results.md) | Stage 5 planning/control foundation |
+| [`research/stage-5/5.1/results.md`](research/stage-5/5.1/results.md) | Stage 5.1 results and live gates |
+| [`research/stage-5/5.1/astra-review.md`](research/stage-5/5.1/astra-review.md) | Stage 5.1 independent review |
+| [`research/stage-5/5.2/results.md`](research/stage-5/5.2/results.md) | Stage 5.2 results |
+| [`research/stage-5/5.2/astra-review.md`](research/stage-5/5.2/astra-review.md) | Stage 5.2 independent review |
+| [`research/stage-5/5.3/results.md`](research/stage-5/5.3/results.md) | Stage 5.3 results |
+| [`research/stage-5/5.3/astra-review.md`](research/stage-5/5.3/astra-review.md) | Stage 5.3 independent review |
+| [`research/stage-5/5.4/results.md`](research/stage-5/5.4/results.md) | Stage 5.4 results and validation evidence |
+| [`research/stage-5/5.4/astra-review.md`](research/stage-5/5.4/astra-review.md) | **Stage 5.4 independent review record**, R1–R11 and F1–F3 |
+| [`research/stage-5/5.5/results.md`](research/stage-5/5.5/results.md) | Stage 5.5 implementation and validation evidence |
+| [`research/stage-5/5.5/blockers.md`](research/stage-5/5.5/blockers.md) | Append-only Stage 5.5 user/runtime blocker log |
+| [`research/stage-5/5.5/user-decisions.md`](research/stage-5/5.5/user-decisions.md) | Review packet for remaining Stage 5.5 product, live-route and validation choices |
+| [`research/stage-5/5.5/qualification-input.md`](research/stage-5/5.5/qualification-input.md) | Visible credential-free review copy of the immutable Stage 5.5 qualification Markdown input |
+| [`research/stage-5/5.5/qualification-proposal.md`](research/stage-5/5.5/qualification-proposal.md) | Human-readable review copy of exact pending qualification proposal revision 1 |
+| [`research/stage-5/5.2/review-probes/`](research/stage-5/5.2/review-probes/) | Retained inert Stage 5.2 review probes (`.go.txt`) |
+| [`research/stage-5/5.3/review-probes/`](research/stage-5/5.3/review-probes/) | Retained inert Stage 5.3 review probes (`.go.txt`) |
+| [`research/stage-5/5.4/review-probes/`](research/stage-5/5.4/review-probes/) | Retained inert Stage 5.4 review probes (`.go.txt`) |
 
 Review probes are stored as `.go.txt` so they cannot compile. To run one, copy it
 into the package it targets under a `_test.go` name, run it, then delete the copy.
@@ -119,8 +120,8 @@ sentence spans more than one stage.
 | Form | Meaning | Defined in |
 | --- | --- | --- |
 | `R01`-`R71` (two digits) | Functional requirements | [`requirements.md`](requirements.md), mapped in [`stage-5-plan.md`](stage-5-plan.md) |
-| `5.4-R2`, `5.2-R6` (stage prefix) | A finding of one stage's independent review | That stage's `research/stage-5.N-astra-review.md` |
-| `F1`-`F3` | P3 findings from the Stage 5.4 follow-up review | [`research/stage-5.4-astra-review.md`](research/stage-5.4-astra-review.md#independent-follow-up-of-cba322b) |
+| `5.4-R2`, `5.2-R6` (stage prefix) | A finding of one stage's independent review | That stage's `research/stage-5/5.N/astra-review.md` |
+| `F1`-`F3` | P3 findings from the Stage 5.4 follow-up review | [`research/stage-5/5.4/astra-review.md`](research/stage-5/5.4/astra-review.md#independent-follow-up-of-cba322b) |
 
 The same bare label denotes different findings in different reviews, so an unqualified
 `R1` in a shared status document is ambiguous. Per-stage documents are self-scoping.

@@ -2,10 +2,10 @@
 
 Completed 2026-09-20, after preparing both stage plans and incorporating the Linux Stage 3 findings. Deliverables are specification and executable schema validation, not a production scheduler or database installation.
 
-- [Core specification](../core-spec.md): package ownership, identities/revisions, transactional commands, state transitions, readiness/acceptance, configuration and capability rules, approvals/revocation, scheduling/time accounting, shared coordination, execution boundaries, branches/checkpoints, quality/delivery and retention.
-- [Project schema](../spec/project.sql) and [coordination schema](../spec/coordination.sql): separate SQLite designs with explicit integrity constraints and cross-database reconciliation. They are loaded only into temporary test databases.
-- [Stage 5 backlog and tool contracts](../stage-5-plan.md): ten dependency-ordered slices, bounded model-facing contracts and explicit coverage of every R01–R71 ID. R38/R43 intentionally share the branch rule.
-- [Stage 3.5](../stage-3.5-macos.md): user-requested Mac setup/runtime qualification, scheduled after this work. No remote access or host runtime was installed.
+- [Core specification](../../core-spec.md): package ownership, identities/revisions, transactional commands, state transitions, readiness/acceptance, configuration and capability rules, approvals/revocation, scheduling/time accounting, shared coordination, execution boundaries, branches/checkpoints, quality/delivery and retention.
+- [Project schema](../../spec/project.sql) and [coordination schema](../../spec/coordination.sql): separate SQLite designs with explicit integrity constraints and cross-database reconciliation. They are loaded only into temporary test databases.
+- [Stage 5 backlog and tool contracts](../../stage-5-plan.md): ten dependency-ordered slices, bounded model-facing contracts and explicit coverage of every R01–R71 ID. R38/R43 intentionally share the branch rule.
+- [Stage 3.5](../../stage-3.5-macos.md): user-requested Mac setup/runtime qualification, scheduled after this work. No remote access or host runtime was installed.
 
 ## Review results
 

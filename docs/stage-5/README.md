@@ -27,7 +27,7 @@ Suggested sequence: 5.1 offline work → 5.2 offline work → 5.3 offline recove
 Each plan repeats its critical limits and links here for the full handoff protocol. A fresh agent should:
 
 1. Work in the Vigil repository (current Linux path `/home/scoletta/development/scdeveloper/vigil`). Inspect `git status`, recent commits and applicable `AGENTS.md` instructions. Preserve existing uncommitted work.
-2. Read the selected plan, its listed references, [pending decisions](../pending-decisions.md), [current CLI](../stage-5-cli.md) and latest [results](../research/stage-5-foundation-results.md). Existing docs contain chronological evidence; later observations can supersede earlier pending notes.
+2. Read the selected plan, its listed references, [pending decisions](../pending-decisions.md), [current CLI](../stage-5-cli.md) and latest [results](../research/stage-5/foundation-results.md). Existing docs contain chronological evidence; later observations can supersede earlier pending notes.
 3. Read the named implementation files before proposing new packages. Treat `docs/spec/*.sql` as design drafts, and `internal/store/migrations/` as installed schema history. Never edit an applied migration to add new behavior. Before a second schema version, extend the current migration runner and test upgrade from a populated v1 database, digest/version rejection and rollback. Destructive migration needs the core's consistent-backup/recovery procedure.
 4. Establish `make check` before implementation. Mutating handlers use command receipts, expected revisions, closed bounded inputs and atomic events. External effects happen outside SQLite transactions, with durable intent and uncertainty reconciliation. Update race coverage when adding concurrent packages.
 5. Implement one internal checkpoint at a time. Run focused tests, then `make check`, applicable `make check-race` and `make build`. Run `make cross-build` for platform changes and native Mac checks for filesystem/process/locking behavior. Default tests must not launch models, contact hosting or require Docker. Explicitly report skipped opt-in suites.
@@ -55,8 +55,8 @@ sentence spans more than one stage.
 | Form | Meaning | Defined in |
 | --- | --- | --- |
 | `R01`–`R71` (two digits) | Functional requirements | [`requirements.md`](../requirements.md), mapped in [`stage-5-plan.md`](../stage-5-plan.md) |
-| `5.4-R2`, `5.2-R6` (stage prefix) | A finding of one stage's independent review | That stage's `docs/research/stage-5.N-astra-review.md` |
-| `F1`–`F3` | P3 findings raised by the Stage 5.4 follow-up review | [`stage-5.4-astra-review.md`](../research/stage-5.4-astra-review.md#independent-follow-up-of-cba322b) |
+| `5.4-R2`, `5.2-R6` (stage prefix) | A finding of one stage's independent review | That stage's `docs/research/stage-5/5.N/astra-review.md` |
+| `F1`–`F3` | P3 findings raised by the Stage 5.4 follow-up review | [`stage-5.4-astra-review.md`](../research/stage-5/5.4/astra-review.md#independent-follow-up-of-cba322b) |
 
 The same bare label means different findings in different reviews — `R1`–`R9`
 exist in both the Stage 5.2 and Stage 5.4 records, and `R10` in both Stage 5.3 and

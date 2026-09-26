@@ -20,15 +20,15 @@ run is authorized only when the user explicitly identifies that exact item.
 Read these in order:
 
 1. This packet for the decisions and recommendations.
-2. [Stage 5.5 plan](../stage-5/5.5-workflow-and-planning.md) for the normative
+2. [Stage 5.5 plan](../../../stage-5/5.5-workflow-and-planning.md) for the normative
    checklist. The unchecked B, C and D items are the remaining boundary.
-3. [Stage 5.5 results](stage-5.5-results.md) for what was actually implemented and
+3. [Stage 5.5 results](results.md) for what was actually implemented and
    which offline tests passed.
-4. [Stage 5.5 blockers](stage-5.5-blockers.md) for the exact user/runtime gates.
-5. [Stage 5 CLI](../stage-5-cli.md#markdown-specifications-and-fixture-planning-proposals)
+4. [Stage 5.5 blockers](blockers.md) for the exact user/runtime gates.
+5. [Stage 5 CLI](../../../stage-5-cli.md#markdown-specifications-and-fixture-planning-proposals)
    for the current import/proposal commands and
-   [dashboard controls](../stage-5-cli.md#dashboard) for the current UI surface.
-6. [Pending decisions](../pending-decisions.md) only if checking prior spending,
+   [dashboard controls](../../../stage-5-cli.md#dashboard) for the current UI surface.
+6. [Pending decisions](../../../pending-decisions.md) only if checking prior spending,
    fixture, recovery or live-runtime authorizations. Those confirmed choices do
    not need to be granted again.
 

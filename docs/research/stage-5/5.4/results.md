@@ -4,7 +4,7 @@ Date: 2026-09-22; updated 2026-09-26
 
 Scope: offline implementation and fixture validation only
 
-Status: R2/R11 remediation at `cba322b` is independently accepted offline. R2 and R11 are closed, and R10 with R1/R3/R4/R5/R6/R7/R8/R9 remain closed for their reported offline defects. P3 findings F1–F3 are remediated at `99cd6c0` and await independent follow-up. The Darwin fork-accounting limitation remains a distinct open observation. See the [findings and retained probes](stage-5.4-astra-review.md#independent-follow-up-of-cba322b). Implementation claims below are not self-acceptance.
+Status: R2/R11 remediation at `cba322b` is independently accepted offline. R2 and R11 are closed, and R10 with R1/R3/R4/R5/R6/R7/R8/R9 remain closed for their reported offline defects. P3 findings F1–F3 are remediated at `99cd6c0` and await independent follow-up. The Darwin fork-accounting limitation remains a distinct open observation. See the [findings and retained probes](astra-review.md#independent-follow-up-of-cba322b). Implementation claims below are not self-acceptance.
 
 Production dispatch: disabled
 
@@ -147,7 +147,7 @@ The temporary Mac directory `/tmp/vigil-stage54-f3057aa.VvWBtx`, all remote bund
 
 ## Final follow-up remediation
 
-Commit `49b9fbb` adds a Linux-only re-exec supervisor that enables `PR_SET_CHILD_SUBREAPER`, starts the approved command from a canonical serialized specification, handles cancellation, recursively signals descendants, and reaps adopted children before returning. A reserved supervisor exit status makes cleanup uncertainty fail closed. The copy path now calls `Chmod` after regular-file creation, eliminating umask-dependent source evidence. `internal/quality/stage54_final_followup_test.go` permanently covers both the empty-environment detached child and `umask(077)` cases; the retained inert probe remains at `docs/research/stage-5.4-review/final_followup_test.go.txt`.
+Commit `49b9fbb` adds a Linux-only re-exec supervisor that enables `PR_SET_CHILD_SUBREAPER`, starts the approved command from a canonical serialized specification, handles cancellation, recursively signals descendants, and reaps adopted children before returning. A reserved supervisor exit status makes cleanup uncertainty fail closed. The copy path now calls `Chmod` after regular-file creation, eliminating umask-dependent source evidence. `internal/quality/stage54_final_followup_test.go` permanently covers both the empty-environment detached child and `umask(077)` cases; the retained inert probe remains at `docs/research/stage-5/5.4/review-probes/final_followup_test.go.txt`.
 
 Independent follow-up closed R10 but retained R2 because supervisor signal death could still be interpreted through non-authoritative polling, and added R11 for configuration descriptors/writers left to garbage collection.
 
@@ -176,7 +176,7 @@ The exact `git archive` for `cba322b` had SHA-256 `f2951b2628abb2a61752f16d7fc7a
 
 ## Independent review instructions for cba322b (completed)
 
-Review `49b9fbb..cba322b` against R2/R11 in `docs/research/stage-5.4-astra-review.md`. The earlier remediation ranges remain historical context. Begin from the accepted Stage 5.3 contracts and explicitly preserve every previously closed finding.
+Review `49b9fbb..cba322b` against R2/R11 in `docs/research/stage-5/5.4/astra-review.md`. The earlier remediation ranges remain historical context. Begin from the accepted Stage 5.3 contracts and explicitly preserve every previously closed finding.
 
 1. Verify migrations 010–014 on both a fresh database and populated older databases. Confirm historical migration bytes/digests are unchanged and migration 014 preserves observed source consumption while conservatively reconciling failed/executing legacy assessment effects and their ledger charge.
 2. Audit `internal/quality/scope.go` field by field. Reproduce repository, task/plan revision, criteria/definition, configuration/check-set, reviewer profile/instruction and artifact invalidation. Confirm a harmless plan reorder does not stale task evidence but an enclosing restriction change does.
@@ -193,7 +193,7 @@ Review `49b9fbb..cba322b` against R2/R11 in `docs/research/stage-5.4-astra-revie
 
 The independent follow-up of `cba322b` **closes R2 and R11**. On Linux, containment authority now requires an exact, supervisor-written cleanup token produced only after authoritative subreaper reaping; the former sampling/environment polling path can no longer contribute authority, and signal death, missing or malformed proof, observation failure and forced escalation all remain uncertain and retain claims. Descendant signalling uses pidfds with start-time identity checks. Cancellation is coordinated so the supervisor receives a bounded window to terminate and reap detached descendants. Configuration, readiness and proof pipes and the configuration writer have an explicit lifetime on preparation failure, start failure, normal execution, cancellation, supervisor loss and forced escalation.
 
-R10 and every previously closed safeguard are preserved; all retained Stage 5.4 regressions still pass. Three P3 findings and one stale-documentation defect are recorded, and the Darwin fork-accounting limitation at `internal/checks/runner.go:459` remains a distinct unverified observation. Native macOS execution for `cba322b` was not independently repeated. See [the exact findings and reproduction instructions](stage-5.4-astra-review.md#independent-follow-up-of-cba322b). Production dispatch remains disabled; offline acceptance does not supersede the live gates.
+R10 and every previously closed safeguard are preserved; all retained Stage 5.4 regressions still pass. Three P3 findings and one stale-documentation defect are recorded, and the Darwin fork-accounting limitation at `internal/checks/runner.go:459` remains a distinct unverified observation. Native macOS execution for `cba322b` was not independently repeated. See [the exact findings and reproduction instructions](astra-review.md#independent-follow-up-of-cba322b). Production dispatch remains disabled; offline acceptance does not supersede the live gates.
 
 ## P3 remediation submission and independent follow-up request
 

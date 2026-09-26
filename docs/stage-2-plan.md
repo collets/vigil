@@ -1,6 +1,6 @@
 # Stage 2 — minimum transports and controlled execution
 
-Completed 2026-09-20. Implements the [Stage 1 contract](adapter-spike.md) through one bounded fixture turn per harness. No scheduler, dashboard integration, application database, automatic repair, publishing, resume or steering implementation. Those remain later stages. Existing requirements and Stage 1 limits apply. See [validation results](research/stage-2-results.md).
+Completed 2026-09-20. Implements the [Stage 1 contract](adapter-spike.md) through one bounded fixture turn per harness. No scheduler, dashboard integration, application database, automatic repair, publishing, resume or steering implementation. Those remain later stages. Existing requirements and Stage 1 limits apply. See [validation results](research/stage-2/results.md).
 
 ## Work sequence and exit checks
 

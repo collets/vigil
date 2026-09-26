@@ -30,4 +30,4 @@ Prepared 2026-09-20 alongside Stage 3 before implementation; specification compl
 
 ## Completion evidence
 
-Delivered [core specification](core-spec.md), executable [project](spec/project.sql) and [coordination](spec/coordination.sql) drafts, and [Stage 5 backlog with full R01–R71 coverage](stage-5-plan.md). Draft schema invariants are tested in `internal/storage/spec_test.go` against bundled SQLite 3.53.4, without installing application tables. Normal/race checks and four cross-builds pass. The [review record](research/stage-4-results.md) lists scenario coverage and remaining qualification/setup choices.
+Delivered [core specification](core-spec.md), executable [project](spec/project.sql) and [coordination](spec/coordination.sql) drafts, and [Stage 5 backlog with full R01–R71 coverage](stage-5-plan.md). Draft schema invariants are tested in `internal/storage/spec_test.go` against bundled SQLite 3.53.4, without installing application tables. Normal/race checks and four cross-builds pass. The [review record](research/stage-4/results.md) lists scenario coverage and remaining qualification/setup choices.

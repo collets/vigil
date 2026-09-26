@@ -4,7 +4,7 @@ Date: 2026-09-21. Initial implementation commits: `69de374`, `697b366`, `0e83d10
 
 ## Verdict
 
-Independent follow-up review of `d34f894`: **R6/R8 resolved; all R1–R9 findings closed. The Stage 5.2 offline implementation review is accepted.** Persisted budget enforcement, evidence preservation, meaningful submission coverage and wait/resume timing passed independent reproduction. See [follow-up acceptance](stage-5.2-astra-review.md#independent-follow-up-acceptance-of-d34f894). Live production qualification remains pending and dispatch stays disabled.
+Independent follow-up review of `d34f894`: **R6/R8 resolved; all R1–R9 findings closed. The Stage 5.2 offline implementation review is accepted.** Persisted budget enforcement, evidence preservation, meaningful submission coverage and wait/resume timing passed independent reproduction. See [follow-up acceptance](astra-review.md#independent-follow-up-acceptance-of-d34f894). Live production qualification remains pending and dispatch stays disabled.
 
 Checkpoints A–D and the corrections for all six P1 and three P2 findings in the 2026-09-21 Astra review are implemented and verified offline. All nine review findings are now independently closed; the shared live qualification gate remains open. A marked disposable repository completed one persisted synthetic execution through explicit repository enrollment, branch preparation, resource ownership, runtime/native/submission journals, strict result validation and the `checking` transition. It did not create acceptance, run quality checks, publish, push or contact a model provider.
 
@@ -164,7 +164,7 @@ Until all applicable gates pass and a new exact trusted qualification is recorde
 
 ## Security-sensitive Astra review scope
 
-The original review report and inert reproduction sources are retained at [stage-5.2-astra-review.md](stage-5.2-astra-review.md) and [stage-5.2-review](stage-5.2-review/). Re-review should verify the R1–R9 resolution mapping above, particularly crash windows between native delivery and durable acknowledgement, exclusive reservation authority during effects, descriptor-relative filesystem races, active deadlines for context-insensitive drivers, and the new fail-closed production driver binding contract.
+The original review report and inert reproduction sources are retained at [astra-review.md](astra-review.md) and [stage-5.2-review](review-probes/). Re-review should verify the R1–R9 resolution mapping above, particularly crash windows between native delivery and durable acknowledgement, exclusive reservation authority during effects, descriptor-relative filesystem races, active deadlines for context-insensitive drivers, and the new fail-closed production driver binding contract.
 
 - Git command isolation, raw index/tree parsing, SHA-1/SHA-256 blob comparison, nested exclusions and races between pre-transaction observation and enrollment commit.
 - Canonical-path and filesystem-identity handling, especially `/tmp` aliases, symlinked roots, replacement between inspection and effect, and the `88cd2be` fixture-driver fix.

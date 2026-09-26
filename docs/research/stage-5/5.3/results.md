@@ -1,6 +1,6 @@
 # Stage 5.3 — recovery, checkpoints and execution controls
 
-Independent follow-up, 2026-09-22: **Stage 5.3 offline implementation is accepted at `a182152`; R1–R10 are closed.** Independent retained probes, Linux full/race/build/boundary-build and four cross-builds pass. See the [acceptance and validation limits](stage-5.3-astra-review.md#independent-follow-up-acceptance-of-a182152). Live interrupted-session qualification remains open and production dispatch remains disabled.
+Independent follow-up, 2026-09-22: **Stage 5.3 offline implementation is accepted at `a182152`; R1–R10 are closed.** Independent retained probes, Linux full/race/build/boundary-build and four cross-builds pass. See the [acceptance and validation limits](astra-review.md#independent-follow-up-acceptance-of-a182152). Live interrupted-session qualification remains open and production dispatch remains disabled.
 
 Implementation started from accepted Stage 5.2 baseline `bf09f4d`. The initial implementation ends at `5617679`; review remediation currently ends at `a182152`. The implementation handoff below is supplemented by the independent offline acceptance above; neither establishes live interrupted-session qualification. Production dispatch remains disabled.
 
@@ -145,7 +145,7 @@ No Docker flag, model, provider, credential, Codex subscription turn, llama.cpp 
 | `a0afb05` | Checkpoint review remediation | Live recovery reservation, result-derived ownership, descriptor-relative apply/index lock/object recovery and checkpoint race coverage |
 | `a182152` | Follow-up review remediation | Journal-bound clear replay, absent-parent recovery and forward migration for repeated equal-content exact resumes |
 
-Independent acceptance covered baseline `bf09f4d`, the initial implementation through `5617679`, both findings sections in `stage-5.3-astra-review.md`, and remediation commits `9d095fd`, `a0afb05` and `a182152`. It reran the retained R1–R10 probes and permanent store/checkpoint/supervisor regressions, including migration 009 populated upgrade, while preserving migrations 001–008 and the Stage 5.2 invariants. Future changes to these contracts must retain that review surface.
+Independent acceptance covered baseline `bf09f4d`, the initial implementation through `5617679`, both findings sections in `astra-review.md`, and remediation commits `9d095fd`, `a0afb05` and `a182152`. It reran the retained R1–R10 probes and permanent store/checkpoint/supervisor regressions, including migration 009 populated upgrade, while preserving migrations 001–008 and the Stage 5.2 invariants. Future changes to these contracts must retain that review surface.
 
 ## Remaining gates and limitations
 

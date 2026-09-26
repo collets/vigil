@@ -1,6 +1,6 @@
 # Stage 5 implementation backlog and requirement coverage
 
-Stage 4 output, updated after Stage 3.5 on 2026-09-20. Implement [core-spec.md](core-spec.md) in these increments after reviewing [Linux](research/stage-3-results.md) and [macOS](research/stage-3.5-results.md) evidence. Both platforms retain explicit containment/recovery gates. This is an implementation backlog, not a completion claim.
+Stage 4 output, updated after Stage 3.5 on 2026-09-20. Implement [core-spec.md](core-spec.md) in these increments after reviewing [Linux](research/stage-3/results.md) and [macOS](research/stage-3.5/results.md) evidence. Both platforms retain explicit containment/recovery gates. This is an implementation backlog, not a completion claim.
 
 The [expanded execution plan](stage-5-execution.md) now supplies commit-sized steps, command/storage boundaries, prerequisite checks and concrete failure tests. Implementation begins with A–C; D remains a hard gate on production editing.
 

@@ -19,8 +19,8 @@ Targets: Linux and macOS, on amd64 and arm64. See [`docs/next-steps.md`](docs/ne
 - [Harness investigation](docs/harness-capabilities.md): recommended transports, verified probes, and remaining integration gates.
 - [Stage 1 adapter spike](docs/adapter-spike.md): adapter contract, isolated profile preparation, limits, and runtime prerequisites.
 - [Stage 2 plan and runner](docs/stage-2-plan.md): transport implementation, controlled execution, verification, and limitations.
-- [Stage 3 lifecycle/policy results](docs/research/stage-3-results.md): observed capabilities and strict execution limits.
-- [Stage 3.5 macOS results](docs/research/stage-3.5-results.md): native runtime checks, filesystem identity and platform-specific cleanup limits.
+- [Stage 3 lifecycle/policy results](docs/research/stage-3/results.md): observed capabilities and strict execution limits.
+- [Stage 3.5 macOS results](docs/research/stage-3.5/results.md): native runtime checks, filesystem identity and platform-specific cleanup limits.
 - [Application core specification](docs/core-spec.md): state, policy, coordination, checkpoints and storage contracts.
 - [Session continuity audit](docs/session-audit.md): decisions, alternatives, open questions, and documentation provenance.
 - [Discovery history](docs/discovery-notes.md): brainstorming decisions and their evolution.

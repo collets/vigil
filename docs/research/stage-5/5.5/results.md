@@ -6,10 +6,10 @@ isolation fix `959eaaf` and revision-bound quality controls `669467e`; Stage 5.5
 is unaccepted.
 
 This record is append-only evidence for the four checkpoints in
-[the Stage 5.5 plan](../stage-5/5.5-workflow-and-planning.md). It distinguishes
+[the Stage 5.5 plan](../../../stage-5/5.5-workflow-and-planning.md). It distinguishes
 offline fixture mechanics from real human approval and live model/runtime evidence.
 The complete user-only gate list is maintained in the
-[Stage 5.5 blocker log](stage-5.5-blockers.md).
+[Stage 5.5 blocker log](blockers.md).
 
 ## Baseline
 
@@ -158,10 +158,10 @@ The real Cardtracker checkout was inspected read-only at
 disposable fixture and added the 952-byte qualification specification (digest
 `364ca28d…`) before the fixture baseline. No Cardtracker commit was created.
 The ignored fixture path is hidden by many file browsers; an exact credential-free
-[visible review copy](stage-5.5-qualification-input.md) is indexed without
+[visible review copy](qualification-input.md) is indexed without
 creating a new specification revision or approval.
 The actual persisted proposal is separately rendered as an indexed
-[human-readable proposal review](stage-5.5-qualification-proposal.md), preserving
+[human-readable proposal review](qualification-proposal.md), preserving
 revision 1 and digest `d90d3e5b…64a6b`; the review copy does not approve or apply it.
 
 Two explicitly authorized local Hermes planning turns used
@@ -349,7 +349,7 @@ made. Cross-build is compile coverage only; native macOS execution remains B4.
 
 ## Limitations and blockers
 
-See the [blocker log](stage-5.5-blockers.md). Stage 5.5 remains unaccepted pending
+See the [blocker log](blockers.md). Stage 5.5 remains unaccepted pending
 independent review. Production dispatch, production model/reviewer and native
 Codex qualification, real proposal/manual/clarification decisions, the live crash
 matrix and the Darwin fork-accounting observation remain pending. Native Hermes
