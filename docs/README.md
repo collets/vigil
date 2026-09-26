@@ -73,6 +73,10 @@ The files in `docs/spec/` are validated against `internal/storage/spec_test.go` 
 run under `make check`. They are a historical design record, **not** the installed
 schema; the installed schema is the embedded migrations.
 
+Stage 5.5's implementation boundary is `internal/tools/` for authoritative bounded
+handlers and `internal/mcp/` for the transport-only JSON-RPC adapter. The transport
+does not own authorization, sessions, limits or workflow state.
+
 ## Evidence and reviews
 
 Historical evidence. Do not rewrite these to reflect newer state; add a new dated

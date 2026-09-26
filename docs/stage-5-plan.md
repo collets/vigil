@@ -6,7 +6,7 @@ The [expanded execution plan](stage-5-execution.md) now supplies commit-sized st
 
 For the remaining implementation after the foundation, use the [Stage 5.1–5.7 standalone plans](stage-5/README.md). Their index maps each assignment back to A–J and states dependencies and user decisions. This document remains the complete requirement coverage reference.
 
-Current status, updated 2026-09-26: slices 5.1–5.3 and Stage 5.4 through `cba322b` are independently accepted offline. In backlog terms, A–G have offline implementations, but D/E/G still retain live qualification and real-user gates, so their broad completion rows remain unchecked. Stage 5.4 P3 findings F1–F3 are remediated at `99cd6c0` and are the accepted Stage 5.5 baseline; every previously closed safeguard remains closed. The Darwin fork-accounting observation and native macOS validation are separate pending evidence. H now has Stage 5.5 checkpoint A's explicit queue/scheduler from baseline `6e8e986`; checkpoints B–D, the rest of H/I, 5.6/J and 5.7 remain pending. Production dispatch remains disabled.
+Current status, updated 2026-09-26: slices 5.1–5.4 remain accepted offline and `99cd6c0` is the Stage 5.5 baseline without reopening closed safeguards. H has checkpoint A at `4dbb444` plus partial actionable TUI work; I has offline Markdown/proposal handlers and bounded fixture model tools. Active-run TUI stop/recovery, independent review, live planning/native integration, real decisions and native macOS evidence remain pending. Production dispatch remains disabled.
 
 ## Increment order and executable acceptance
 

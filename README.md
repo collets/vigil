@@ -2,7 +2,7 @@
 
 A local control panel for development agents running through existing harnesses, combining frontier and local models.
 
-Status: **pre-release.** The persisted core through Stage 5.4 is independently accepted offline, and Stage 5.5 implementation is in progress from baseline `6e8e986`. Its checkpoint A adds a durable explicit plan queue and authoritative task selection; automatic plan advancement remains disabled. Production check, model and reviewer dispatch remain deliberately disabled pending live qualification, and nothing in the acceptance path can commit, push, publish or deliver. The terminal dashboard still reads authoritative persisted state.
+Status: **pre-release.** The persisted core through Stage 5.4 is independently accepted offline. Stage 5.5 checkpoint A is committed at `4dbb444`; the actionable UI is partial and the offline planning/tool paths are implemented locally. Automatic plan advancement remains disabled. Production check, model and reviewer dispatch remain deliberately disabled pending live qualification, and nothing in planning or acceptance can commit, push, publish or deliver.
 
 Targets: Linux and macOS, on amd64 and arm64. See [`docs/next-steps.md`](docs/next-steps.md) for current state and [`docs/README.md`](docs/README.md) for the document index.
 
@@ -78,6 +78,8 @@ internal/cli/         Cobra commands
 internal/harness/     bounded stdio transport and native session adapters
 internal/spike/       isolated development runner and fixture validation
 internal/tui/         Bubble Tea persisted project views
+internal/tools/       bounded role/session-scoped model application handlers
+internal/mcp/         small JSON-RPC transport reusing the model handlers
 internal/storage/     SQLite connection check
 internal/store/       private application databases, embedded migrations, durable commands
 internal/core/        project definitions, readiness, human authority, dashboard reads

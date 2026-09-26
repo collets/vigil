@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -233,6 +234,110 @@ func projectCommand(stateDir *string) *cobra.Command {
 	advance.Flags().StringVar(&advanceCommand, "command-id", "", "Unique replay-safe scheduling command")
 	advance.Flags().IntVar(&advanceRevision, "expected-revision", 0, "Expected project revision")
 	root.AddCommand(advance)
+	var specID, specCommand string
+	var specRevision int
+	specImport := &cobra.Command{Use: "spec-import PROJECT_ID MARKDOWN_PATH", Short: "Import one bounded owned local Markdown file as an immutable private revision", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		if specID == "" || specCommand == "" || specRevision < 1 {
+			return errors.New("--id, --command-id and --expected-revision required")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			result, err := e.ImportMarkdown(cmd.Context(), specCommand, specRevision, specID, args[1])
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, result)
+		})
+	}}
+	specImport.Flags().StringVar(&specID, "id", "", "Stable specification identifier")
+	specImport.Flags().StringVar(&specCommand, "command-id", "", "Unique replay-safe import command")
+	specImport.Flags().IntVar(&specRevision, "expected-revision", 0, "Expected project revision")
+	root.AddCommand(specImport)
+	root.AddCommand(&cobra.Command{Use: "spec-show PROJECT_ID SPEC_ID REVISION", Short: "Show the exact verified private specification revision and content", Args: cobra.ExactArgs(3), RunE: func(cmd *cobra.Command, args []string) error {
+		revision, err := strconv.Atoi(args[2])
+		if err != nil || revision < 1 {
+			return errors.New("REVISION must be positive")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			result, err := e.Specification(cmd.Context(), args[1], revision)
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, result)
+		})
+	}})
+	var proposalFile, proposalCommand string
+	var proposalExpected int
+	var proposalFixture bool
+	proposalCreate := &cobra.Command{Use: "proposal-create PROJECT_ID", Short: "Validate and persist a closed fixture planning proposal without approving it", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if !proposalFixture {
+			return errors.New("--synthetic-fixture required; live planning remains qualification-gated")
+		}
+		if proposalFile == "" || proposalCommand == "" || proposalExpected < 1 {
+			return errors.New("--file, --command-id and --expected-revision required")
+		}
+		f, err := os.Open(proposalFile)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		b, err := io.ReadAll(io.LimitReader(f, store.MaxDocument+1))
+		if err != nil {
+			return err
+		}
+		var request core.ProposalRequest
+		if err = store.Decode(b, &request); err != nil {
+			return err
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			result, err := e.CreateFixtureProposal(cmd.Context(), proposalCommand, proposalExpected, request)
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, result)
+		})
+	}}
+	proposalCreate.Flags().StringVar(&proposalFile, "file", "", "Closed proposal JSON file, at most 64 KiB")
+	proposalCreate.Flags().StringVar(&proposalCommand, "command-id", "", "Unique replay-safe proposal command")
+	proposalCreate.Flags().IntVar(&proposalExpected, "expected-revision", 0, "Expected project revision")
+	proposalCreate.Flags().BoolVar(&proposalFixture, "synthetic-fixture", false, "Use deterministic offline proposal input; no model call")
+	root.AddCommand(proposalCreate)
+	root.AddCommand(&cobra.Command{Use: "proposal-show PROJECT_ID PROPOSAL_ID REVISION", Short: "Show one exact immutable planning proposal revision", Args: cobra.ExactArgs(3), RunE: func(cmd *cobra.Command, args []string) error {
+		revision, err := strconv.Atoi(args[2])
+		if err != nil || revision < 1 {
+			return errors.New("REVISION must be positive")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			result, err := e.Proposal(cmd.Context(), args[1], revision)
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, result)
+		})
+	}})
+	var applyProposalCommand string
+	var applyProposalExpected int
+	var authorizeCriteria bool
+	proposalApply := &cobra.Command{Use: "proposal-apply PROJECT_ID PROPOSAL_ID REVISION", Short: "Human-apply one exact proposal revision atomically", Args: cobra.ExactArgs(3), RunE: func(cmd *cobra.Command, args []string) error {
+		revision, err := strconv.Atoi(args[2])
+		if err != nil || revision < 1 {
+			return errors.New("REVISION must be positive")
+		}
+		if applyProposalCommand == "" || applyProposalExpected < 1 {
+			return errors.New("--command-id and --expected-revision required")
+		}
+		payload, _ := json.Marshal(map[string]any{"proposal_id": args[1], "proposal_revision": revision, "authorize_criteria_changes": authorizeCriteria})
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			result, err := e.Apply(cmd.Context(), core.Human, core.Envelope{CommandID: applyProposalCommand, ExpectedRevision: applyProposalExpected, Kind: "planning.proposal.apply", Payload: payload})
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, result)
+		})
+	}}
+	proposalApply.Flags().StringVar(&applyProposalCommand, "command-id", "", "Unique replay-safe human approval command")
+	proposalApply.Flags().IntVar(&applyProposalExpected, "expected-revision", 0, "Expected project revision")
+	proposalApply.Flags().BoolVar(&authorizeCriteria, "authorize-criteria-changes", false, "Explicitly authorize criteria changes in this exact proposal")
+	root.AddCommand(proposalApply)
 	root.AddCommand(&cobra.Command{Use: "reservation PROJECT_ID OPERATION_ID", Short: "Inspect a persisted core resource reservation without acquiring or releasing anything", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
 		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
 			r, err := e.Reservation(cmd.Context(), args[1])

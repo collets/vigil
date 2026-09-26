@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"vigil/internal/core"
+	"vigil/internal/store"
 )
 
 type source func(context.Context) (core.DashboardSnapshot, error)
@@ -20,13 +21,29 @@ type loaded struct {
 	err      error
 }
 type refresh struct{}
+type mutationResult struct {
+	action string
+	err    error
+}
+type mutator func(context.Context, core.DashboardSnapshot, string) error
 type model struct {
-	ctx                        context.Context
-	load                       source
-	snapshot                   *core.DashboardSnapshot
-	err                        error
-	loading                    bool
-	tab, offset, width, height int
+	ctx                               context.Context
+	load                              source
+	snapshot                          *core.DashboardSnapshot
+	err                               error
+	loading                           bool
+	mutating                          bool
+	feedback                          string
+	mutate                            mutator
+	tab, offset, inbox, width, height int
+}
+
+func (m model) act(action string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(m.ctx, 10*time.Second)
+		defer cancel()
+		return mutationResult{action: action, err: m.mutate(ctx, *m.snapshot, action)}
+	}
 }
 
 func (m model) fetch() tea.Cmd {
@@ -49,6 +66,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 		if msg.err == nil {
 			m.snapshot = &msg.snapshot
+			m.inbox = min(m.inbox, max(0, len(msg.snapshot.Inbox)-1))
+		}
+	case mutationResult:
+		m.mutating = false
+		if msg.err != nil {
+			m.feedback = msg.action + " failed: " + clean(msg.err.Error())
+		} else {
+			m.feedback = msg.action + " succeeded"
+			m.loading = true
+			return m, m.fetch()
 		}
 	case refresh:
 		if m.loading {
@@ -57,6 +84,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = true
 		return m, tea.Batch(m.fetch(), tick())
 	case tea.KeyPressMsg:
+		if m.snapshot != nil && m.mutate != nil && !m.mutating {
+			action := ""
+			switch msg.String() {
+			case "p":
+				action = "pause"
+			case "c":
+				action = "continue"
+			case "a":
+				action = "advance"
+			case "u":
+				action = "queue"
+			case "y":
+				if m.tab == 2 && len(m.snapshot.Inbox) > 0 {
+					action = "allow:" + m.snapshot.Inbox[m.inbox].ID
+				}
+			case "n":
+				if m.tab == 2 && len(m.snapshot.Inbox) > 0 {
+					action = "deny:" + m.snapshot.Inbox[m.inbox].ID
+				}
+			}
+			if action != "" {
+				m.mutating = true
+				m.feedback = action + " pending"
+				return m, m.act(action)
+			}
+		}
 		switch msg.String() {
 		case "q", "ctrl+c", "esc":
 			return m, tea.Quit
@@ -66,18 +119,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.fetch()
 			}
 		case "tab", "right":
-			m.tab = (m.tab + 1) % 4
+			m.tab = (m.tab + 1) % 5
 			m.offset = 0
 		case "shift+tab", "left":
-			m.tab = (m.tab + 3) % 4
+			m.tab = (m.tab + 4) % 5
 			m.offset = 0
-		case "1", "2", "3", "4":
+		case "1", "2", "3", "4", "5":
 			m.tab = int(msg.String()[0] - '1')
 			m.offset = 0
 		case "j", "down":
-			m.offset++
+			if m.tab == 2 && m.snapshot != nil && len(m.snapshot.Inbox) > 0 {
+				m.inbox = min(len(m.snapshot.Inbox)-1, m.inbox+1)
+			} else {
+				m.offset++
+			}
 		case "k", "up":
-			m.offset = max(0, m.offset-1)
+			if m.tab == 2 {
+				m.inbox = max(0, m.inbox-1)
+			} else {
+				m.offset = max(0, m.offset-1)
+			}
 		case "pgdown":
 			m.offset += max(1, m.height-5)
 		case "pgup":
@@ -137,9 +198,26 @@ func (m model) lines() []string {
 			lines = []string{"No tasks defined."}
 		}
 	case 2:
-		lines = []string{"Decisions are read-only here. Resolve them with project apply.", "Showing up to 100 pending/expired decisions.", ""}
-		for _, entry := range s.Inbox {
-			lines = append(lines, clean(entry.ID)+" · "+clean(entry.Kind)+" · "+clean(entry.State))
+		lines = []string{"Resolve the displayed revision only: y allow once · n deny.", "Permission, acceptance, manual Pass and clarification remain distinct.", "Showing up to 100 pending/expired decisions.", ""}
+		for index, entry := range s.Inbox {
+			marker := "  "
+			if index == m.inbox {
+				marker = "> "
+			}
+			lines = append(lines, marker+clean(entry.ID)+" · "+clean(entry.Kind)+" · "+clean(entry.State))
+			lines = append(lines, fmt.Sprintf("  Plan %s · Task %s r%d · Run %s", clean(entry.PlanID), clean(entry.TaskID), entry.TaskRevision, clean(entry.RunID)))
+			if entry.SessionID != "" {
+				lines = append(lines, "  Session/generation: "+clean(entry.SessionID)+" / "+clean(entry.NativeRequestKey))
+			}
+			if entry.Deadline > 0 {
+				lines = append(lines, "  Expires: "+time.UnixMilli(entry.Deadline).Format(time.RFC3339))
+			}
+			if entry.GrantID != "" {
+				lines = append(lines, "  Grant: "+clean(entry.GrantID)+" · "+clean(entry.GrantScope)+" · origin "+clean(entry.GrantOrigin), fmt.Sprintf("  Revoked: %d", entry.GrantRevokedAt))
+			}
+			if entry.OperationID != "" {
+				lines = append(lines, "  Operation: "+clean(entry.OperationID), "  Resource digest: "+clean(entry.ResourceDigest), "  Arguments digest: "+clean(entry.ArgumentsDigest), fmt.Sprintf("  Policy revision: %d · decision scope: once", entry.PolicyEpoch))
+			}
 			var request core.OperationRequest
 			if json.Unmarshal(entry.Context, &request) == nil && request.Category != "" {
 				lines = append(lines, "  Action: "+clean(request.Category))
@@ -169,12 +247,36 @@ func (m model) lines() []string {
 		if len(s.Events) == 0 {
 			lines = append(lines, "No events recorded.")
 		}
+	case 4:
+		lines = []string{"Authoritative plan/task evidence details.", "Detailed diffs remain external.", ""}
+		for _, plan := range s.Plans {
+			lines = append(lines, fmt.Sprintf("Plan %s · %s · rank %d · services remaining %dms", clean(plan.ID), clean(plan.State), plan.Rank, plan.ServiceBudgetRemainingMS))
+		}
+		for _, task := range s.Tasks {
+			lines = append(lines, "", fmt.Sprintf("Task %s · %s · remaining %dms", clean(task.ID), clean(task.State), task.BudgetRemainingMS))
+			if task.BlockReason != "" {
+				lines = append(lines, "  Blocker: "+clean(task.BlockReason))
+			}
+			lines = append(lines, fmt.Sprintf("  Findings: %d blocking · %d suggestions", task.BlockingFindings, task.Suggestions))
+			if task.BaselineUnhealthy {
+				lines = append(lines, "  Baseline health: unhealthy exception present")
+			}
+			for _, v := range task.CheckOutputs {
+				lines = append(lines, "  Check output: "+clean(v))
+			}
+			for _, v := range task.ManualOutcomes {
+				lines = append(lines, "  Manual: "+clean(v))
+			}
+			if task.RecoveryState != "" {
+				lines = append(lines, "  Recovery quarantine: "+clean(task.RecoveryState))
+			}
+		}
 	}
 	return lines
 }
 
 func (m model) View() tea.View {
-	tabs := []string{"1 Overview", "2 Tasks", "3 Inbox", "4 History"}
+	tabs := []string{"1 Overview", "2 Tasks", "3 Inbox", "4 History", "5 Detail"}
 	tabs[m.tab] = "[" + tabs[m.tab] + "]"
 	status := "Persisted state · read-only"
 	if m.loading {
@@ -183,13 +285,16 @@ func (m model) View() tea.View {
 	if m.err != nil && m.snapshot != nil {
 		status = "Refresh failed; showing previous snapshot: " + clean(m.err.Error())
 	}
+	if m.feedback != "" {
+		status += " · " + clean(m.feedback)
+	}
 	lines := m.lines()
 	space := max(1, m.height-5)
 	start := min(m.offset, max(0, len(lines)-space))
 	end := min(len(lines), start+space)
 	output := []string{"Vigil  " + strings.Join(tabs, "  "), status, ""}
 	output = append(output, lines[start:end]...)
-	output = append(output, "", fmt.Sprintf("Tab: view · ↑/↓: scroll · r: refresh · q: quit  (%d–%d/%d)", start+1, end, len(lines)))
+	output = append(output, "", fmt.Sprintf("p pause · c continue · a advance · u queue · y/n decision · q quit  (%d–%d/%d)", start+1, end, len(lines)))
 	for n, line := range output {
 		output[n] = ansi.Truncate(line, max(1, m.width), "…")
 	}
@@ -204,7 +309,7 @@ func (m model) View() tea.View {
 func RunProject(ctx context.Context, engine *core.Engine, input io.Reader, output io.Writer) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	final, err := tea.NewProgram(model{ctx: ctx, load: engine.Dashboard, loading: true, width: 80, height: 24}, tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output)).Run()
+	final, err := tea.NewProgram(model{ctx: ctx, load: engine.Dashboard, mutate: projectMutator(engine), loading: true, width: 80, height: 24}, tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output)).Run()
 	if err != nil {
 		return fmt.Errorf("run dashboard: %w", err)
 	}
@@ -212,4 +317,60 @@ func RunProject(ctx context.Context, engine *core.Engine, input io.Reader, outpu
 		return m.err
 	}
 	return nil
+}
+
+func projectMutator(engine *core.Engine) mutator {
+	return func(ctx context.Context, s core.DashboardSnapshot, action string) error {
+		revision := s.Readiness.Project.Revision
+		switch action {
+		case "pause":
+			_, err := engine.Pause(ctx, store.ID(), revision)
+			return err
+		case "continue":
+			_, err := engine.Continue(ctx, store.ID(), revision)
+			return err
+		case "advance":
+			_, err := engine.Advance(ctx, store.ID(), revision)
+			return err
+		case "queue":
+			for _, p := range s.Queue {
+				if p.State == "draft" || p.State == "ready" {
+					_, err := engine.QueuePlan(ctx, store.ID(), revision, p.ID, p.Rank)
+					return err
+				}
+			}
+			return fmt.Errorf("no queueable plan")
+		default:
+			decision, requestID, found := strings.Cut(action, ":")
+			if (decision != "allow" && decision != "deny") || !found || requestID == "" {
+				return fmt.Errorf("unknown dashboard action")
+			}
+			if len(s.Inbox) == 0 {
+				return fmt.Errorf("no displayed pending request")
+			}
+			var entry core.InboxEntry
+			for _, candidate := range s.Inbox {
+				if candidate.ID == requestID {
+					entry = candidate
+					break
+				}
+			}
+			if entry.ID == "" {
+				return fmt.Errorf("focused request is no longer displayed")
+			}
+			if entry.Kind != "approval" {
+				return fmt.Errorf("displayed request requires its distinct %s action", entry.Kind)
+			}
+			var proposalContext struct {
+				ProposalID string `json:"proposal_id"`
+			}
+			_ = json.Unmarshal(entry.Context, &proposalContext)
+			if proposalContext.ProposalID != "" {
+				return fmt.Errorf("planning approval requires proposal-apply for the displayed exact revision")
+			}
+			payload, _ := json.Marshal(core.GrantRequest{RequestID: entry.ID, Scope: "once", Decision: decision})
+			_, err := engine.Apply(ctx, core.Human, core.Envelope{CommandID: store.ID(), ExpectedRevision: revision, Kind: "permission.grant", Payload: payload})
+			return err
+		}
+	}
 }

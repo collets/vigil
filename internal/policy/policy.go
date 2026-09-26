@@ -165,7 +165,7 @@ func (p Profile) Validate() error {
 		}
 	}
 	for _, role := range p.Roles {
-		if !Contains([]string{"implementation", "review", "supervisor", "finalization"}, role) {
+		if !Contains([]string{"implementation", "review", "supervisor", "planning", "finalization"}, role) {
 			return fmt.Errorf("unsupported profile role %s", role)
 		}
 	}

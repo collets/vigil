@@ -7,12 +7,12 @@
 # Every path listed in status_documents must mention implementation_commit.
 # See AGENTS.md, section "Documentation obligations".
 
-stage=5.4
-stage_accepted=true
-implementation_commit=99cd6c0
-review_record=docs/research/stage-5.4-astra-review.md
+stage=5.5
+stage_accepted=false
+implementation_commit=4dbb444
+review_record=docs/research/stage-5.5-results.md
 project_migrations=15
 coordination_migrations=2
 index=docs/README.md
-status_documents=docs/next-steps.md,docs/pending-decisions.md,docs/stage-5/README.md,docs/stage-5/5.4-quality-and-acceptance.md,docs/research/stage-5.4-results.md
+status_documents=docs/next-steps.md,docs/pending-decisions.md,docs/stage-5/README.md,docs/stage-5/5.5-workflow-and-planning.md,docs/research/stage-5.5-results.md
 cli_reference=docs/stage-5-cli.md

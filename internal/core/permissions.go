@@ -249,12 +249,27 @@ func (e *Engine) permission(ctx context.Context, tx *store.Tx, actor Authority, 
 }
 
 type InboxEntry struct {
-	ID        string          `json:"id"`
-	Kind      string          `json:"kind"`
-	State     string          `json:"state"`
-	Context   json.RawMessage `json:"context"`
-	CreatedAt int64           `json:"created_at"`
-	Deadline  int64           `json:"deadline"`
+	ID               string          `json:"id"`
+	Kind             string          `json:"kind"`
+	State            string          `json:"state"`
+	PlanID           string          `json:"plan_id,omitempty"`
+	TaskID           string          `json:"task_id,omitempty"`
+	TaskRevision     int             `json:"task_revision,omitempty"`
+	RunID            string          `json:"run_id,omitempty"`
+	SessionID        string          `json:"session_id,omitempty"`
+	NativeRequestKey string          `json:"native_request_key,omitempty"`
+	OperationID      string          `json:"operation_id,omitempty"`
+	ResourceDigest   string          `json:"resource_digest,omitempty"`
+	ArgumentsDigest  string          `json:"arguments_digest,omitempty"`
+	PolicyEpoch      int             `json:"policy_epoch,omitempty"`
+	Blocking         bool            `json:"blocking"`
+	Context          json.RawMessage `json:"context"`
+	CreatedAt        int64           `json:"created_at"`
+	Deadline         int64           `json:"deadline"`
+	GrantID          string          `json:"grant_id,omitempty"`
+	GrantOrigin      string          `json:"grant_origin,omitempty"`
+	GrantScope       string          `json:"grant_scope,omitempty"`
+	GrantRevokedAt   int64           `json:"grant_revoked_at,omitempty"`
 }
 
 func (e *Engine) Inbox(ctx context.Context) ([]InboxEntry, error) {
@@ -266,7 +281,8 @@ type queryReader interface {
 }
 
 func readInbox(ctx context.Context, reader queryReader) ([]InboxEntry, error) {
-	rows, err := reader.QueryContext(ctx, "SELECT id,kind,state,context_json,created_at,coalesce(deadline,0) FROM requests WHERE state='pending' ORDER BY created_at,id LIMIT 100")
+	rows, err := reader.QueryContext(ctx, `SELECT r.id,r.kind,r.state,coalesce(r.plan_id,''),coalesce(r.task_id,''),coalesce(r.task_revision,0),coalesce(r.run_id,''),coalesce(r.session_id,''),coalesce(r.native_request_key,''),coalesce(r.operation_id,''),coalesce(o.resource_digest,''),coalesce(o.args_digest,''),coalesce(o.policy_epoch,0),r.blocking,r.context_json,r.created_at,coalesce(r.deadline,0),coalesce(r.grant_id,''),coalesce(g.granted_by,''),coalesce(g.scope,''),coalesce(g.revoked_at,0)
+		FROM requests r LEFT JOIN grants g ON g.id=r.grant_id LEFT JOIN operations o ON o.id=r.operation_id WHERE r.state='pending' ORDER BY r.created_at,r.id LIMIT 100`)
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +291,7 @@ func readInbox(ctx context.Context, reader queryReader) ([]InboxEntry, error) {
 	for rows.Next() {
 		var entry InboxEntry
 		var raw string
-		if err := rows.Scan(&entry.ID, &entry.Kind, &entry.State, &raw, &entry.CreatedAt, &entry.Deadline); err != nil {
+		if err := rows.Scan(&entry.ID, &entry.Kind, &entry.State, &entry.PlanID, &entry.TaskID, &entry.TaskRevision, &entry.RunID, &entry.SessionID, &entry.NativeRequestKey, &entry.OperationID, &entry.ResourceDigest, &entry.ArgumentsDigest, &entry.PolicyEpoch, &entry.Blocking, &raw, &entry.CreatedAt, &entry.Deadline, &entry.GrantID, &entry.GrantOrigin, &entry.GrantScope, &entry.GrantRevokedAt); err != nil {
 			return nil, err
 		}
 		entry.Context = json.RawMessage(raw)

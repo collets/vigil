@@ -1,6 +1,6 @@
 # Persisted planning CLI
 
-Stage 5 persists definitions, repository setup, a journaled execution lifecycle and the Stage 5.4 quality/acceptance path. Production agents and reviewers remain qualification-gated; all currently exposed execution, review, human and acceptance drivers are explicitly selected, marker-gated fixture paths for disposable repositories. Implementation result persistence stops at `checking`; only `quality-accept` can accept current evidence, and it never creates delivery authority. `dashboard PROJECT_ID` remains read-only and `spike` remains a separate diagnostic runner with no production fallback.
+Stage 5 persists definitions, repository setup, a journaled execution lifecycle, the Stage 5.4 quality/acceptance path and Stage 5.5's queue/planning workflow. Production agents and reviewers remain qualification-gated; all currently exposed execution, review, human and acceptance drivers are explicitly selected, marker-gated fixture paths for disposable repositories. Implementation result persistence stops at `checking`; only `quality-accept` can accept current evidence, and it never creates delivery authority. `dashboard PROJECT_ID` now applies only the documented typed controls; `spike` remains a separate diagnostic runner with no production fallback.
 
 ## Initialize and inspect
 
@@ -19,7 +19,7 @@ make build
 
 Use the ID returned by initialization. State defaults to `$XDG_STATE_HOME/vigil` or `~/.local/state/vigil`; `--state-dir /absolute/private/path` overrides it. State must be outside managed checkout trees. Existing state directories/files must be private. Initialization reuses a physical root across symlink aliases and refuses overlapping registered projects.
 
-Two root-level diagnostics sit outside the persisted core. `hello` queries `sqlite_version()` only: it creates no application tables, persists no task, and honours `--db PATH` (default `:memory:`). `dashboard PROJECT_ID` is read-only and takes one project ID. Both accept the persistent `--db` flag, but **`--db` is inert for every other command** — all persisted state resolves through `--state-dir`, so passing `--db` to a `project`, `resources`, `doctor` or `spike` command is silently ignored rather than redirecting state.
+Two root-level entry points sit outside the persisted project command tree. `hello` queries `sqlite_version()` only: it creates no application tables, persists no task, and honours `--db PATH` (default `:memory:`). `dashboard PROJECT_ID` takes one project ID and uses only the typed actions documented below. Both accept the persistent `--db` flag, but **`--db` is inert for every other command** — all persisted state resolves through `--state-dir`, so passing `--db` to a `project`, `resources`, `doctor` or `spike` command is silently ignored rather than redirecting state.
 
 ## Apply a versioned human command
 
@@ -102,6 +102,41 @@ At revision 3, `kind: "plan.put"` accepts:
 ```
 
 Plan import validates dependency graphs and retains immutable revisions. Existing tasks cannot be silently removed. Criteria changes require explicit human revision authority. `plan.reorder` takes `{"plan_id":"first-plan","tasks":["first-task"]}` and preserves the exact task set and task revisions. Readiness reports missing profiles, unapproved specifications, unresolved questions, dependencies and policy constraints. Plan-wide quality fields are optional, but when present bind their own check/review/manual/human gates to the exact plan revision. Production eligibility remains false until exact trusted launch/recovery and reviewer qualification exist.
+
+### Markdown specifications and fixture planning proposals
+
+Local Markdown import accepts only a regular non-symlink `.md` file inside the
+registered project root, from 1 byte through 64 KiB. It publishes a private,
+content-addressed immutable artifact and returns the exact content/version for
+inspection. Control sequences or embedded instructions remain untrusted text.
+Issue-URL import is not implemented.
+
+```sh
+./bin/vigil project spec-import PROJECT_ID ./spec.md \
+  --id spec-1 --command-id spec-import-001 --expected-revision 4
+./bin/vigil project spec-show PROJECT_ID spec-1 1
+```
+
+`proposal-create` reads a closed JSON `ProposalRequest`, requires explicit
+`profile_id` and current `profile_revision` fields for an eligible
+planning/supervisor profile, validates complete task fields,
+cycles, criteria, scope, checks and limits, and creates an approval inbox item.
+It is offline fixture-only: it makes no model call and cannot approve anything.
+Missing task questions also create distinct clarification items.
+
+```sh
+./bin/vigil project proposal-create PROJECT_ID --file proposal.json \
+  --command-id proposal-001 --expected-revision 5 --synthetic-fixture
+./bin/vigil project proposal-show PROJECT_ID proposal-1 1
+./bin/vigil project proposal-apply PROJECT_ID proposal-1 1 \
+  --command-id proposal-apply-001 --expected-revision 5
+```
+
+`proposal-apply` is the human application command bound to the exact proposal,
+specification and expected plan revision. Criteria changes additionally require
+`--authorize-criteria-changes`. Application is atomic and reuses `plan.put`'s
+active/accepted-task protection and evidence invalidation. It creates no commit,
+push, publication, spending or delivery authority.
 
 ## Repository enrollment and branch preparation
 
@@ -335,17 +370,19 @@ Operation restrictions are checked when requesting permission, granting it and i
 # or: make dashboard PROJECT=PROJECT_ID
 ```
 
-The dashboard reads one consistent database snapshot for readiness, tasks, the first 100 pending/expired decisions and the latest 100 history events. It refreshes asynchronously every two seconds. Failed refreshes retain the previous snapshot with a visible warning. Project text is stripped of terminal control sequences. Decisions remain read-only here; use `project inbox` for full context and `project apply` for versioned human actions. No dashboard key starts a model, approves a request, accepts a task or performs delivery.
+The dashboard reads one consistent database snapshot for readiness, queue, task/plan evidence, the first 100 pending decisions and latest 100 history events. It refreshes asynchronously every two seconds. Failed refreshes retain the previous snapshot with a visible warning. Project text is stripped of terminal control sequences. Queue, continue, pause, advance and permission allow/deny use the same receipt/revision handlers as the CLI and run asynchronously with pending/success/failure feedback. Stale displayed revisions still fail in the core. Planning approval, task acceptance, manual Pass and native clarification remain distinct application commands. No dashboard key starts a model, performs delivery or invents a runtime driver for stop/recovery.
 
 Keys:
 
 | Key | Action |
 | --- | --- |
-| `1`–`4`, `tab`, `right` / `shift+tab`, `left` | Change view. Note the **horizontal** arrows change the view; they do not scroll |
-| `j` / `down`, `k` / `up` | Scroll one line |
+| `1`–`5`, `tab`, `right` / `shift+tab`, `left` | Change view. Note the **horizontal** arrows change the view; they do not scroll |
+| `j` / `down`, `k` / `up` | Move the visibly focused request in Inbox; scroll one line in other views |
 | `pgdown`, `pgup` | Scroll one page |
 | `home`, `end` | Jump to start / end |
 | `r` | Refresh now |
+| `p`, `c`, `a`, `u` | Pause, continue, advance, or queue the first displayed queueable plan |
+| `y`, `n` | In Inbox only, allow once or deny the visibly focused permission request; other inbox kinds are refused and name their distinct command |
 | `q`, `esc`, `ctrl+c` | Quit |
 
 

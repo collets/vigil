@@ -266,6 +266,8 @@ func (e *Engine) Apply(ctx context.Context, actor Authority, cmd Envelope) (json
 			result, err = e.reorder(ctx, tx, actor, cmd)
 		case "task.criteria.revise":
 			result, err = e.reviseCriteria(ctx, tx, cmd)
+		case "planning.proposal.apply":
+			result, err = e.applyPlanningProposal(ctx, tx, cmd)
 		case "operation.request", "permission.grant", "permission.revoke", "operation.start":
 			result, err = e.permission(ctx, tx, actor, cmd, epoch)
 		default:
