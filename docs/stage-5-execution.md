@@ -2,7 +2,9 @@
 
 Prepared 2026-09-20 before implementation, from the [core specification](core-spec.md), [A–J backlog](stage-5-plan.md) and Stage 3/3.5 evidence. This plan defines the order, usable increments and validation; checkboxes represent delivered behavior only.
 
-The remaining work is now organized into [seven standalone execution plans, Stage 5.1–5.7](stage-5/README.md). Use that index to select the next bounded assignment, dependencies, user gates and fresh-context handoff. The A–J sections below preserve the original scope and requirement mapping; the new plans do not imply additional implementation has shipped.
+The remaining work is now organized into [seven standalone execution plans, Stage 5.1–5.7](stage-5/README.md). Use that index to select the next bounded assignment, dependencies, user gates and fresh-context handoff. The A–J sections below preserve the original scope and requirement mapping; consult the dated checkpoints below for delivered state.
+
+Current state, updated 2026-09-26: Stage 5.1–5.3 and Stage 5.4 through `cba322b` are independently accepted offline. Stage 5.4 P3 findings F1–F3 are remediated at `99cd6c0` and await independent follow-up. The accepted R2/R11/R10 and R1/R3/R4/R5/R6/R7/R8/R9 safeguards remain closed. Production dispatch, live reviewer/runtime qualification, native macOS validation for the latest remediation, the distinct Darwin fork-accounting observation and real human/manual gates remain pending. Stage 5.5 has not started.
 
 ## Outcome and boundaries
 
@@ -102,7 +104,7 @@ Each slice receives focused failure tests, `make check`, race tests for concurre
 
 Update [next steps](next-steps.md) and this checklist with implemented commands, limitations and the next action. Do not mark all Stage 5 complete while D or the end-to-end milestone is pending. Keep GitHub publication separate from local commits.
 
-## Implementation checkpoint — 2026-09-20
+## Historical foundation checkpoint — 2026-09-20
 
 The initial planning/control foundation is implemented and tested. [CLI guide](stage-5-cli.md) and [validation evidence](research/stage-5-foundation-results.md) describe the usable commands. The broad slice checkboxes above remain open where any named requirement is outstanding.
 
@@ -112,3 +114,14 @@ The initial planning/control foundation is implemented and tested. [CLI guide](s
 - **D qualification foundation accepted:** runtime doctor, pinned Codex images, immutable trusted qualification records, exact eligibility, conservative checkout admission, guarded nested paths, effective-mount inspection contracts, lifecycle release evidence, disposable Docker probes, PID-1 guardian, scoped provider relay and worker Unix-socket bridge are implemented. Linux and macOS/OrbStack checks cover real Git bypasses, controller loss, quarantine and one contained Hermes turn per platform. See the [Stage 5.1 results](research/stage-5.1-results.md) and [boundary design](stage-5-boundary.md). Safe contained Codex subscription routing, provider-idle proof and the Stage 5.2 production launch/submission/result recovery matrix remain pending.
 - **H initial reads:** project readiness, inbox, history and artifact/resource inspection are available through JSON CLI output. The TUI now displays consistent persisted overview/task/inbox/history snapshots with asynchronous refresh and bounded history/inbox views. Decision and dispatch controls remain pending.
 - **E–G, I–J:** no production dispatch/checkpoint/review/tool-server/delivery flow is enabled. Two contained Hermes qualification turns have run, one per platform; no publishing actions occurred.
+
+## Current checkpoint — 2026-09-26
+
+- **5.1 / D:** the offline qualification/admission/lifecycle contract is implemented and independently accepted. Safe contained Codex routing, provider-idle proof, shared cross-host capacity authority and the real launch matrix remain pending, so production dispatch stays disabled.
+- **5.2 / E:** repository enrollment, journaled fixture execution, exact results, ownership and recovery fencing are independently accepted offline through `d34f894`. Live qualified harness combinations remain pending.
+- **5.3 / F:** durable pause/continue/stop, verified checkpoints, scoped clear/restore, exact/fresh recovery and cumulative retry/budget controls are independently accepted offline through `a182152`. Live interrupted-session qualification remains pending.
+- **5.4 / G:** immutable quality scopes, contained fixture checks, fresh read-only review, bounded repair/assessment, manual/human evidence and atomic task/plan acceptance are independently accepted offline through `cba322b`. R2, R11, R10 and R1/R3/R4/R5/R6/R7/R8/R9 are closed. F1–F3 are remediated at `99cd6c0`: readiness is context/time bounded and fail-closed, signal exit evidence preserves the actual signal, and early cancellation is permanent coverage. Independent follow-up of that P3 commit is next. The Darwin fork-accounting observation remains separate and open.
+- **Validation:** Linux full/race/build/boundary/cross-build gates, the retained Stage 5.4 review probe, permanent `TestIndependent`/`TestSupervisor` suites twice ordinarily and twice under race, and retained `TestStage54` regressions pass for `99cd6c0`. Native macOS validation is a separate evidence item and is not claimed by this checkpoint.
+- **H–J:** existing read-only UI remains implemented; Stage 5.5 workflow/planning, Stage 5.6 delivery/finalization and Stage 5.7 end-to-end qualification have not started. No production activation, model/paid call, push or publication occurred in the Stage 5.4 P3 remediation.
+
+Next action: independently follow up `99cd6c0` for F1–F3 only, preserving every closed safeguard and leaving the Darwin observation and all live gates distinct. Do not begin Stage 5.5 on implementing-agent evidence alone.

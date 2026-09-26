@@ -166,7 +166,7 @@ The exact `git archive` for `cba322b` had SHA-256 `f2951b2628abb2a61752f16d7fc7a
 
 ## Deferred gates and limitations
 
-- Stage 5.4 remediation requires independent follow-up acceptance; this implementation report is not self-acceptance and does not close R2/R11 by assertion.
+- The R2/R11 remediation at `cba322b` is independently accepted offline. The later F1–F3 remediation at `99cd6c0` still requires independent follow-up; implementing-agent evidence does not self-accept it or reopen any closed R-finding.
 - Darwin 25 rejects kernel `NOTE_TRACK`. Vigil registers `NOTE_FORK` before approved code executes; an otherwise unaccounted fork makes the effect uncertain instead of passing. This is intentionally fail-closed and can reject a legitimate forking check until a qualified production containment boundary exists.
 - Production check/model/reviewer dispatch remains disabled. No real fresh model review was attempted.
 - Safe contained Codex subscription routing, effective Luna/low selection, provider-idle proof, shared Mac/WSL capacity authority and live recovery across advertised harness/platform combinations remain pending. No paid fallback or larger-model fallback is authorized.

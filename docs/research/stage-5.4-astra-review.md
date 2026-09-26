@@ -1,6 +1,6 @@
 # Stage 5.4 independent security/correctness review
 
-Latest verdict: [follow-up of 49b9fbb](#independent-follow-up-of-49b9fbb) closes R10, leaves R2 (P1) open, and adds R11 (P2). R1/R3/R4/R5/R6/R7/R8/R9 remain closed for the reported offline defects. Stage 5.4 is not accepted. Earlier sections are historical.
+Latest verdict: the [independent follow-up of `cba322b`](#independent-follow-up-of-cba322b) closes R2 and R11, preserves R10 and R1/R3/R4/R5/R6/R7/R8/R9 as closed, and accepts Stage 5.4 offline. Its P3 findings F1–F3 are remediated at `99cd6c0` with implementing-agent validation and await independent follow-up. The Darwin fork-accounting observation remains distinct and open, native macOS validation remains separate, and production dispatch remains disabled. Earlier sections are historical.
 
 Date: 2026-09-22. Reviewed `4b48737..405b8c9`; implementation head `03f65e8`.
 
