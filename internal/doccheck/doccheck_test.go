@@ -266,6 +266,23 @@ func TestDocsMigrationCountsMatch(t *testing.T) {
 
 var statusMarkerPattern = regexp.MustCompile(`(?m)^<!-- vigil-status: stage=[^;]+; stage_accepted=(?:true|false); implementation_commit=[0-9a-f]{7,40} -->$`)
 
+var requiredStatusDocuments = []string{
+	"AGENTS.md",
+	"README.md",
+	"docs/README.md",
+	"docs/next-steps.md",
+	"docs/pending-decisions.md",
+	"docs/requirements.md",
+	"docs/architecture.md",
+	"docs/technology.md",
+	"docs/mvp-acceptance.md",
+	"docs/harness-capabilities.md",
+	"docs/session-audit.md",
+	"docs/stage-5-plan.md",
+	"docs/stage-5-execution.md",
+	"docs/stage-5/README.md",
+}
+
 func canonicalStatusMarker(current status) string {
 	return "<!-- vigil-status: stage=" + current["stage"] +
 		"; stage_accepted=" + current["stage_accepted"] +
@@ -278,9 +295,30 @@ func validateCanonicalStatusMarker(content, want string) string {
 		return "found " + strconv.Itoa(len(markers)) + " canonical status markers, want exactly 1"
 	}
 	if markers[0] != want {
-		return "canonical status marker does not match docs/STATUS"
+		return "found " + strconv.Quote(markers[0]) + "; canonical status marker does not match docs/STATUS"
 	}
 	return ""
+}
+
+func validateStatusDocumentRegistry(raw string) []string {
+	seen := make(map[string]bool)
+	var failures []string
+	for _, relative := range strings.Split(raw, ",") {
+		relative = strings.TrimSpace(relative)
+		if relative == "" {
+			continue
+		}
+		if seen[relative] {
+			failures = append(failures, "duplicate status document "+strconv.Quote(relative))
+		}
+		seen[relative] = true
+	}
+	for _, required := range requiredStatusDocuments {
+		if !seen[required] {
+			failures = append(failures, "missing required live-status document "+strconv.Quote(required))
+		}
+	}
+	return failures
 }
 
 func TestCanonicalStatusMarkerValidation(t *testing.T) {
@@ -313,6 +351,35 @@ func TestCanonicalStatusMarkerValidation(t *testing.T) {
 			}
 		})
 	}
+	wrong := "<!-- vigil-status: stage=5.6; stage_accepted=true; implementation_commit=84c0275 -->\n"
+	if diagnostic := validateCanonicalStatusMarker(wrong, want); !strings.Contains(diagnostic, "stage=5.6") {
+		t.Fatalf("mismatch diagnostic omits found marker: %q", diagnostic)
+	}
+}
+
+func TestStatusDocumentRegistryValidation(t *testing.T) {
+	complete := strings.Join(requiredStatusDocuments, ",")
+	tests := []struct {
+		name  string
+		raw   string
+		valid bool
+	}{
+		{name: "complete required core", raw: complete, valid: true},
+		{name: "additional live document", raw: complete + ",docs/extra-live.md", valid: true},
+		{name: "missing required entry", raw: strings.Replace(complete, ",docs/technology.md", "", 1), valid: false},
+		{name: "duplicate entry", raw: complete + ",docs/technology.md", valid: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			failures := validateStatusDocumentRegistry(test.raw)
+			if test.valid && len(failures) != 0 {
+				t.Fatalf("valid registry rejected: %v", failures)
+			}
+			if !test.valid && len(failures) == 0 {
+				t.Fatal("invalid registry accepted")
+			}
+		})
+	}
 }
 
 // TestDocsStatusDocumentsAgree requires every document that carries live stage
@@ -321,6 +388,9 @@ func TestCanonicalStatusMarkerValidation(t *testing.T) {
 // prose still receives ordinary documentation review.
 func TestDocsStatusDocumentsAgree(t *testing.T) {
 	current := loadStatus(t)
+	for _, failure := range validateStatusDocumentRegistry(current["status_documents"]) {
+		t.Errorf("%s: %s", statusFile, failure)
+	}
 	commit := current["implementation_commit"]
 	if !commitExists(t, commit) {
 		t.Fatalf("%s: implementation_commit %q does not exist in this repository", statusFile, commit)

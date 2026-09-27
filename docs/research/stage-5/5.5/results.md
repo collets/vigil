@@ -575,6 +575,10 @@ Permanent table-driven coverage mutates the marker through the following matrix:
 | Wrong stage | reject |
 | Wrong acceptance flag | reject |
 | Wrong implementation commit | reject |
+| Complete required live-document registry | accept |
+| Additional registered live document | accept |
+| Required registry entry removed | reject |
+| Duplicate registry entry | reject |
 
 `env -u GOROOT GOENV=off GOPATH="$PWD/.cache/gopath"
 GOCACHE="$PWD/.cache/go-build" .tools/go/bin/go test ./internal/doccheck -run
@@ -582,6 +586,11 @@ TestCanonicalStatusMarkerValidation -count=1 -v`, `make docs-check`, `make check
 and `git diff --check` pass on the policy branch. An initial direct invocation
 without the repository-local `GOCACHE` failed during setup against the ambient
 read-only cache; it ran no test and was superseded by the pinned-cache command above.
+The focused command populates the worktree-local `.cache` and can leave hundreds of
+megabytes of read-only Go module files. Run it in an agent-owned disposable worktree;
+before removing that worktree, make only its `.cache` writable if necessary and then
+remove the identified worktree through Git. Never apply that cleanup to a user-owned
+or shared checkout.
 An unregistered document can still contain an inert stale HTML marker without being
 examined; this is an accepted list-boundary limitation, and agents are instructed not
 to place live markers in historical or unregistered records.
