@@ -2,7 +2,7 @@
 
 A local control panel for development agents running through existing harnesses, combining frontier and local models.
 
-Status: **pre-release.** The persisted core through Stage 5.4 is independently accepted offline. Stage 5.5 checkpoints A–D and independent-review remediation are implemented offline through `84c0275`, including stale-dispatch retirement, expiring recovery choices, persisted terminal decisions, bounded planning, shared MCP handlers and native Hermes one-tool isolation. Stage 5.5 remains unaccepted pending narrow independent follow-up. Automatic plan advancement remains disabled. Production check, model and reviewer dispatch remain deliberately disabled pending live qualification, and nothing in planning or acceptance can commit, push, publish or deliver.
+Status: **pre-release.** The persisted core through Stage 5.5 is independently accepted offline. Stage 5.5 checkpoints A–D and independent-review remediation are implemented through `84c0275`, including stale-dispatch retirement, expiring recovery choices, persisted terminal decisions, bounded planning, shared MCP handlers and native Hermes one-tool isolation; exact-commit Linux/WSL and native macOS gates pass. Automatic plan advancement remains disabled. Production check, model and reviewer dispatch remain deliberately disabled pending live qualification, and nothing in planning or acceptance can commit, push, publish or deliver.
 
 Targets: Linux and macOS, on amd64 and arm64. See [`docs/next-steps.md`](docs/next-steps.md) for current state and [`docs/README.md`](docs/README.md) for the document index.
 

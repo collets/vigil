@@ -11,6 +11,12 @@ descriptions below are retained as the dated decision record; statements that B
 or native Hermes/macOS qualification were incomplete describe the earlier
 `20ca4d0` review point and are superseded by the current plan/results documents.
 
+Acceptance update, 2026-09-27: independent narrow follow-up accepted remediation
+commit `84c0275` with non-blocking observations, and exact-commit native macOS
+validation passed. Stage 5.5 is independently accepted offline. The deliberately
+unapproved example proposal and every real-decision/production gate remain pending;
+the historical options below are not retroactive approvals.
+
 User response, 2026-09-26: select 1A, use local llama while it is the available
 safe planning route with a five-minute first-run cap, select 3A, select 4B, and
 select 5A. Online research and bounded Codex use within the existing ChatGPT

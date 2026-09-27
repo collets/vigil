@@ -57,7 +57,7 @@ should do*, not for what is implemented. Implementation status lives in
 | [`stage-5/5.2-repositories-and-execution.md`](stage-5/5.2-repositories-and-execution.md) | Stage 5.2 repositories, execution and supervision |
 | [`stage-5/5.3-recovery-and-controls.md`](stage-5/5.3-recovery-and-controls.md) | Stage 5.3 recovery, pause/stop and budgets |
 | [`stage-5/5.4-quality-and-acceptance.md`](stage-5/5.4-quality-and-acceptance.md) | Stage 5.4 checks, review, repair and acceptance |
-| [`stage-5/5.5-workflow-and-planning.md`](stage-5/5.5-workflow-and-planning.md) | Stage 5.5 workflow and planning (**implemented offline, partial and unaccepted**) |
+| [`stage-5/5.5-workflow-and-planning.md`](stage-5/5.5-workflow-and-planning.md) | Stage 5.5 workflow and planning (**independently accepted offline**) |
 | [`stage-5/5.6-delivery-and-finalization.md`](stage-5/5.6-delivery-and-finalization.md) | Stage 5.6 delivery and finalization (**not started**) |
 | [`stage-5/5.7-end-to-end-qualification.md`](stage-5/5.7-end-to-end-qualification.md) | Stage 5.7 end-to-end qualification (**not started**) |
 

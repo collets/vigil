@@ -6,7 +6,7 @@ The [expanded execution plan](stage-5-execution.md) now supplies commit-sized st
 
 For the remaining implementation after the foundation, use the [Stage 5.1–5.7 standalone plans](stage-5/README.md). Their index maps each assignment back to A–J and states dependencies and user decisions. This document remains the complete requirement coverage reference.
 
-Current status, updated 2026-09-27: slices 5.1–5.4 remain accepted offline and `99cd6c0` is the Stage 5.5 baseline without reopening closed safeguards. H and I plus independent-review remediation are implemented offline through `84c0275`: ranked scheduling with stale-selection retirement, expiring recovery, persisted PTY decisions, Markdown intake, bounded planning, typed handlers, shared MCP transport and native Hermes one-tool isolation. Exact-`bdd6e33` native macOS evidence predates remediation. Narrow independent follow-up remains pending; native Codex/production qualification and real decisions remain disabled production gates. Production dispatch remains disabled.
+Current status, updated 2026-09-27: slices 5.1–5.5 are independently accepted offline. H and I plus independent-review remediation are implemented through `84c0275`: ranked scheduling with stale-selection retirement, expiring recovery, persisted PTY decisions, Markdown intake, bounded planning, typed handlers, shared MCP transport and native Hermes one-tool isolation. Narrow follow-up and exact-`84c0275` native macOS gates pass. Native Codex/production qualification and real decisions remain disabled production gates. Production dispatch remains disabled.
 
 ## Increment order and executable acceptance
 

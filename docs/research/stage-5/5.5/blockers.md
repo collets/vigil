@@ -132,3 +132,12 @@ evidence that require the unavailable user. Fixture actors never resolve these i
   `192.168.0.108` returned `No route to host`; `Simones-MBP.home` did not
   resolve. No remote file, directory or process was created. The local bundle was
   removed after the attempt.
+- RESOLVED 2026-09-27 — after macOS local-network permission was granted to the
+  terminal host, a new complete-history bundle with SHA-256
+  `586f3fea52ab9e68041fb675656e4041dbff8b4588b8323efe5bb0ce1720c532`
+  was verified on both hosts and detached at exact commit
+  `84c0275fa5eab599b2fa66cebd12d89f617eb484` in an isolated Mac temporary
+  directory. macOS 26.6.2 build 25G83 arm64 with Go 1.27.1 passed `make check`,
+  `make check-race`, `make build`, `make docs-check`, `make build-boundary`,
+  `make cross-build` and `git diff --check`. The existing clean Mac checkout was
+  not modified. The inherited Darwin fork-accounting limitation remains separate.

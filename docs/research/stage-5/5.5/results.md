@@ -4,8 +4,8 @@ Status: implementation through checkpoint A commit `4dbb444`, initial B–D
 commit `20ca4d0`, bounded planning/control commit `192c6ba`, native-tool
 isolation fix `959eaaf` and revision-bound quality controls `669467e`; Stage 5.5
 interaction completion is `bdd6e33` and independent-review remediation is
-`84c0275`. Checkpoints A–D are implemented offline; Stage 5.5 is unaccepted
-pending narrow independent follow-up.
+`84c0275`. Checkpoints A–D are independently accepted offline after narrow
+follow-up and exact-commit native macOS validation.
 
 This record is append-only evidence for the four checkpoints in
 [the Stage 5.5 plan](../../../stage-5/5.5-workflow-and-planning.md). It distinguishes
@@ -510,11 +510,46 @@ could not be transferred because `192.168.0.108` returned `No route to host` and
 bundle was removed. Native macOS execution therefore has not been repeated for the
 remediation commit; the earlier exact-`bdd6e33` result remains historical evidence.
 
+## 2026-09-27 independent follow-up and native macOS closure
+
+An independent read-only narrow follow-up of `bdd6e33..84c0275` returned
+**ACCEPTED WITH NON-BLOCKING OBSERVATIONS** for 5.5-R1–5.5-R8. It independently
+reproduced the original stale-selection scenario and confirmed that the repaired
+path retires exactly the stale selection, preserves the one-context guard and
+reselects/prepares successfully. 5.5-R2 and 5.5-R3 are closed; 5.5-R4–5.5-R7
+have targeted regressions; 5.5-R8's display half is closed and its run-less-session
+half is accepted as an authority-neutral explicit-lifecycle boundary. Residual
+5.5-F1–5.5-F5 are accepted non-blocking P3 observations. Carry F2's exact
+baseline-attribution limitation forward if Stage 5.6 changes quality-scope display.
+
+After macOS local-network permission was granted to the terminal host, a verified
+complete-history bundle (SHA-256
+`586f3fea52ab9e68041fb675656e4041dbff8b4588b8323efe5bb0ce1720c532`)
+was transferred to `192.168.0.108`, verified again, cloned into an isolated
+temporary directory and detached at exact commit
+`84c0275fa5eab599b2fa66cebd12d89f617eb484`. On macOS 26.6.2 build 25G83,
+arm64, with Go 1.27.1, the following passed:
+
+```text
+make check           PASS
+make check-race      PASS (including internal/cli)
+make build           PASS
+make docs-check      PASS (8/8)
+make build-boundary  PASS
+make cross-build     PASS (linux/amd64, linux/arm64, darwin/amd64, darwin/arm64)
+git diff --check     PASS
+git status --porcelain  clean except ignored build outputs
+```
+
+The Mac's initially cold Go module cache downloaded the versions pinned by
+`go.mod` before `make check`; no credential, paid service, model/provider, Docker,
+hosting, production-dispatch or delivery action was used. The existing clean Mac
+checkout at `~/development/vigil` remained at `19ebc42` and was not modified.
+
 ## Limitations and blockers
 
 See the [blocker log](blockers.md). Stage 5.5 offline implementation and review
-remediation are complete at `84c0275` and remain unaccepted pending narrow
-independent follow-up. Production dispatch,
+remediation are independently accepted at `84c0275`. Production dispatch,
 production model/reviewer and native Codex qualification, real project decisions,
 the live crash matrix and the Darwin fork-accounting observation remain disabled
 future gates. Native Hermes one-tool integration and the Stage 5.5 macOS suite are

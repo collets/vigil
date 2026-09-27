@@ -36,7 +36,10 @@ explicit instruction.
   run destructive recovery outside agent-owned disposable fixtures.
 - **Historical migrations are immutable.** `internal/store/migrations/project-001..009`
   and their recorded digests must never change. Schema changes are forward-only.
-- **Do not push or publish** unless explicitly asked in this session.
+- **Do not push or publish** unless the user explicitly authorizes it. A standing
+  authorization may cover ordinary non-force pushes to the existing configured
+  origin; verify the remote and branch first. Never infer release, PR, merge,
+  force-push or other publication authority from a normal push authorization.
 - Use the pinned toolchain: `make` prefers `.tools/go/bin/go` (Go 1.27.1) and
   clears `GOROOT`. If you invoke `go` directly, use `env -u GOROOT .tools/go/bin/go`.
 
