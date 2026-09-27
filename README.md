@@ -19,7 +19,7 @@ authoritative-for index is [`docs/README.md`](docs/README.md).
 | [Agent instructions](AGENTS.md) | repository root | Project rules and the documentation obligations every change must satisfy |
 | [Core product facts](docs/core/requirements.md) | `docs/core/` | Requirements, architecture, core specification, technology, harness capabilities, checkpoints, milestone |
 | [Process and current state](docs/process/next-steps.md) | `docs/process/` | Development workflow, next steps, pending decisions, decision provenance |
-| [Stage 5 index](docs/plans/stage-5/README.md) | `docs/plans/` | Stage 5.1–5.7 ordering, completion gates and the CLI reference — read only the slice you are working on |
+| [Stage 5 index](docs/plans/stage-5/README.md) | `docs/plans/` | Stage 5.1–5.7 ordering, completion gates and the CLI reference — start from the slice you are working on |
 | [Research evidence](docs/research/README.md) | `docs/research/` | Dated observations and independent reviews |
 | [Superseded records](docs/history/README.md) | `docs/history/` | Rejected alternatives and completed-stage plans, kept for provenance only |
 

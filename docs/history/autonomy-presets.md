@@ -2,9 +2,9 @@
 
 <!-- vigil-tier: history -->
 
-> **Superseded record.** Kept for provenance only. See
-> [`README.md`](README.md) in this folder for what replaced it; do not
-> implement from or cite it as current behavior.
+> **Superseded record.** Kept for provenance. See
+> [`README.md`](README.md) in this folder for what replaced it, and prefer
+> the `core/` documents it points to for current behavior.
 
 Status: the two-axis approach is accepted as an initial direction, 2026-09-20. Manual configuration is sufficient; guided onboarding is deferred. Approval-first is the default; the default model policy and numerical limits remain open. Role mappings below are proposed preset definitions.
 

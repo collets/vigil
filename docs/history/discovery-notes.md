@@ -2,9 +2,9 @@
 
 <!-- vigil-tier: history -->
 
-> **Superseded record.** Kept for provenance only. See
-> [`README.md`](README.md) in this folder for what replaced it; do not
-> implement from or cite it as current behavior.
+> **Superseded record.** Kept for provenance. See
+> [`README.md`](README.md) in this folder for what replaced it, and prefer
+> the `core/` documents it points to for current behavior.
 
 Historical discussion, preserved on 2026-09-20. Earlier rounds include alternatives and questions superseded by later decisions. [Current requirements](../core/requirements.md) are authoritative.
 

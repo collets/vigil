@@ -22,7 +22,8 @@ Documents are grouped by **when you need them**, not by when they were written.
 The folder is the tier, every Markdown document carries a `<!-- vigil-tier: ... -->`
 marker agreeing with its folder, and `make docs-check` fails when a document is
 unclassified or disagrees with its folder. A marker quoted inside a code block is
-documentation *about* the convention and is not counted.
+documentation *about* the convention and is not counted. A tier is a reading
+path, not a boundary: reading across tiers is expected and useful.
 
 | Tier | Folder | Authority |
 | --- | --- | --- |
@@ -82,8 +83,9 @@ should do*, not for what is implemented. Implementation status lives in
 
 ## History: superseded, kept for provenance
 
-Read these only to recover a rejected alternative or the reasoning behind a
-decision. Never as current behavior.
+Read these when you want the reasoning behind a decision, or the alternative
+that was rejected. They are superseded, so treat them as provenance rather than
+as the authority for current behavior.
 
 | Document | Authoritative for |
 | --- | --- |

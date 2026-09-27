@@ -32,16 +32,22 @@ neither a tier directory nor the small set of documents allowed directly in
 `docs/`. A marker quoted inside a code block or inline code is documentation
 *about* the convention, not a declaration, and is ignored.
 
-| Tier | Folder | Read it |
+A tier is a reading path, not a fence: it says what a session needs and what it
+can usually skip, and reading outside your tier is always fine — often useful,
+when checking how a related or earlier piece of work was handled. The gate
+enforces that each document is *classified*, not that a session only reads its
+own tier.
+
+| Tier | Folder | Typically needed for |
 | --- | --- | --- |
-| Entry | `docs/START-HERE.md` | Always: reading order and task-to-document routing |
+| Entry | `docs/START-HERE.md` | Every session: reading order and task-to-document routing |
 | Index | `docs/README.md`; `docs/STATUS` (not Markdown, so exempt from the marker) | What each document is authoritative for; machine-readable state |
-| Core | `docs/core/` | Always: requirements, architecture, core specification, technology, harness capabilities, milestone, checkpoints, finalization |
-| Process | `docs/process/` | Always: development workflow, next steps, pending decisions, decision provenance |
-| Plan | `docs/plans/` | Only the slice you are working on; `docs/plans/stage-5/README.md` routes to it |
-| Evidence | `docs/research/` | Only to support a claim about what was observed, or satisfy a gate |
-| History | `docs/history/` | Only to recover why a decision was made, or a superseded alternative |
-| Record | `docs/spec/` | Draft schemas superseded by the installed migrations; never the live schema |
+| Core | `docs/core/` | Every session that changes code: requirements, architecture, core specification, technology, harness capabilities, milestone, checkpoints, finalization |
+| Process | `docs/process/` | Every session that changes something or resumes work: development workflow, next steps, pending decisions, decision provenance |
+| Plan | `docs/plans/` | The slice being worked on; `docs/plans/stage-5/README.md` routes to it, and the accepted slices answer "why is this safeguard here" |
+| Evidence | `docs/research/` | Supporting a claim about what was observed, or satisfying a gate |
+| History | `docs/history/` | The reasoning behind a decision, or a superseded alternative |
+| Record | `docs/spec/` | The draft schemas the installed migrations superseded; not the live schema |
 
 When you add a document, choose its tier first, then write the matching marker.
 A new tier directory needs an entry in `tierByDirectory`, and a new document

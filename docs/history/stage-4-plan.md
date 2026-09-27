@@ -2,9 +2,9 @@
 
 <!-- vigil-tier: history -->
 
-> **Superseded record.** Kept for provenance only. See
-> [`README.md`](README.md) in this folder for what replaced it; do not
-> implement from or cite it as current behavior.
+> **Superseded record.** Kept for provenance. See
+> [`README.md`](README.md) in this folder for what replaced it, and prefer
+> the `core/` documents it points to for current behavior.
 
 Prepared 2026-09-20 alongside Stage 3 before implementation; specification completed the same day. This stage produces implementable architecture/contracts and a sequenced Stage 5 backlog, **not** the scheduler/dashboard itself. Resolve routine design choices using R01–R71 and Stage 3 evidence; keep unsupported runtime promises gated.
 

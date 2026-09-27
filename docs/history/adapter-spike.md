@@ -2,9 +2,9 @@
 
 <!-- vigil-tier: history -->
 
-> **Superseded record.** Kept for provenance only. See
-> [`README.md`](README.md) in this folder for what replaced it; do not
-> implement from or cite it as current behavior.
+> **Superseded record.** Kept for provenance. See
+> [`README.md`](README.md) in this folder for what replaced it, and prefer
+> the `core/` documents it points to for current behavior.
 
 Prepared 2026-09-20. This is the implementation contract for the bounded Stage 2/3 spike, not a production readiness claim. Requirements R10, R15–16, R24–25, R42, R55–61, R63 and R69–71 remain in force. No scheduler, database schema or dashboard changes are included.
 

@@ -2,10 +2,11 @@
 
 <!-- vigil-tier: history -->
 
-These documents are kept for provenance, not for current behavior. They record
-alternatives that were explored, plans for stages that are complete, and
-mechanism questions that later documents resolved. **Do not implement from, or
-cite as current, anything in this folder.**
+These documents record alternatives that were explored, plans for stages that are
+complete, and mechanism questions that later documents resolved. They are worth
+reading whenever you want to know *why* a decision was made, or to recover an
+option that was rejected. They are not the authority for current behavior: for
+that, read the `core/` documents each one points to.
 
 | Document | Superseded by | Retained for |
 | --- | --- | --- |

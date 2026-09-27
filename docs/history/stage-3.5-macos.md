@@ -2,9 +2,9 @@
 
 <!-- vigil-tier: history -->
 
-> **Superseded record.** Kept for provenance only. See
-> [`README.md`](README.md) in this folder for what replaced it; do not
-> implement from or cite it as current behavior.
+> **Superseded record.** Kept for provenance. See
+> [`README.md`](README.md) in this folder for what replaced it, and prefer
+> the `core/` documents it points to for current behavior.
 
 Completed **after Stage 3 Linux work and Stage 4 specification**, on 2026-09-20, through user-authorized SSH access. See [results and qualification limits](../research/stage-3.5/results.md) and [sanitized evidence](../research/stage-3.5/results.json). The original plan below is retained; completion means bounded runtime investigation, not strict production containment qualification.
 

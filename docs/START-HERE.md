@@ -18,17 +18,23 @@ The folder a document lives in **is** its tier. Every Markdown document carries 
 `<!-- vigil-tier: ... -->` marker asserting the same thing, and `make docs-check`
 fails if the two disagree or a document has no tier at all.
 
-| Tier | Folder | Read it |
+A tier tells you what a session *needs* and what it can usually skip. It is a
+reading path, not a fence: reading outside your tier is always fine and often
+useful, especially when you are checking how a related or earlier piece of work
+was handled.
+
+| Tier | Folder | When you need it |
 | --- | --- | --- |
 | Core | [`core/`](core/) | **Always**, in any session that changes code, plans work or answers a question about the product. |
 | Process | [`process/`](process/) | **Always**, in any session that changes something or resumes work. Defines how work is done and what is currently pending. |
-| Plan | [`plans/`](plans/) | **Only for the task you are working on.** Stage 5.6 documentation is irrelevant while working on Stage 5.7, and irrelevant while fixing a CLI bug. |
-| Evidence | [`research/`](research/) | Only to support a claim about what was actually observed, or to satisfy a validation gate. Never as a substitute for a spec. |
-| History | [`history/`](history/) | Only to understand *why* something is the way it is, or to recover a superseded alternative. Never for current behavior. |
-| Record | [`spec/`](spec/) | Draft schemas superseded by the installed migrations. Never the live schema. |
+| Plan | [`plans/`](plans/) | **The task you are working on.** Other slices are usually unnecessary, but read the accepted ones when you want to know why a safeguard exists. |
+| Evidence | [`research/`](research/) | When you need to support a claim about what was observed, or satisfy a validation gate. Supporting context, not a substitute for a spec. |
+| History | [`history/`](history/) | When you want to know *why* something is the way it is, or to recover a superseded alternative. Superseded, so not a source for current behavior. |
+| Record | [`spec/`](spec/) | Draft schemas kept as a design record. The installed migrations, not these, are the live schema. |
 
-Nothing obliges you to read all of `docs/`. The largest documents are plans and
-evidence, and they are the ones you should be skipping.
+You are never expected to read all of `docs/`. The largest documents are plans
+and evidence, and a session whose task is bounded can skip them without losing
+anything it is accountable for.
 
 ## 1. Orientation (always, ~5 minutes)
 
@@ -66,15 +72,16 @@ the plans, and they are what most questions actually turn on.
 | [`process/session-audit.md`](process/session-audit.md) | Why a decision was made, what alternatives were rejected, and the provenance limits of the record. |
 | [`process/next-steps.md`](process/next-steps.md) | Current state, gates, resume plan, and the handoff for the next session. |
 
-## 4. Plans: read only the slice you are working on
+## 4. Plans: start from the slice you are working on
 
 Start at [`plans/stage-5/README.md`](plans/stage-5/README.md). It indexes
 Stage 5.1–5.7, their order, their dependencies, their user gates and their
-completion criteria.
+completion criteria. The table below routes by task; it is the shortest useful
+path, not a limit on what you may read.
 
-| Your task | Read |
+| Your task | Start with |
 | --- | --- |
-| Any Stage 5 work | [`plans/stage-5/README.md`](plans/stage-5/README.md) first, then only the slice you are changing |
+| Any Stage 5 work | [`plans/stage-5/README.md`](plans/stage-5/README.md), then the slice you are changing |
 | Stage 5.6 delivery and finalization (**not started**) | [`5.6-delivery-and-finalization.md`](plans/stage-5/5.6-delivery-and-finalization.md) |
 | Stage 5.7 end-to-end qualification (**not started**) | [`5.7-end-to-end-qualification.md`](plans/stage-5/5.7-end-to-end-qualification.md) |
 | Understanding why a Stage 5.1–5.5 safeguard exists | The accepted slice documents in [`plans/stage-5/`](plans/stage-5/), and the review record in [`research/stage-5/`](research/stage-5/) |

@@ -2,9 +2,9 @@
 
 <!-- vigil-tier: history -->
 
-> **Superseded record.** Kept for provenance only. See
-> [`README.md`](README.md) in this folder for what replaced it; do not
-> implement from or cite it as current behavior.
+> **Superseded record.** Kept for provenance. See
+> [`README.md`](README.md) in this folder for what replaced it, and prefer
+> the `core/` documents it points to for current behavior.
 
 Prepared 2026-09-20 before implementation; Linux investigation completed the same day. Builds on [Stage 2](../research/stage-2/results.md). Delivered native adapter improvements, reproducible bounded experiments, and an [evidence-based report](../research/stage-3/results.md). No scheduler, production delivery, or global harness reconfiguration. Unsupported enforcement/recovery guarantees remain explicit qualification gates; completion does not mean those guarantees passed.
 

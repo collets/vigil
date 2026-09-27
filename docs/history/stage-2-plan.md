@@ -2,9 +2,9 @@
 
 <!-- vigil-tier: history -->
 
-> **Superseded record.** Kept for provenance only. See
-> [`README.md`](README.md) in this folder for what replaced it; do not
-> implement from or cite it as current behavior.
+> **Superseded record.** Kept for provenance. See
+> [`README.md`](README.md) in this folder for what replaced it, and prefer
+> the `core/` documents it points to for current behavior.
 
 Completed 2026-09-20. Implements the [Stage 1 contract](adapter-spike.md) through one bounded fixture turn per harness. No scheduler, dashboard integration, application database, automatic repair, publishing, resume or steering implementation. Those remain later stages. Existing requirements and Stage 1 limits apply. See [validation results](../research/stage-2/results.md).
 
