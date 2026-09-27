@@ -19,15 +19,21 @@ explicit instruction.
 
 ## Non-negotiable project rules
 
-- **No paid or model calls, no Docker, no hosting, no network egress** unless the
-  user authorizes it in this session. Normal Git fetches and workflow-compliant
-  branch pushes to the verified configured origin are the sole standing network
-  exception. The default test suite must stay runnable offline with no credentials.
+- **Avoid unplanned charges; do not ban useful local tools.** Standing-authorized
+  development use includes the local llama route, verified included Codex/ChatGPT
+  subscription usage, OpenCode while its selected route is free/included, read-only
+  technical research, declared dependency downloads, workflow-compliant Git
+  synchronization and contained local Docker/OrbStack. Follow the cost, credential,
+  egress and container boundaries in
+  [`docs/development-workflow.md`](docs/development-workflow.md). Never use a metered
+  API or paid fallback, purchase credits, change a subscription, provision hosting
+  or create a chargeable cloud resource without a new explicit user authorization.
+  The default test suite must remain offline, credential-free and Docker-free.
 - The existing local llama route takes `OPENAI_API_KEY` from the inherited
   environment and requires `OPENAI_BASE_URL` to name the prepared loopback
   endpoint. Check presence and route identity only: never print, copy, persist or
-  document the key value, and never turn its presence into permission for a paid
-  API fallback. User authorization for a live turn is still required.
+  document the key value. Environment credential presence never authorizes a
+  metered endpoint or fallback.
 - **Never enable production dispatch.** `qualified_runtime` check dispatch and
   production model/reviewer drivers must fail closed.
 - **Acceptance creates no delivery authority.** Nothing in the quality or
@@ -44,6 +50,11 @@ explicit instruction.
   worktrees for parallel agents, and push `main` only after exact-candidate validation
   and independent acceptance. Never force-push. Git synchronization never implies
   release, request, merge or Vigil delivery authority.
+- **The user may explicitly authorize an exception** to a repository policy for a
+  concrete operation. The authorization must clearly identify the conflicting
+  operation and its target/scope; vague encouragement is not an override. Record
+  the exception and rationale, do not broaden it, and continue to obey platform and
+  system safety constraints.
 - Use the pinned toolchain: `make` prefers `.tools/go/bin/go` (Go 1.27.1) and
   clears `GOROOT`. If you invoke `go` directly, use `env -u GOROOT .tools/go/bin/go`.
 

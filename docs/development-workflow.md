@@ -14,15 +14,56 @@ the product's separate authority model.
    pushed to that branch before acceptance.
 3. A reviewer accepts an exact commit or explicit commit range, not a branch name.
    Any material change after review invalidates that acceptance.
-4. Every push is a normal non-force push. Force-pushing, deleting remote branches,
-   rewriting shared history, publishing releases, opening/merging requests and
-   changing repository settings require separate explicit user authority.
+4. Every push is a normal non-force push. Force-pushing, rewriting shared history,
+   publishing releases, opening/merging requests and changing repository settings
+   require separate explicit user authority. A fully integrated task branch may be
+   deleted only under the verified cleanup rule below.
 5. A Git push is repository synchronization, not Vigil product delivery authority.
    It cannot approve a plan/task, grant spending, enable production dispatch or
    authorize publication through Vigil.
 6. Preserve user work. Never use reset, destructive checkout, clean, stash deletion
    or worktree removal against a checkout or worktree that the agent did not create
    and positively identify.
+
+## Cost-controlled tools and network access
+
+The objective is to prevent surprise charges and unsafe external effects, not to
+block ordinary development. The following are standing-authorized when relevant to
+the assigned task:
+
+- the prepared loopback llama service;
+- Codex through the verified ChatGPT subscription while usage is included and no
+  extra-credit charge or automatic paid fallback is enabled;
+- OpenCode while the selected provider/model is visibly free or included;
+- read-only web searches and retrieval of technical documentation;
+- downloads declared by the repository's dependency manifests and lock files from
+  their normal registries;
+- normal fetch/push operations allowed by this workflow against the verified Git
+  origin; and
+- local Docker or OrbStack for development, tests and disposable fixtures.
+
+If a model/provider route is ambiguous, metered, or changes from the verified
+free/included route, stop before the call. Never infer spending authority from an
+API key, environment variable, installed client or prior login. Without a new
+explicit user authorization, do not use paid APIs or paid fallback, buy credits,
+change subscriptions, provision hosted services, deploy workloads, create billable
+cloud resources or accept a trial that can become chargeable.
+
+Credentials may be used only by their intended client and endpoint. Never print,
+copy, persist, document or send credential values elsewhere. Read-only internet
+research does not authorize uploading repository content, prompts containing private
+source, telemetry dumps or user data to arbitrary services. Mutating third-party
+actions—issues, comments, messages, releases, package publication and service
+configuration—remain separately authorized except for the Git branch operations
+explicitly allowed here.
+
+Docker use must remain local and scoped. Prefer pinned images and loopback-bound
+ports. Do not use privileged containers, host networking, the Docker socket, broad
+home/root mounts or public port exposure unless the user explicitly approves that
+exact need. Name or label agent-created containers, networks and volumes; inspect
+targets before cleanup and never remove resources the agent does not own. Docker may
+support optional validation, but the default test suite must continue to pass without
+Docker, network access, models or credentials.
 
 ## Branches and checkpoint pushes
 
@@ -133,6 +174,22 @@ Only the creating agent or the designated integrator removes a worktree, and onl
 after its commits are pushed or otherwise durably retained. Never prune or delete an
 unknown worktree to resolve a collision.
 
+### Integrated branch cleanup
+
+After the accepted candidate is pushed to `main`, the integrator may remove its
+agent-owned worktree and delete the corresponding local and remote task/integration
+branches without another approval only when all of these checks pass:
+
+- `origin/main` has been refreshed and the exact branch tip is an ancestor of it;
+- the branch has no unique commit, open finding, active worktree or unresolved handoff;
+- review/evidence records retain the accepted commit or range; and
+- the branch is not protected, user-owned, shared by another task or otherwise
+  marked for retention.
+
+Use an ordinary branch deletion, never a force push or history rewrite. If ancestry
+or ownership is unclear, retain the branch and ask. Removing a branch ref must not
+make its accepted commits unreachable from `origin/main`.
+
 ## Integration to `main`
 
 The unit approved for `main` is the exact integration candidate:
@@ -168,3 +225,12 @@ reviewed integration path, require the Linux/documentation checks, dismiss appro
 when material commits are added and restrict direct main updates to the integrator.
 Changing those settings is an external administrative action and requires explicit
 user authorization.
+
+## Explicit user exceptions
+
+The user may override a rule in this document for a specific operation. A valid
+override must clearly identify the operation that conflicts with policy and its
+target/scope; a general request to continue, be autonomous or finish quickly is not
+enough. Confirm the narrow interpretation in the work record, preserve unaffected
+rules and do not treat a one-time exception as a permanent policy amendment. Higher-
+priority platform and system safety constraints still apply.
