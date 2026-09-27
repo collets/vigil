@@ -53,6 +53,7 @@ type ProposalRevision struct {
 	Digest                string   `json:"digest"`
 	Plan                  Plan     `json:"plan"`
 	Rationale             string   `json:"rationale"`
+	Actor                 string   `json:"actor"`
 }
 
 func (e *Engine) ImportMarkdown(ctx context.Context, commandID string, expectedRevision int, specID, path string) (SpecificationRevision, error) {
@@ -245,8 +246,8 @@ func (e *Engine) createProposal(ctx context.Context, commandID string, expectedR
 		}
 		affected, _ := json.Marshal(request.AffectedTasks)
 		requestID := store.ID()
-		out = ProposalRevision{ID: request.ID, Revision: pr, SpecificationID: request.SpecificationID, SpecificationRevision: request.SpecificationRevision, ProfileID: request.ProfileID, ProfileRevision: request.ProfileRevision, Operation: request.Operation, AffectedTasks: request.AffectedTasks, State: "proposed", Digest: store.Digest(definition), Plan: request.Plan, Rationale: request.Rationale}
-		approvalContext, _ := json.Marshal(map[string]any{"proposal_id": request.ID, "proposal_revision": pr, "specification_id": request.SpecificationID, "specification_revision": request.SpecificationRevision, "definition_digest": out.Digest, "operation": request.Operation, "affected_tasks": request.AffectedTasks, "requires_human_application": true})
+		out = ProposalRevision{ID: request.ID, Revision: pr, SpecificationID: request.SpecificationID, SpecificationRevision: request.SpecificationRevision, ProfileID: request.ProfileID, ProfileRevision: request.ProfileRevision, Operation: request.Operation, AffectedTasks: request.AffectedTasks, State: "proposed", Digest: store.Digest(definition), Plan: request.Plan, Rationale: request.Rationale, Actor: actor}
+		approvalContext, _ := json.Marshal(map[string]any{"proposal_id": request.ID, "proposal_revision": pr, "specification_id": request.SpecificationID, "specification_revision": request.SpecificationRevision, "definition_digest": out.Digest, "operation": request.Operation, "affected_tasks": request.AffectedTasks, "proposal_actor": actor, "requires_human_application": true})
 		if _, err := tx.ExecContext(ctx, `INSERT INTO requests(id,kind,state,context_json,blocking,created_at) VALUES(?,'approval','pending',?,1,?)`, requestID, string(approvalContext), store.Now()); err != nil {
 			return nil, err
 		}
@@ -261,6 +262,9 @@ func (e *Engine) createProposal(ctx context.Context, commandID string, expectedR
 				}
 			}
 		}
+		if _, err := tx.ExecContext(ctx, "UPDATE project SET revision=revision+1 WHERE id=?", e.ProjectID); err != nil {
+			return nil, err
+		}
 		return out, nil
 	})
 	if err != nil {
@@ -273,7 +277,7 @@ func (e *Engine) createProposal(ctx context.Context, commandID string, expectedR
 func (e *Engine) Proposal(ctx context.Context, id string, revision int) (ProposalRevision, error) {
 	var out ProposalRevision
 	var definition, affected string
-	if err := e.DB.SQL.QueryRowContext(ctx, `SELECT id,revision,specification_id,specification_revision,profile_id,profile_revision,operation,affected_tasks_json,state,definition_digest,definition_json,rationale FROM planning_proposals WHERE id=? AND revision=?`, id, revision).Scan(&out.ID, &out.Revision, &out.SpecificationID, &out.SpecificationRevision, &out.ProfileID, &out.ProfileRevision, &out.Operation, &affected, &out.State, &out.Digest, &definition, &out.Rationale); err != nil {
+	if err := e.DB.SQL.QueryRowContext(ctx, `SELECT id,revision,specification_id,specification_revision,profile_id,profile_revision,operation,affected_tasks_json,state,definition_digest,definition_json,rationale,actor FROM planning_proposals WHERE id=? AND revision=?`, id, revision).Scan(&out.ID, &out.Revision, &out.SpecificationID, &out.SpecificationRevision, &out.ProfileID, &out.ProfileRevision, &out.Operation, &affected, &out.State, &out.Digest, &definition, &out.Rationale, &out.Actor); err != nil {
 		return out, err
 	}
 	if err := json.Unmarshal([]byte(affected), &out.AffectedTasks); err != nil {
@@ -301,6 +305,13 @@ func (e *Engine) applyPlanningProposal(ctx context.Context, tx *store.Tx, cmd En
 	}
 	if state != "proposed" {
 		return nil, errors.New("proposal is no longer pending")
+	}
+	var pendingInputs int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM requests WHERE kind='input' AND state='pending' AND json_extract(context_json,'$.proposal_id')=? AND json_extract(context_json,'$.proposal_revision')=?`, p.ProposalID, p.ProposalRevision).Scan(&pendingInputs); err != nil {
+		return nil, err
+	}
+	if pendingInputs != 0 {
+		return nil, errors.New("proposal has unresolved clarification requests")
 	}
 	var plan Plan
 	if err := json.Unmarshal([]byte(definition), &plan); err != nil {

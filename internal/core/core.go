@@ -270,6 +270,8 @@ func (e *Engine) Apply(ctx context.Context, actor Authority, cmd Envelope) (json
 			result, err = e.applyPlanningProposal(ctx, tx, cmd)
 		case "planning.proposal.decide":
 			result, err = e.decidePlanningProposal(ctx, tx, cmd)
+		case "input.resolve":
+			result, err = e.resolveInput(ctx, tx, cmd)
 		case "operation.request", "permission.grant", "permission.revoke", "operation.start":
 			result, err = e.permission(ctx, tx, actor, cmd, epoch)
 		default:
@@ -587,7 +589,13 @@ func (e *Engine) Readiness(ctx context.Context) (Readiness, error) {
 	defer tx.Rollback()
 	return e.readiness(ctx, tx)
 }
-func (e *Engine) readiness(ctx context.Context, tx *sql.Tx) (Readiness, error) {
+
+type readinessReader interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func (e *Engine) readiness(ctx context.Context, tx readinessReader) (Readiness, error) {
 	r := Readiness{DefinitionIssues: []string{}, RuntimeIssues: []string{"exact trusted execution qualification is required at effect start", "no selected live combination has the complete production launch/recovery evidence set"}, Tasks: []TaskReadiness{}}
 	err := tx.QueryRowContext(ctx, "SELECT id,root,revision,state FROM project").Scan(&r.Project.ID, &r.Project.Root, &r.Project.Revision, &r.Project.State)
 	if err != nil {

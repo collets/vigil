@@ -429,6 +429,82 @@ publishing call was made. Cross-build is compile coverage only; the exact-commit
 native macOS runtime result is recorded above and does not close the inherited
 Darwin fork-accounting observation.
 
+## 2026-09-27 independent acceptance review
+
+Independent read-only review of `4dbb444..bdd6e33` at documentation commit
+`427c6d7` returned **NOT ACCEPTED**. The reviewer ran the Linux full, race,
+application, documentation, boundary and cross-build gates plus focused
+core/coordinator/supervisor/CLI/TUI/tool suites. It did not rerun the submitted
+native macOS, Hermes or model evidence.
+
+- **5.5-R1 (P1, blocking):** a selected `workflow_dispatches` row is revision-
+  bound but never retired. Any ordinary project-revision change before preparation
+  makes it unusable while the partial unique index prevents reselection, permanently
+  wedging scheduling until direct database intervention.
+- **5.5-R2 (P2):** application-created recovery requests omit the standard human-
+  request deadline, so the implemented expiry check and rendering are inert.
+- **5.5-R3 (P2):** only native clarification traverses the real Cobra/PTTY and
+  persisted-command path; proposal, recovery and quality PTY evidence stops at a
+  mock mutator.
+- **5.5-R4–5.5-R8 (P3):** task detail uses a project-wide baseline count; non-
+  native input requests and secondary manual criteria lack actions; CLI is absent
+  from `make check-race`; readiness eligibility is observed outside the selection
+  transaction and proposal creation does not bump project revision; proposal actor
+  is persisted but not surfaced, while run-less tool sessions rely on explicit
+  retirement.
+
+Disposable reviewer probes reproduced 5.5-R1 both after specification import and
+after pause/continue. Checkpoints A and B are partial; C and D passed offline
+review. Production dispatch remained disabled and no delivery authority was
+introduced. Remediation and narrow independent follow-up are required before any
+acceptance status flip.
+
+## 2026-09-27 remediation of 5.5-R1–5.5-R8
+
+The remediation working tree closes the blocking and checkpoint-B findings and
+addresses every concrete P3 implementation gap except the accepted observation
+that run-less planning/supervisor/finalization tool sessions rely on explicit
+retirement rather than an automatic persisted run-generation fence:
+
+- stale `selected` dispatches are retired, with a durable event, inside the same
+  `Advance` transaction before reselection. Readiness and profile/policy eligibility
+  are now read inside that transaction. Permanent tests cover pause/continue,
+  retirement, reselection and successful `Prepare`;
+- application-created recovery requests receive the standard 30-minute deadline,
+  and the exhaustion path proves expiry rejection through `ChooseRecovery`;
+- real Cobra/PTTY tests persist and verify proposal rejection, remain-blocked
+  recovery and human quality acceptance in addition to native clarification;
+- baseline health is scoped through the task's quality scope; non-native input has
+  an exact revision-bound answer/dismiss command, answered proposal questions force
+  a replacement immutable proposal, and the TUI can select every manual criterion;
+- `make check-race` includes `internal/cli`; proposal creation bumps project
+  revision; and proposal actor is visible in the typed read and Inbox.
+
+The required read-only adversarial remediation review reported no actionable
+P0/P1/P2 findings or meaningful P3 regressions. It verified transaction placement,
+selection-state limits, deadline authority, input/native separation, proposal
+retirement, task-scoped display and the persisted Cobra/PTTY assertions. This is
+implementing-agent review evidence, not independent Stage acceptance.
+
+Focused tests and the full Linux/WSL2 x86_64 gate matrix passed:
+
+```text
+go test ./internal/core ./internal/supervisor ./internal/cli ./internal/tui ./internal/tools ./internal/mcp -count=1  PASS
+go test ./internal/cli -run 'TestDashboard.*Persisted|TestDashboardSynthetic' -count=1 -v                        PASS
+go test ./internal/supervisor -run 'TestRetryKindsAndBudgetExhaustionRemainDistinct/exhaustion_persists_without_progress' -count=1 -v  PASS
+make check                                                                                                       PASS
+make check-race (including internal/cli)                                                                         PASS
+make build                                                                                                       PASS
+make docs-check                                                                                                  PASS
+make build-boundary                                                                                              PASS
+make cross-build                                                                                                 PASS
+git diff --check                                                                                                 PASS
+```
+
+No model/provider, credential, paid, Docker, hosting, publishing or Cardtracker
+operation occurred. Native macOS execution has not yet been repeated for the
+remediation commit; the earlier exact-`bdd6e33` result remains historical evidence.
+
 ## Limitations and blockers
 
 See the [blocker log](blockers.md). Stage 5.5 offline implementation is complete at

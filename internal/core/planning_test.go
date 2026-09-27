@@ -49,6 +49,7 @@ func TestMarkdownProposalApprovalCycleIsRevisionedAndFailClosed(t *testing.T) {
 	if err != nil || proposal.State != "proposed" || proposal.Plan.Approved {
 		t.Fatal(proposal, err)
 	}
+	revision++
 	var plans int
 	e.DB.SQL.QueryRow("SELECT count(*) FROM plans WHERE id='planned'").Scan(&plans)
 	if plans != 0 {
@@ -165,10 +166,33 @@ func TestMalformedOversizedAndClarifyingProposalsAreAtomic(t *testing.T) {
 	if _, err := e.CreateFixtureProposal(ctx, "clarify-create", revision, clarify); err != nil {
 		t.Fatal(err)
 	}
+	revision++
 	var requests int
 	e.DB.SQL.QueryRow("SELECT count(*) FROM requests WHERE kind='input' AND state='pending'").Scan(&requests)
 	if requests != 1 {
 		t.Fatal("missing clarification inbox record", requests)
+	}
+	applyPayload, _ := json.Marshal(map[string]any{"proposal_id": clarify.ID, "proposal_revision": 1, "authorize_criteria_changes": false})
+	if _, err := e.Apply(ctx, Human, Envelope{CommandID: "clarify-apply-before-answer", ExpectedRevision: revision, Kind: "planning.proposal.apply", Payload: applyPayload}); err == nil {
+		t.Fatal("proposal with unresolved clarification applied")
+	}
+	var requestID string
+	if err := e.DB.SQL.QueryRow(`SELECT id FROM requests WHERE kind='input' AND state='pending'`).Scan(&requestID); err != nil {
+		t.Fatal(err)
+	}
+	answerPayload, _ := json.Marshal(map[string]any{"request_id": requestID, "decision": "answer", "answer": "Use the deterministic fixture behavior."})
+	if _, err := e.Apply(ctx, Human, Envelope{CommandID: "clarify-answer", ExpectedRevision: revision, Kind: "input.resolve", Payload: answerPayload}); err != nil {
+		t.Fatal(err)
+	}
+	var requestState, proposalState string
+	if err := e.DB.SQL.QueryRow("SELECT state FROM requests WHERE id=?", requestID).Scan(&requestState); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.DB.SQL.QueryRow("SELECT state FROM planning_proposals WHERE id=? AND revision=1", clarify.ID).Scan(&proposalState); err != nil {
+		t.Fatal(err)
+	}
+	if requestState != "resolved" || proposalState != "stale" {
+		t.Fatal("clarification answer did not require a replacement proposal", requestState, proposalState)
 	}
 }
 
@@ -195,6 +219,7 @@ func TestProposalHumanApproveRejectAndRevisionRequestRemainDistinct(t *testing.T
 	if _, err := e.CreateFixtureProposal(ctx, "create-rejected", revision, rejected); err != nil {
 		t.Fatal(err)
 	}
+	revision++
 	rejectPayload, _ := json.Marshal(map[string]any{"proposal_id": rejected.ID, "proposal_revision": 1, "action": "reject", "rationale": "fixture rejection exercises the explicit negative path"})
 	if _, err := e.Apply(ctx, Human, Envelope{CommandID: "reject-exact-proposal", ExpectedRevision: revision, Kind: "planning.proposal.decide", Payload: rejectPayload}); err != nil {
 		t.Fatal(err)
@@ -209,6 +234,7 @@ func TestProposalHumanApproveRejectAndRevisionRequestRemainDistinct(t *testing.T
 	if _, err := e.CreateFixtureProposal(ctx, "create-revision-one", revision, revised); err != nil {
 		t.Fatal(err)
 	}
+	revision++
 	revisionPayload, _ := json.Marshal(map[string]any{"proposal_id": revised.ID, "proposal_revision": 1, "action": "request_revision", "rationale": "fixture requests a corrected immutable revision"})
 	if _, err := e.Apply(ctx, Human, Envelope{CommandID: "request-exact-revision", ExpectedRevision: revision, Kind: "planning.proposal.decide", Payload: revisionPayload}); err != nil {
 		t.Fatal(err)
@@ -221,6 +247,7 @@ func TestProposalHumanApproveRejectAndRevisionRequestRemainDistinct(t *testing.T
 	if proposal, err := e.CreateFixtureProposal(ctx, "create-revision-two", revision, revised); err != nil || proposal.Revision != 2 || proposal.State != "proposed" {
 		t.Fatal("replacement immutable revision was not created", proposal, err)
 	}
+	revision++
 	applyPayload, _ := json.Marshal(map[string]any{"proposal_id": revised.ID, "proposal_revision": 2, "authorize_criteria_changes": false})
 	if _, err := e.Apply(ctx, Human, Envelope{CommandID: "approve-revision-two", ExpectedRevision: revision, Kind: "planning.proposal.apply", Payload: applyPayload}); err != nil {
 		t.Fatal(err)

@@ -126,16 +126,6 @@ func (e *Engine) Advance(ctx context.Context, commandID string, expectedRevision
 	if e == nil || e.DB == nil || !store.SafeID(commandID) || expectedRevision < 1 {
 		return result, errors.New("valid command and expected revision required")
 	}
-	readiness, err := e.Readiness(ctx)
-	if err != nil {
-		return result, err
-	}
-	eligible := map[string]bool{}
-	issues := map[string][]string{}
-	for _, task := range readiness.Tasks {
-		eligible[task.ID] = len(task.Issues) == 0
-		issues[task.ID] = append([]string(nil), task.Issues...)
-	}
 	args, _ := json.Marshal(map[string]any{"project_id": e.ProjectID, "expected_revision": expectedRevision})
 	command := store.Command{ID: commandID, Actor: string(Human), Kind: "workflow.advance", Args: args}
 	if receipt, found, err := e.DB.Receipt(ctx, command); err != nil || found {
@@ -157,6 +147,19 @@ func (e *Engine) Advance(ctx context.Context, commandID string, expectedRevision
 		if projectState != "ready" {
 			return nil, errors.New("project must be explicitly continued before scheduling")
 		}
+		readiness, err := e.readiness(ctx, tx)
+		if err != nil {
+			return nil, err
+		}
+		if readiness.Project.Revision != revision {
+			return nil, errors.New("project readiness revision changed during scheduling")
+		}
+		eligible := map[string]bool{}
+		issues := map[string][]string{}
+		for _, task := range readiness.Tasks {
+			eligible[task.ID] = len(task.Issues) == 0
+			issues[task.ID] = append([]string(nil), task.Issues...)
+		}
 		var automatic int
 		if err := tx.QueryRowContext(ctx, "SELECT automatic_plan_advance FROM workflow_controls WHERE singleton=1").Scan(&automatic); err != nil {
 			return nil, err
@@ -165,7 +168,7 @@ func (e *Engine) Advance(ctx context.Context, commandID string, expectedRevision
 			return nil, errors.New("automatic plan advancement is unsupported")
 		}
 		var planID, state string
-		err := tx.QueryRowContext(ctx, `SELECT id,state FROM plans WHERE state IN('active','blocked') ORDER BY queue_rank,id LIMIT 1`).Scan(&planID, &state)
+		err = tx.QueryRowContext(ctx, `SELECT id,state FROM plans WHERE state IN('active','blocked') ORDER BY queue_rank,id LIMIT 1`).Scan(&planID, &state)
 		if errors.Is(err, sql.ErrNoRows) {
 			err = tx.QueryRowContext(ctx, `SELECT id,state FROM plans WHERE state='queued' ORDER BY queue_rank,id LIMIT 1`).Scan(&planID, &state)
 			if errors.Is(err, sql.ErrNoRows) {
@@ -187,6 +190,24 @@ func (e *Engine) Advance(ctx context.Context, commandID string, expectedRevision
 		}
 		if unsafe != 0 {
 			return DispatchDecision{PlanID: planID, State: "waiting", Blockers: []string{"an execution context is already active"}, Revision: revision}, nil
+		}
+		var staleDispatchID, stalePlanID, staleTaskID string
+		var staleRevision int
+		err = tx.QueryRowContext(ctx, `SELECT id,plan_id,task_id,project_revision FROM workflow_dispatches WHERE state='selected' AND project_revision!=?`, revision).Scan(&staleDispatchID, &stalePlanID, &staleTaskID, &staleRevision)
+		if err == nil {
+			updated, updateErr := tx.ExecContext(ctx, `UPDATE workflow_dispatches SET state='retired' WHERE id=? AND state='selected' AND project_revision=?`, staleDispatchID, staleRevision)
+			if updateErr != nil {
+				return nil, updateErr
+			}
+			if count, countErr := updated.RowsAffected(); countErr != nil || count != 1 {
+				return nil, errors.New("stale selected dispatch changed while retiring")
+			}
+			payload, _ := json.Marshal(map[string]any{"dispatch_id": staleDispatchID, "plan_id": stalePlanID, "task_id": staleTaskID, "selected_project_revision": staleRevision, "current_project_revision": revision, "reason": "project_revision_changed"})
+			if _, eventErr := tx.ExecContext(ctx, "INSERT INTO events(schema_version,command_id,kind,occurred_at,payload_json) VALUES(1,?,'dispatch_retired',?,?)", commandID, store.Now(), string(payload)); eventErr != nil {
+				return nil, eventErr
+			}
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return nil, err
 		}
 		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM workflow_dispatches WHERE state='selected'`).Scan(&unsafe); err != nil {
 			return nil, err

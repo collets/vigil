@@ -116,6 +116,18 @@ func setupDashboardInteractionFixture(t *testing.T) (string, string, supervisor.
 	if _, err := engine.Advance(ctx, "advance-plan", revision); err != nil {
 		t.Fatal(err)
 	}
+	paused, err := engine.Pause(ctx, "pause-after-selection", revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	continued, err := engine.Continue(ctx, "continue-after-selection", paused.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision = continued.Revision
+	if decision, err := engine.Advance(ctx, "advance-after-selection-revision-change", revision); err != nil || decision.TaskID != "task" {
+		t.Fatal("stale dispatch was not retired and reselected", decision, err)
+	}
 	prepared, err := supervisor.Prepare(ctx, engine, supervisor.PrepareRequest{CommandID: "prepare-run", ExpectedProjectRevision: revision, TaskID: "task", RuntimeKind: "synthetic", WallLimitMS: 60000})
 	if err != nil {
 		t.Fatal(err)
@@ -127,6 +139,42 @@ func setupDashboardInteractionFixture(t *testing.T) (string, string, supervisor.
 	engine.DB.Close()
 	manager.Close()
 	return stateDir, project.ID, prepared, sessionID
+}
+
+func runDashboardPTY(t *testing.T, stateDir, projectID string, extraArgs []string, keys string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	master, slave := cliPTY(t)
+	defer master.Close()
+	defer slave.Close()
+	go io.Copy(io.Discard, master)
+	command := NewCommand()
+	command.SetIn(slave)
+	command.SetOut(slave)
+	command.SetErr(slave)
+	args := []string{"--state-dir", stateDir, "dashboard", projectID}
+	command.SetArgs(append(args, extraArgs...))
+	done := make(chan error, 1)
+	go func() { done <- command.ExecuteContext(ctx) }()
+	time.Sleep(120 * time.Millisecond)
+	for _, key := range []byte(keys) {
+		if _, err := master.Write([]byte{key}); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(180 * time.Millisecond)
+	}
+	if _, err := master.Write([]byte("q")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("fixture dashboard did not complete")
+	}
 }
 
 func TestDashboardSyntheticInteractionRunsPersistedClarificationThroughPTY(t *testing.T) {
@@ -214,5 +262,108 @@ func TestSyntheticInteractionAdmissionRechecksRuntimeMarkerAndIdentity(t *testin
 	}
 	if err := requireSyntheticFixture(context.Background(), engine, prepared); err == nil {
 		t.Fatal("missing disposable marker admitted")
+	}
+}
+
+func TestDashboardProposalDecisionRunsPersistedCommandThroughPTY(t *testing.T) {
+	stateDir, projectID, prepared, _ := setupDashboardInteractionFixture(t)
+	manager, err := core.OpenManager(context.Background(), stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := manager.Open(context.Background(), projectID)
+	if err != nil {
+		manager.Close()
+		t.Fatal(err)
+	}
+	specPath := filepath.Join(prepared.Repositories[0].Root, "review-proposal.md")
+	if err := os.WriteFile(specPath, []byte("# Persisted proposal fixture\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var revision int
+	if err := engine.DB.SQL.QueryRow("SELECT revision FROM project").Scan(&revision); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.ImportMarkdown(context.Background(), "pty-proposal-import", revision, "pty-proposal-spec", specPath); err != nil {
+		t.Fatal(err)
+	}
+	revision++
+	proposal := core.ProposalRequest{ID: "pty-proposal", SpecificationID: "pty-proposal-spec", SpecificationRevision: 1, ProfileID: "local", ProfileRevision: 1, Operation: "create", AffectedTasks: []string{"pty-task"}, Rationale: "exercise the persisted terminal proposal path", Plan: core.Plan{ID: "pty-plan", Title: "PTY", Specification: "fixture", Tasks: []policy.Task{{ID: "pty-task", Objective: "fixture", Criteria: []policy.Criterion{{ID: "pty-criterion", Text: "done"}}, Scope: []string{"src/**"}, Implementation: "local", Reviewer: "local", Checks: []string{"test"}, Difficulty: "small", Rationale: "fixture", ActiveLimitMS: 30000}}}}
+	if _, err := engine.CreateFixtureProposal(context.Background(), "pty-proposal-create", revision, proposal); err != nil {
+		t.Fatal(err)
+	}
+	engine.DB.Close()
+	manager.Close()
+	runDashboardPTY(t, stateDir, projectID, []string{"--synthetic-interactions"}, "3n")
+	manager, err = core.OpenManager(context.Background(), stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	engine, err = manager.Open(context.Background(), projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.DB.Close()
+	var state string
+	if err := engine.DB.SQL.QueryRow(`SELECT state FROM planning_proposals WHERE id='pty-proposal' AND revision=1`).Scan(&state); err != nil || state != "rejected" {
+		t.Fatal("PTY did not execute persisted proposal rejection", state, err)
+	}
+}
+
+func TestDashboardRecoveryChoiceRunsPersistedCommandThroughPTY(t *testing.T) {
+	stateDir, projectID, prepared, _ := setupDashboardInteractionFixture(t)
+	manager, err := core.OpenManager(context.Background(), stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := manager.Open(context.Background(), projectID)
+	if err != nil {
+		manager.Close()
+		t.Fatal(err)
+	}
+	var taskRevision int
+	if err := engine.DB.SQL.QueryRow("SELECT revision FROM tasks WHERE id=?", prepared.TaskID).Scan(&taskRevision); err != nil {
+		t.Fatal(err)
+	}
+	now := store.Now()
+	if _, err := engine.DB.SQL.Exec(`INSERT INTO requests(id,kind,state,plan_id,task_id,task_revision,run_id,context_json,blocking,created_at,deadline) VALUES('pty-recovery','recovery','pending',?,?,?,?,?,1,?,?)`, prepared.PlanID, prepared.TaskID, taskRevision, prepared.RunID, `{"reason":"fixture","stage":"pty"}`, now, now+int64((30*time.Minute)/time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	engine.DB.Close()
+	manager.Close()
+	runDashboardPTY(t, stateDir, projectID, []string{"--synthetic-interactions"}, "3b")
+	manager, err = core.OpenManager(context.Background(), stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	engine, err = manager.Open(context.Background(), projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.DB.Close()
+	var choices int
+	if err := engine.DB.SQL.QueryRow(`SELECT count(*) FROM recovery_choices WHERE run_id=? AND mode='remain_blocked' AND state='consumed'`, prepared.RunID).Scan(&choices); err != nil || choices != 1 {
+		t.Fatal("PTY did not execute persisted recovery choice", choices, err)
+	}
+}
+
+func TestDashboardQualityActionRunsPersistedCommandThroughPTY(t *testing.T) {
+	stateDir, projectID, _, _ := setupDashboardInteractionFixture(t)
+	runDashboardPTY(t, stateDir, projectID, nil, "5h")
+	manager, err := core.OpenManager(context.Background(), stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	engine, err := manager.Open(context.Background(), projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.DB.Close()
+	var decisions int
+	if err := engine.DB.SQL.QueryRow(`SELECT count(*) FROM human_decisions_v2 WHERE action='accept' AND actor='human'`).Scan(&decisions); err != nil || decisions != 1 {
+		t.Fatal("PTY did not execute persisted quality action", decisions, err)
 	}
 }

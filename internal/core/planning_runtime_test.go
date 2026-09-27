@@ -62,6 +62,7 @@ func TestRunPlanningUsesClosedOutputBudgetAndReplayReceipt(t *testing.T) {
 	if err != nil || proposal.State != "proposed" || provider.calls != 1 {
 		t.Fatal(proposal, provider.calls, err)
 	}
+	revision++
 	if !strings.Contains(provider.input.UntrustedMarkdown, "self-accept") || provider.input.ExpectedPlanID != "planned" {
 		t.Fatal("untrusted input was not labelled and preserved", provider.input)
 	}

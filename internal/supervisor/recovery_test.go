@@ -423,6 +423,22 @@ func TestRetryKindsAndBudgetExhaustionRemainDistinct(t *testing.T) {
 		if attempts != 1 || evidence != 1 || taskState != "blocked" {
 			t.Fatal("exhaustion advanced or lost evidence", attempts, evidence, taskState)
 		}
+		var requestID string
+		var taskRevision int
+		var createdAt, deadline int64
+		if err := fixture.engine.DB.SQL.QueryRow(`SELECT id,task_revision,created_at,deadline FROM requests WHERE run_id=? AND kind='recovery' AND state='pending'`, fixture.prepared.RunID).Scan(&requestID, &taskRevision, &createdAt, &deadline); err != nil {
+			t.Fatal("application-created recovery request missing", err)
+		}
+		if deadline-createdAt != int64((30*time.Minute)/time.Millisecond) {
+			t.Fatal("application recovery request did not receive standard expiry", createdAt, deadline)
+		}
+		if _, err := fixture.engine.DB.SQL.Exec("UPDATE requests SET deadline=? WHERE id=?", store.Now()-1, requestID); err != nil {
+			t.Fatal(err)
+		}
+		_, err = (&Runner{Engine: fixture.engine}).ChooseRecovery(context.Background(), RecoveryChoiceRequest{CommandID: "expired-application-request", ExpectedRevision: projectRevision(t, fixture), RunID: fixture.prepared.RunID, Mode: "remain_blocked", DisplayedRequestID: requestID, ExpectedTaskRevision: taskRevision}, nil)
+		if err == nil || !strings.Contains(err.Error(), "stale, expired or foreign") {
+			t.Fatal("application-created recovery expiry was not enforced", err)
+		}
 	})
 }
 

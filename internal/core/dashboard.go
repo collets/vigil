@@ -175,7 +175,7 @@ func readDashboardDetails(ctx context.Context, tx *sql.Tx) ([]TaskDetail, []Plan
 		}
 		manualRows.Close()
 		var baselines int
-		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM baseline_exceptions_v2`).Scan(&baselines); err == nil {
+		if err := tx.QueryRowContext(ctx, `SELECT count(DISTINCT b.id) FROM baseline_exceptions_v2 b JOIN quality_scopes_v2 s ON s.repository_set_digest=b.base_repository_set_digest WHERE s.task_id=?`, t.ID).Scan(&baselines); err == nil {
 			t.BaselineUnhealthy = baselines > 0
 		}
 		_ = tx.QueryRowContext(ctx, `SELECT state FROM checkpoint_sets c JOIN runs r ON r.id=c.run_id WHERE r.task_id=? AND c.state IN('capturing','clearing','restoring','conflicted','incomplete') ORDER BY c.created_at DESC LIMIT 1`, t.ID).Scan(&t.RecoveryState)

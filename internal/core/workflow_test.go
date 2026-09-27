@@ -86,3 +86,48 @@ func TestSchedulerPreservesUnsafeBlockerAndSkipsSafeIndependentBlock(t *testing.
 		t.Fatal("automatic advancement became writable")
 	}
 }
+
+func TestAdvanceRetiresStaleSelectionAndSelectsAgain(t *testing.T) {
+	_, e, _ := setup(t)
+	ctx := context.Background()
+	apply(t, e, "project.configure", config())
+	apply(t, e, "profile.put", profile())
+	apply(t, e, "plan.put", plan())
+	var revision int
+	if err := e.DB.SQL.QueryRow("SELECT revision FROM project").Scan(&revision); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.QueuePlan(ctx, "queue-stale-selection", revision, "plan", 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Continue(ctx, "continue-stale-selection", revision+1); err != nil {
+		t.Fatal(err)
+	}
+	revision += 2
+	first, err := e.Advance(ctx, "advance-before-revision-change", revision)
+	if err != nil || first.State != "selected" || first.TaskID == "" {
+		t.Fatal(first, err)
+	}
+	paused, err := e.Pause(ctx, "pause-after-selection", revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	continued, err := e.Continue(ctx, "continue-after-selection", paused.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := e.Advance(ctx, "advance-after-revision-change", continued.Revision)
+	if err != nil || second.State != "selected" || second.TaskID != first.TaskID {
+		t.Fatal(second, err)
+	}
+	var retired, selected, retirementEvents int
+	if err := e.DB.SQL.QueryRow(`SELECT sum(state='retired'),sum(state='selected') FROM workflow_dispatches`).Scan(&retired, &selected); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.DB.SQL.QueryRow(`SELECT count(*) FROM events WHERE kind='dispatch_retired'`).Scan(&retirementEvents); err != nil {
+		t.Fatal(err)
+	}
+	if retired != 1 || selected != 1 || retirementEvents != 1 {
+		t.Fatal("stale selection was not durably replaced", retired, selected, retirementEvents)
+	}
+}

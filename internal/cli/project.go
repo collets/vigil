@@ -455,6 +455,26 @@ func projectCommand(stateDir *string) *cobra.Command {
 	proposalDecide.Flags().StringVar(&proposalDecision, "decision", "", "reject or request_revision")
 	proposalDecide.Flags().StringVar(&proposalDecisionRationale, "rationale", "", "Bounded human rationale for the exact decision")
 	root.AddCommand(proposalDecide)
+	var inputCommand, inputDecision, inputAnswer string
+	var inputExpected int
+	inputResolve := &cobra.Command{Use: "input-resolve PROJECT_ID REQUEST_ID", Short: "Human-answer or dismiss one exact non-native input request", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		if inputCommand == "" || inputExpected < 1 || (inputDecision != "answer" && inputDecision != "dismiss") || inputDecision == "answer" && strings.TrimSpace(inputAnswer) == "" || inputDecision == "dismiss" && inputAnswer != "" {
+			return errors.New("--command-id, --expected-revision, --decision answer|dismiss and a bounded answer only for answer are required")
+		}
+		payload, _ := json.Marshal(map[string]any{"request_id": args[1], "decision": inputDecision, "answer": inputAnswer})
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			result, err := e.Apply(cmd.Context(), core.Human, core.Envelope{CommandID: inputCommand, ExpectedRevision: inputExpected, Kind: "input.resolve", Payload: payload})
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, result)
+		})
+	}}
+	inputResolve.Flags().StringVar(&inputCommand, "command-id", "", "Unique replay-safe human input command")
+	inputResolve.Flags().IntVar(&inputExpected, "expected-revision", 0, "Expected project revision")
+	inputResolve.Flags().StringVar(&inputDecision, "decision", "", "answer or dismiss")
+	inputResolve.Flags().StringVar(&inputAnswer, "answer", "", "Bounded human answer for the exact request")
+	root.AddCommand(inputResolve)
 	root.AddCommand(&cobra.Command{Use: "reservation PROJECT_ID OPERATION_ID", Short: "Inspect a persisted core resource reservation without acquiring or releasing anything", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
 		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
 			r, err := e.Reservation(cmd.Context(), args[1])

@@ -31,17 +31,19 @@ type mutationResult struct {
 }
 type mutator func(context.Context, core.DashboardSnapshot, string) error
 type model struct {
-	ctx                                     context.Context
-	load                                    source
-	snapshot                                *core.DashboardSnapshot
-	err                                     error
-	loading                                 bool
-	mutating                                bool
-	feedback                                string
-	mutate                                  mutator
-	inputRequest                            string
-	inputText                               string
-	tab, offset, inbox, task, width, height int
+	ctx                                 context.Context
+	load                                source
+	snapshot                            *core.DashboardSnapshot
+	err                                 error
+	loading                             bool
+	mutating                            bool
+	feedback                            string
+	mutate                              mutator
+	inputRequest                        string
+	inputAction                         string
+	inputText                           string
+	tab, offset, inbox, task, criterion int
+	width, height                       int
 }
 
 func (m model) act(action string) tea.Cmd {
@@ -74,6 +76,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.snapshot = &msg.snapshot
 			m.inbox = min(m.inbox, max(0, len(msg.snapshot.Inbox)-1))
 			m.task = min(m.task, max(0, len(msg.snapshot.Tasks)-1))
+			if len(msg.snapshot.Tasks) == 0 || len(msg.snapshot.Tasks[m.task].ManualCriteria) == 0 {
+				m.criterion = 0
+			} else {
+				m.criterion = min(m.criterion, len(msg.snapshot.Tasks[m.task].ManualCriteria)-1)
+			}
 		}
 	case mutationResult:
 		m.mutating = false
@@ -96,7 +103,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "ctrl+c":
 				return m, tea.Quit
 			case "esc":
-				m.inputRequest, m.inputText = "", ""
+				m.inputRequest, m.inputAction, m.inputText = "", "", ""
 				m.feedback = "clarification answer cancelled locally"
 			case "backspace":
 				if runes := []rune(m.inputText); len(runes) > 0 {
@@ -108,8 +115,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.feedback = "clarification answer cannot be empty"
 					return m, nil
 				}
-				action := "answer-clarification:" + m.inputRequest + ":" + base64.RawURLEncoding.EncodeToString([]byte(answer))
-				m.inputRequest, m.inputText = "", ""
+				action := m.inputAction + ":" + m.inputRequest + ":" + base64.RawURLEncoding.EncodeToString([]byte(answer))
+				m.inputRequest, m.inputAction, m.inputText = "", "", ""
 				m.mutating = true
 				m.feedback = "answer-clarification pending"
 				return m, m.act(action)
@@ -156,10 +163,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "i":
 				if m.tab == 2 && len(m.snapshot.Inbox) > 0 {
 					entry := m.snapshot.Inbox[m.inbox]
-					if entry.Kind == "input" && entry.SessionID != "" && entry.NativeRequestKey != "" {
+					if entry.Kind == "input" {
 						m.inputRequest = entry.ID
+						m.inputAction = "answer-input"
+						if entry.SessionID != "" && entry.NativeRequestKey != "" {
+							m.inputAction = "answer-clarification"
+						}
 						m.inputText = ""
-						m.feedback = "enter clarification answer; Enter submits, Esc cancels locally"
+						m.feedback = "enter input answer; Enter submits, Esc cancels locally"
 						return m, nil
 					}
 				}
@@ -169,7 +180,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					task := m.snapshot.Tasks[m.task]
 					if msg.String() == "m" {
 						if len(task.ManualCriteria) > 0 {
-							action = fmt.Sprintf("%s:%s:%d:%s", prefix, task.ID, task.Revision, task.ManualCriteria[0])
+							criterion := min(m.criterion, len(task.ManualCriteria)-1)
+							action = fmt.Sprintf("%s:%s:%d:%s", prefix, task.ID, task.Revision, task.ManualCriteria[criterion])
 						}
 					} else {
 						action = fmt.Sprintf("%s:%s:%d", prefix, task.ID, task.Revision)
@@ -185,6 +197,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					switch {
 					case entry.Kind == "input" && entry.SessionID != "":
 						action = "cancel-clarification:" + entry.ID
+					case entry.Kind == "input":
+						action = "dismiss-input:" + entry.ID
 					case entry.Kind == "approval" && proposalRequest(entry):
 						action = "reject-proposal:" + entry.ID
 					default:
@@ -220,6 +234,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inbox = min(len(m.snapshot.Inbox)-1, m.inbox+1)
 			} else if (m.tab == 1 || m.tab == 4) && m.snapshot != nil && len(m.snapshot.Tasks) > 0 {
 				m.task = min(len(m.snapshot.Tasks)-1, m.task+1)
+				m.criterion = 0
 			} else {
 				m.offset++
 			}
@@ -228,6 +243,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inbox = max(0, m.inbox-1)
 			} else if m.tab == 1 || m.tab == 4 {
 				m.task = max(0, m.task-1)
+				m.criterion = 0
 			} else {
 				m.offset = max(0, m.offset-1)
 			}
@@ -239,6 +255,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.offset = 0
 		case "end":
 			m.offset = len(m.lines())
+		case "]":
+			if (m.tab == 1 || m.tab == 4) && m.snapshot != nil && len(m.snapshot.Tasks) > 0 && len(m.snapshot.Tasks[m.task].ManualCriteria) > 0 {
+				m.criterion = (m.criterion + 1) % len(m.snapshot.Tasks[m.task].ManualCriteria)
+			}
+		case "[":
+			if (m.tab == 1 || m.tab == 4) && m.snapshot != nil && len(m.snapshot.Tasks) > 0 && len(m.snapshot.Tasks[m.task].ManualCriteria) > 0 {
+				m.criterion = (m.criterion + len(m.snapshot.Tasks[m.task].ManualCriteria) - 1) % len(m.snapshot.Tasks[m.task].ManualCriteria)
+			}
 		}
 	}
 	m.offset = min(m.offset, max(0, len(m.lines())-max(1, m.height-5)))
@@ -337,9 +361,10 @@ func (m model) lines() []string {
 					Revision  int    `json:"proposal_revision"`
 					Digest    string `json:"definition_digest"`
 					Operation string `json:"operation"`
+					Actor     string `json:"proposal_actor"`
 				}
 				if json.Unmarshal(entry.Context, &proposal) == nil && proposal.ID != "" {
-					lines = append(lines, fmt.Sprintf("  Proposal: %s r%d · %s", clean(proposal.ID), proposal.Revision, clean(proposal.Operation)), "  Definition digest: "+clean(proposal.Digest))
+					lines = append(lines, fmt.Sprintf("  Proposal: %s r%d · %s · author %s", clean(proposal.ID), proposal.Revision, clean(proposal.Operation), clean(proposal.Actor)), "  Definition digest: "+clean(proposal.Digest))
 				}
 			}
 			if entry.Kind == "input" && entry.SessionID != "" {
@@ -413,7 +438,13 @@ func (m model) lines() []string {
 				lines = append(lines, "  Manual: "+clean(v))
 			}
 			if len(task.ManualCriteria) > 0 {
-				lines = append(lines, "  m manual Pass target: "+clean(task.ManualCriteria[0]))
+				for criterionIndex, criterionID := range task.ManualCriteria {
+					marker := "  "
+					if index == m.task && criterionIndex == m.criterion {
+						marker = "> "
+					}
+					lines = append(lines, "  "+marker+"manual criterion: "+clean(criterionID))
+				}
 			}
 			if task.RecoveryState != "" {
 				lines = append(lines, "  Recovery quarantine: "+clean(task.RecoveryState))
@@ -445,7 +476,7 @@ func (m model) View() tea.View {
 	end := min(len(lines), start+space)
 	output := []string{"Vigil  " + strings.Join(tabs, "  "), status, ""}
 	output = append(output, lines[start:end]...)
-	footer := fmt.Sprintf("p/c/s control · a/u plan · inbox g/v/x/f/b/i/y/n · h/m/t quality · q quit  (%d–%d/%d)", start+1, end, len(lines))
+	footer := fmt.Sprintf("p/c/s control · a/u plan · inbox g/v/x/f/b/i/y/n · h/m/t quality · [/] criterion · q quit  (%d–%d/%d)", start+1, end, len(lines))
 	if m.inputRequest != "" {
 		footer = "Answer: " + clean(m.inputText) + "  (Enter submit · Esc cancel locally · Ctrl+C quit)"
 	}
@@ -550,11 +581,11 @@ func projectMutator(engine *core.Engine, coordination *coordinator.Coordinator, 
 					return err
 				}
 			}
-			if (decision != "allow" && decision != "deny" && decision != "apply-proposal" && decision != "reject-proposal" && decision != "request-proposal-revision" && decision != "remain-blocked" && decision != "exact-resume" && decision != "fresh-context" && decision != "answer-clarification" && decision != "cancel-clarification") || !found || requestID == "" {
+			if (decision != "allow" && decision != "deny" && decision != "apply-proposal" && decision != "reject-proposal" && decision != "request-proposal-revision" && decision != "remain-blocked" && decision != "exact-resume" && decision != "fresh-context" && decision != "answer-clarification" && decision != "cancel-clarification" && decision != "answer-input" && decision != "dismiss-input") || !found || requestID == "" {
 				return fmt.Errorf("unknown dashboard action")
 			}
 			answerText := ""
-			if decision == "answer-clarification" {
+			if decision == "answer-clarification" || decision == "answer-input" {
 				var encoded string
 				requestID, encoded, found = strings.Cut(requestID, ":")
 				decoded, decodeErr := base64.RawURLEncoding.DecodeString(encoded)
@@ -637,6 +668,18 @@ func projectMutator(engine *core.Engine, coordination *coordinator.Coordinator, 
 					nativeDecision = "cancel"
 				}
 				_, err := owner.AnswerClarification(ctx, supervisor.ClarificationAnswerRequest{CommandID: store.ID(), ExpectedRevision: revision, RequestID: entry.ID, SessionID: entry.SessionID, NativeRequestKey: entry.NativeRequestKey, Decision: nativeDecision, Answer: answerText})
+				return err
+			}
+			if decision == "answer-input" || decision == "dismiss-input" {
+				if entry.Kind != "input" || entry.SessionID != "" || entry.NativeRequestKey != "" {
+					return fmt.Errorf("displayed request is not a non-native input request")
+				}
+				inputDecision := "answer"
+				if decision == "dismiss-input" {
+					inputDecision = "dismiss"
+				}
+				payload, _ := json.Marshal(map[string]any{"request_id": entry.ID, "decision": inputDecision, "answer": answerText})
+				_, err := engine.Apply(ctx, core.Human, core.Envelope{CommandID: store.ID(), ExpectedRevision: revision, Kind: "input.resolve", Payload: payload})
 				return err
 			}
 			if entry.Kind != "approval" {

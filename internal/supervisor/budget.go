@@ -345,7 +345,9 @@ func persistBudgetExhaustion(ctx context.Context, engine *core.Engine, prepared 
 		}
 		if existing == 0 {
 			contextJSON, _ := json.Marshal(map[string]any{"reason": "budget_exhausted", "stage": stage, "charged_ms": charged, "unknown_ms": unknown, "limit_ms": limit})
-			if _, err := tx.ExecContext(ctx, `INSERT INTO requests(id,kind,state,plan_id,task_id,task_revision,run_id,context_json,blocking,created_at) SELECT ?,'recovery','pending',plan_id,id,revision,? ,?,1,? FROM tasks WHERE id=?`, store.ID(), prepared.RunID, string(contextJSON), store.Now(), prepared.TaskID); err != nil {
+			now := store.Now()
+			deadline := now + int64((30*time.Minute)/time.Millisecond)
+			if _, err := tx.ExecContext(ctx, `INSERT INTO requests(id,kind,state,plan_id,task_id,task_revision,run_id,context_json,blocking,created_at,deadline) SELECT ?,'recovery','pending',plan_id,id,revision,? ,?,1,?,? FROM tasks WHERE id=?`, store.ID(), prepared.RunID, string(contextJSON), now, deadline, prepared.TaskID); err != nil {
 				return err
 			}
 		}

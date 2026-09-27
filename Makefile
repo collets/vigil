@@ -25,7 +25,7 @@ check:
 	$(GO) vet ./...
 	$(GO) test ./...
 check-race:
-	$(GO) test -race ./internal/harness ./internal/spike ./internal/store ./internal/artifacts ./internal/core ./internal/coordinator ./internal/boundary ./internal/checkpoint ./internal/supervisor ./internal/checks ./internal/review ./internal/quality ./internal/tui ./internal/tools ./internal/mcp ./internal/workspace
+	$(GO) test -race ./internal/harness ./internal/spike ./internal/store ./internal/artifacts ./internal/core ./internal/coordinator ./internal/boundary ./internal/checkpoint ./internal/supervisor ./internal/checks ./internal/review ./internal/quality ./internal/tui ./internal/cli ./internal/tools ./internal/mcp ./internal/workspace
 docs-check:
 	$(GO) test ./internal/doccheck -count=1 -v
 cross-build:

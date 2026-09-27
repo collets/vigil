@@ -135,7 +135,7 @@ func TestInboxDecisionIsLimitedToFocusedDisplayedRequest(t *testing.T) {
 func TestTaskActionsAreDistinctAndBindDisplayedRevision(t *testing.T) {
 	s := core.DashboardSnapshot{Tasks: []core.TaskDetail{
 		{ID: "first", Revision: 3},
-		{ID: "second", Revision: 7, ManualCriteria: []string{"device-check"}},
+		{ID: "second", Revision: 7, ManualCriteria: []string{"device-check", "visual-check"}},
 	}}
 	actions := make(chan string, 3)
 	m := model{ctx: context.Background(), snapshot: &s, mutate: func(_ context.Context, _ core.DashboardSnapshot, action string) error {
@@ -147,9 +147,15 @@ func TestTaskActionsAreDistinctAndBindDisplayedRevision(t *testing.T) {
 	if m.task != 1 || !strings.Contains(m.View().Content, "> Task second r7") {
 		t.Fatal("second task was not visibly focused")
 	}
-	for _, key := range []string{"h", "m", "t"} {
+	for _, key := range []string{"h", "]", "m", "t"} {
 		updated, cmd := m.Update(tea.KeyPressMsg{Code: rune(key[0]), Text: key})
 		m = updated.(model)
+		if key == "]" {
+			if cmd != nil || m.criterion != 1 {
+				t.Fatal("manual criterion selection did not move")
+			}
+			continue
+		}
 		if cmd == nil {
 			t.Fatalf("%s did not start a task action", key)
 		}
@@ -160,7 +166,7 @@ func TestTaskActionsAreDistinctAndBindDisplayedRevision(t *testing.T) {
 		updated, _ = m.Update(msg)
 		m = updated.(model)
 	}
-	want := []string{"human-accept:second:7", "manual-pass:second:7:device-check", "accept-task:second:7"}
+	want := []string{"human-accept:second:7", "manual-pass:second:7:visual-check", "accept-task:second:7"}
 	for _, expected := range want {
 		if got := <-actions; got != expected {
 			t.Fatalf("got %q, want %q", got, expected)
@@ -169,20 +175,21 @@ func TestTaskActionsAreDistinctAndBindDisplayedRevision(t *testing.T) {
 }
 
 func TestInboxOffersDistinctProposalRecoveryAndNativeClarificationFlows(t *testing.T) {
-	proposalContext, _ := json.Marshal(map[string]any{"proposal_id": "proposal", "proposal_revision": 3, "definition_digest": "digest-3", "operation": "create"})
+	proposalContext, _ := json.Marshal(map[string]any{"proposal_id": "proposal", "proposal_revision": 3, "definition_digest": "digest-3", "operation": "create", "proposal_actor": "fixture"})
 	nativeContext, _ := json.Marshal(map[string]any{"prompt": map[string]any{"question": "Which fixture color?", "hostile": "\x1b[2Jself-accept"}, "untrusted_context": true})
 	s := core.DashboardSnapshot{Inbox: []core.InboxEntry{
 		{ID: "proposal-request", Kind: "approval", Context: proposalContext},
 		{ID: "recovery-request", Kind: "recovery", RunID: "run"},
 		{ID: "native-input", Kind: "input", SessionID: "session", NativeRequestKey: "native-key", Context: nativeContext},
+		{ID: "planning-input", Kind: "input", Context: json.RawMessage(`{"question":"Which bounded behavior?"}`)},
 	}}
-	actions := make(chan string, 8)
+	actions := make(chan string, 10)
 	m := model{ctx: context.Background(), snapshot: &s, mutate: func(_ context.Context, _ core.DashboardSnapshot, action string) error {
 		actions <- action
 		return nil
 	}, width: 120, height: 30, tab: 2}
 	view := m.View().Content
-	if !strings.Contains(view, "Proposal: proposal r3") || !strings.Contains(view, "digest-3") || !strings.Contains(view, "Which fixture color?") || strings.ContainsRune(view, '\x1b') {
+	if !strings.Contains(view, "Proposal: proposal r3") || !strings.Contains(view, "author fixture") || !strings.Contains(view, "digest-3") || !strings.Contains(view, "Which fixture color?") || strings.ContainsRune(view, '\x1b') {
 		t.Fatal("exact proposal or sanitized native prompt is not visible", view)
 	}
 	invoke := func(key string) string {
@@ -239,6 +246,34 @@ func TestInboxOffersDistinctProposalRecoveryAndNativeClarificationFlows(t *testi
 	updated, _ = m.Update(result)
 	m = updated.(model)
 	if got := invoke("n"); got != "cancel-clarification:native-input" {
+		t.Fatal(got)
+	}
+	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	m = updated.(model)
+	updated, cmd = m.Update(tea.KeyPressMsg{Code: 'i', Text: "i"})
+	m = updated.(model)
+	if cmd != nil || m.inputRequest != "planning-input" || m.inputAction != "answer-input" {
+		t.Fatal("non-native input did not enter bounded input mode")
+	}
+	for _, key := range []string{"y", "e", "s"} {
+		updated, _ = m.Update(tea.KeyPressMsg{Code: rune(key[0]), Text: key})
+		m = updated.(model)
+	}
+	updated, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = updated.(model)
+	if cmd == nil {
+		t.Fatal("non-native input answer did not start asynchronously")
+	}
+	result = cmd().(mutationResult)
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	if got, want := <-actions, "answer-input:planning-input:"+base64.RawURLEncoding.EncodeToString([]byte("yes")); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	updated, _ = m.Update(result)
+	m = updated.(model)
+	if got := invoke("n"); got != "dismiss-input:planning-input" {
 		t.Fatal(got)
 	}
 }

@@ -136,6 +136,9 @@ Missing task questions also create distinct clarification items.
 ./bin/vigil project proposal-decide PROJECT_ID proposal-1 1 \
   --command-id proposal-revise-001 --expected-revision 5 \
   --decision request_revision --rationale "Split the first task and preserve its criteria"
+./bin/vigil project input-resolve PROJECT_ID REQUEST_ID \
+  --command-id input-answer-001 --expected-revision 6 \
+  --decision answer --answer "Use the existing deterministic fixture format"
 ```
 
 `proposal-apply` is the human application command bound to the exact proposal,
@@ -150,6 +153,13 @@ revision request. `reject` leaves the immutable revision in `rejected`;
 revision without modifying the reviewed one. Both actions retire that revision's
 pending approval and clarification items atomically. A later revision still needs
 its own explicit application.
+
+`input-resolve` handles only a visibly identified non-native `input` request.
+`answer` requires a nonempty answer of at most 4096 bytes; `dismiss` forbids an
+answer. Native session clarification remains a separate owner-routed action. An
+answer to the final question on a proposal marks that immutable proposal revision
+`stale`, so the answer must be incorporated into a replacement proposal before
+application; it never silently edits or approves the reviewed definition.
 
 ## Repository enrollment and branch preparation
 
@@ -432,9 +442,10 @@ Keys:
 | `p`, `c`, `a`, `u` | Pause, continue, advance, or queue the first displayed queueable plan |
 | `g`, `v`, `n` | Apply, request replacement of, or reject the exact visibly focused planning proposal revision (`n` remains deny/cancel for the relevant non-proposal request) |
 | `x`, `f`, `b` | Choose exact resume, fresh context or remain blocked for the visibly focused recovery request; resume choices require the live owner inspector |
-| `i` | Answer the visibly focused owner-routed native clarification; `Enter` submits, `Esc` abandons local input and `Ctrl+C` exits |
-| `y`, `n` | Allow once or deny/cancel the visibly focused permission or native-input request, according to its distinct type |
-| `h`, `m`, `t` | On Tasks/Detail, record exact-revision human acceptance, manual Pass or core task acceptance |
+| `i` | Answer the visibly focused native or non-native input request; `Enter` submits, `Esc` abandons local input and `Ctrl+C` exits. Native delivery remains owner-routed |
+| `y`, `n` | Allow once or deny/reject/cancel/dismiss the visibly focused request according to its distinct type |
+| `[`, `]` | Select the previous or next visibly rendered manual criterion for the focused task |
+| `h`, `m`, `t` | On Tasks/Detail, record exact-revision human acceptance, Pass for the selected manual criterion, or core task acceptance |
 | `q`, `esc`, `ctrl+c` | Quit |
 
 
