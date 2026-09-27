@@ -47,6 +47,24 @@ func syncDir(path string) error {
 	return f.Sync()
 }
 
+// withBlobLock serializes publication with expiry across application processes.
+// A private lock file is kept for the lifetime of the repository.
+func (r *Repository) withBlobLock(fn func() error) error {
+	if err := store.PrivateDir(r.Dir); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(filepath.Join(r.Dir, ".blob-lock"), os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	return fn()
+}
+
 func (r *Repository) Put(ctx context.Context, commandID, kind, retention string, reader io.Reader) (Artifact, error) {
 	return r.put(ctx, commandID, "human", kind, retention, reader)
 }
@@ -90,22 +108,27 @@ func (r *Repository) put(ctx context.Context, commandID, actor, kind, retention 
 	if err != nil {
 		return Artifact{}, err
 	}
-	destination := filepath.Join(r.Dir, "blobs", digest)
-	// Link publishes without replacing an existing object, including a malicious symlink.
-	if err = os.Link(tmp.Name(), destination); err != nil && !os.IsExist(err) {
-		return Artifact{}, err
-	}
-	if _, err = readBlob(destination, digest, int64(len(b))); err != nil {
-		return Artifact{}, err
-	}
-	if err = syncDir(filepath.Dir(destination)); err != nil {
-		return Artifact{}, err
-	}
-	args, _ := json.Marshal(map[string]any{"kind": kind, "retention": retention, "digest": digest, "bytes": len(b)})
-	result, err := r.DB.Command(ctx, store.Command{ID: commandID, Actor: actor, Kind: "artifact.publish", Args: args}, func(tx *store.Tx) (any, error) {
-		a := Artifact{ID: store.ID(), Digest: digest, Bytes: int64(len(b)), Kind: kind}
-		_, err := tx.ExecContext(ctx, "INSERT INTO artifacts(id,kind,digest,relative_path,byte_count,state,retention,created_at) VALUES(?,?,?,?,?,'available',?,?)", a.ID, kind, digest, "blobs/"+digest, a.Bytes, retention, store.Now())
-		return a, err
+	var result json.RawMessage
+	err = r.withBlobLock(func() error {
+		destination := filepath.Join(r.Dir, "blobs", digest)
+		// Link publishes without replacing an existing object, including a malicious symlink.
+		if linkErr := os.Link(tmp.Name(), destination); linkErr != nil && !os.IsExist(linkErr) {
+			return linkErr
+		}
+		if _, readErr := readBlob(destination, digest, int64(len(b))); readErr != nil {
+			return readErr
+		}
+		if syncErr := syncDir(filepath.Dir(destination)); syncErr != nil {
+			return syncErr
+		}
+		args, _ := json.Marshal(map[string]any{"kind": kind, "retention": retention, "digest": digest, "bytes": len(b)})
+		var commandErr error
+		result, commandErr = r.DB.Command(ctx, store.Command{ID: commandID, Actor: actor, Kind: "artifact.publish", Args: args}, func(tx *store.Tx) (any, error) {
+			a := Artifact{ID: store.ID(), Digest: digest, Bytes: int64(len(b)), Kind: kind}
+			_, insertErr := tx.ExecContext(ctx, "INSERT INTO artifacts(id,kind,digest,relative_path,byte_count,state,retention,created_at) VALUES(?,?,?,?,?,'available',?,?)", a.ID, kind, digest, "blobs/"+digest, a.Bytes, retention, store.Now())
+			return a, insertErr
+		})
+		return commandErr
 	})
 	var a Artifact
 	if err == nil {

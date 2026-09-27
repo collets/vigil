@@ -32,18 +32,19 @@ type Profile struct {
 	InstructionDigests []string     `json:"instruction_digests,omitempty"`
 }
 type Config struct {
-	CheckDefinitions  []CheckDefinition `json:"check_definitions,omitempty"`
-	Restrictions      Restrictions      `json:"restrictions,omitempty"`
-	ModelPolicy       string            `json:"model_policy"`
-	Deny              []string          `json:"deny"`
-	RequiredChecks    []string          `json:"required_checks"`
-	TaskLimitMS       int64             `json:"task_limit_ms"`
-	AttemptLimitMS    int64             `json:"attempt_limit_ms"`
-	RepairLimit       int               `json:"repair_limit"`
-	SupervisorProfile string            `json:"supervisor_profile"`
-	ApprovalMode      string            `json:"approval_mode"`
-	HumanAcceptance   bool              `json:"human_acceptance_required,omitempty"`
-	BlockingSeverity  string            `json:"review_blocking_severity,omitempty"`
+	CheckDefinitions        []CheckDefinition `json:"check_definitions,omitempty"`
+	Restrictions            Restrictions      `json:"restrictions,omitempty"`
+	ModelPolicy             string            `json:"model_policy"`
+	Deny                    []string          `json:"deny"`
+	RequiredChecks          []string          `json:"required_checks"`
+	TaskLimitMS             int64             `json:"task_limit_ms"`
+	AttemptLimitMS          int64             `json:"attempt_limit_ms"`
+	RepairLimit             int               `json:"repair_limit"`
+	SupervisorProfile       string            `json:"supervisor_profile"`
+	ApprovalMode            string            `json:"approval_mode"`
+	HumanAcceptance         bool              `json:"human_acceptance_required,omitempty"`
+	BlockingSeverity        string            `json:"review_blocking_severity,omitempty"`
+	TranscriptRetentionDays int               `json:"transcript_retention_days,omitempty"`
 }
 type Layer struct {
 	Restrictions Restrictions
@@ -113,6 +114,9 @@ func Resolve(layers []Layer) (Resolved, error) {
 	return r, nil
 }
 func (c Config) Validate() error {
+	if c.TranscriptRetentionDays < 0 || c.TranscriptRetentionDays > 36500 {
+		return errors.New("transcript retention must be 0–36500 days (0 uses 30-day default)")
+	}
 	if err := validateCheckReferences(c.RequiredChecks); err != nil {
 		return err
 	}
@@ -145,6 +149,12 @@ func (c Config) Validate() error {
 		return errors.New("invalid review blocking severity")
 	}
 	return nil
+}
+func (c Config) EffectiveTranscriptRetentionDays() int {
+	if c.TranscriptRetentionDays == 0 {
+		return 30
+	}
+	return c.TranscriptRetentionDays
 }
 func (p Profile) Validate() error {
 	if p.ID == "" || p.Version == "" || p.Model == "" || p.Provider == "" || (p.Harness != "codex" && p.Harness != "hermes") || len(p.Roles) == 0 {

@@ -1141,6 +1141,7 @@ func projectCommand(stateDir *string) *cobra.Command {
 	artifact.Flags().StringVar(&commandID, "command-id", "", "Unique command identifier")
 	artifact.Flags().StringVar(&kind, "kind", "evidence", "Evidence kind")
 	root.AddCommand(artifact)
+	addFinalizationCommands(root, stateDir)
 	return root
 }
 func resourceCommand(stateDir *string) *cobra.Command {

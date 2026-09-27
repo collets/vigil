@@ -19,7 +19,7 @@ The user has answered the setup questions for 5.1–5.5: existing Codex ChatGPT 
 2. Read this document, [`START-HERE.md`](../START-HERE.md) for the reading order, the mandatory [development workflow](development-workflow.md), [session continuity audit](session-audit.md), [requirements](../core/requirements.md), [architecture](../core/architecture.md), and [harness investigation](../core/harness-capabilities.md).
 3. Inspect current Git status and applicable repository instructions. Preserve existing files and uncommitted work; do not reset the checkout.
 4. Run `make check` and `make docs-check` to establish the starting baseline. Read [`AGENTS.md`](../../AGENTS.md) first: it defines the project rules and the documentation obligations that any change must satisfy. Check installed harness versions against the evidence below; refresh affected protocol research if versions differ.
-5. Read the [documentation index](../README.md), the [Stage 5 index](../plans/stage-5/README.md), the accepted [Stage 5.5 document](../plans/stage-5/5.5-workflow-and-planning.md) and the [Stage 5.6 plan](../plans/stage-5/5.6-delivery-and-finalization.md) before changing delivery/finalization code. Stages 5.1–5.5 are independently accepted offline; the remaining Stage 5 slices are 5.6 delivery/finalization and 5.7 end-to-end qualification. Do not start 5.6 without explicit instruction, and remember that containment qualification gates production editing/delivery.
+5. Read the [documentation index](../README.md), the [Stage 5 index](../plans/stage-5/README.md), the accepted [Stage 5.5 document](../plans/stage-5/5.5-workflow-and-planning.md) and the [Stage 5.6 plan](../plans/stage-5/5.6-delivery-and-finalization.md) before changing delivery/finalization code. Stages 5.1–5.5 are independently accepted offline; Stage 5.6 is now explicitly authorized for implementation but not accepted, followed by Stage 5.7 end-to-end qualification. Containment qualification still gates production editing/delivery.
 
 Suggested independent-review handoff prompt:
 
@@ -131,7 +131,7 @@ Deliverable: concrete design decisions and implementation tasks mapped to the ex
 
 ## Stage 5 — Deliver a narrow functional slice
 
-Follow the [expanded execution plan](../plans/stage-5/stage-5-execution.md) and [Stage 5 backlog](../plans/stage-5/stage-5-plan.md), including containment before strict production editing. Stages 5.1–5.5 are independently accepted offline at implementation commit `84c0275`; Stage 5.6 delivery/finalization is the next implementation task, followed by Stage 5.7 end-to-end qualification. Production runtime/model/reviewer qualification remains a separate disabled gate. The original functional order remains:
+Follow the [expanded execution plan](../plans/stage-5/stage-5-execution.md) and [Stage 5 backlog](../plans/stage-5/stage-5-plan.md), including containment before strict production editing. Stages 5.1–5.5 are independently accepted offline at implementation commit `84c0275`; Stage 5.6 delivery/finalization is in progress and unaccepted, followed by Stage 5.7 end-to-end qualification. Production runtime/model/reviewer qualification remains a separate disabled gate. The original functional order remains:
 
 1. Manual project/profile setup, repository discovery, branch preparation, and one persisted task execution.
 2. Sequential dispatch with approvals, pause/stop/recovery, and shared workspace/local-model coordination.
@@ -150,6 +150,6 @@ Acceptance: run the [agreed milestone](../core/mvp-acceptance.md), including act
 - Record the next concrete action and any input needed from the user.
 - Preserve unfinished work and running-session identities; stop experimental processes before ending the session.
 
-Next concrete action: with Stage 5.5 independently accepted offline at implementation commit `84c0275`, begin Stage 5.6 delivery/finalization only after explicit user instruction and preserve every disabled production, publication and real-decision gate. Carry 5.5-F2's exact baseline-attribution observation forward if Stage 5.6 touches quality-scope display. The deliberately unapproved example proposal remains outside acceptance.
+Next concrete action: continue the explicitly authorized Stage 5.6 implementation on `task/5.6-delivery-finalization`. Finish exact-tree local commit and authorized push/draft-request reconciliation with disposable repositories and fake hosting, complete archive/finalization provenance, run Linux and native macOS gates, then request an exact-candidate independent antagonist review. The factual archive/export/retention slice is recorded in [5.6 results](../research/stage-5/5.6/results.md), not yet accepted. Preserve every disabled production, publication and real-decision gate. Carry 5.5-F2's exact baseline-attribution observation forward if Stage 5.6 touches quality-scope display. The deliberately unapproved example proposal remains outside acceptance.
 
 Away-time constraints and deferred user decisions: [pending decisions](pending-decisions.md).

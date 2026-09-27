@@ -6,8 +6,8 @@
 Vigil is a local control panel that runs existing agent harnesses through a Go core
 with SQLite state. It is pre-release: the offline core through Stage 5.5 is
 implemented and independently accepted at implementation commit `84c0275`, and
-production dispatch is deliberately disabled. Stage 5.6 delivery/finalization is
-the next implementation task.
+production dispatch is deliberately disabled. Stage 5.6 delivery/finalization
+implementation is in progress and has not been independently accepted.
 
 This index states what each document is authoritative for. For the *reading
 order* — what to read now and what you can skip — start at
@@ -74,7 +74,7 @@ should do*, not for what is implemented. Implementation status lives in
 | [`plans/stage-5/5.3-recovery-and-controls.md`](plans/stage-5/5.3-recovery-and-controls.md) | Stage 5.3 recovery, pause/stop and budgets |
 | [`plans/stage-5/5.4-quality-and-acceptance.md`](plans/stage-5/5.4-quality-and-acceptance.md) | Stage 5.4 checks, review, repair and acceptance |
 | [`plans/stage-5/5.5-workflow-and-planning.md`](plans/stage-5/5.5-workflow-and-planning.md) | Stage 5.5 workflow and planning (**independently accepted offline**) |
-| [`plans/stage-5/5.6-delivery-and-finalization.md`](plans/stage-5/5.6-delivery-and-finalization.md) | Stage 5.6 delivery and finalization (**not started**) |
+| [`plans/stage-5/5.6-delivery-and-finalization.md`](plans/stage-5/5.6-delivery-and-finalization.md) | Stage 5.6 delivery and finalization (**implementation in progress; not accepted**) |
 | [`plans/stage-5/5.7-end-to-end-qualification.md`](plans/stage-5/5.7-end-to-end-qualification.md) | Stage 5.7 end-to-end qualification (**not started**) |
 | [`plans/stage-5/stage-5-plan.md`](plans/stage-5/stage-5-plan.md) | Stage 5 backlog and R01–R71 stage mapping |
 | [`plans/stage-5/stage-5-execution.md`](plans/stage-5/stage-5-execution.md) | Stage 5 implementation order and checkpoints |
@@ -145,6 +145,7 @@ left as the reviewer saw them, so a quoted path may no longer exist — see
 | [`research/stage-5/5.5/user-decisions.md`](research/stage-5/5.5/user-decisions.md) | Review packet for remaining Stage 5.5 product, live-route and validation choices |
 | [`research/stage-5/5.5/qualification-input.md`](research/stage-5/5.5/qualification-input.md) | Visible credential-free review copy of the immutable Stage 5.5 qualification Markdown input |
 | [`research/stage-5/5.5/qualification-proposal.md`](research/stage-5/5.5/qualification-proposal.md) | Human-readable review copy of exact pending qualification proposal revision 1 |
+| [`research/stage-5/5.6/results.md`](research/stage-5/5.6/results.md) | Stage 5.6 implementation and validation evidence (**in progress**) |
 | `research/stage-5/5.2/review-probes/`, `research/stage-5/5.3/review-probes/`, `research/stage-5/5.4/review-probes/` | Retained inert review probes (`.go.txt`) |
 
 Review probes are stored as `.go.txt` so they cannot compile. To run one, copy it

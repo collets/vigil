@@ -4,6 +4,8 @@
 
 Stage 5 persists definitions, repository setup, a journaled execution lifecycle, the Stage 5.4 quality/acceptance path and Stage 5.5's queue/planning workflow. Production agents and reviewers remain qualification-gated; all currently exposed execution, review, human and acceptance drivers are explicitly selected, marker-gated fixture paths for disposable repositories. Implementation result persistence stops at `checking`; only `quality-accept` can accept current evidence, and it never creates delivery authority. `dashboard PROJECT_ID` now applies only the documented typed controls; `spike` remains a separate diagnostic runner with no production fallback.
 
+Stage 5.6 adds a factual archive, fixture-only narrative validation, portable export and explicit transcript retention controls. These commands do not authorize commits, pushes, hosted requests or production model dispatch.
+
 ## Initialize and inspect
 
 ```sh
@@ -630,6 +632,53 @@ contained supported ChatGPT-auth route exists.
 
 This is an observed inventory. It does not enroll repositories, select bases, create branches, infer a dirty-work choice or qualify unsupported layouts. Those remain explicit setup and execution steps.
 
+
+## Stage 5.6 factual archives and retention
+
+These controls are local and do not create a delivery operation. `archive-build`
+requires a current independently accepted plan and task set, unchanged accepted
+repository fingerprints, and available durable evidence. It persists the factual
+manifest before any narrative and creates one visible system finalization task.
+The resulting plan remains `finalization_pending` until a separately validated
+result completes it. Repeating the same `--command-id` returns its receipt;
+building again with a new ID creates a new archive revision.
+
+```sh
+./bin/vigil --state-dir STATE project archive-build PROJECT_ID PLAN_ID --command-id ID
+./bin/vigil --state-dir STATE project archive-show PROJECT_ID PLAN_ID REVISION
+./bin/vigil --state-dir STATE project archive-export PROJECT_ID PLAN_ID REVISION DESTINATION
+```
+
+`archive-show` re-verifies the manifest and all referenced durable artifacts.
+`archive-export` requires a new absolute directory with no symlink ancestor,
+copies verified content-addressed artifacts, and writes portable relative
+references plus separately typed external URLs. It never overwrites an export.
+The private application state directory remains authoritative; export is an
+explicit copy, not a Git commit or publication.
+
+`archive-narrative` is a synthetic fixture gate only. The repository must carry
+the disposable-fixture marker and have fixture acceptance. The JSON file must
+contain `command_id`, `plan_id`, `manifest_revision`, `manifest_digest`, bounded
+`text`, `cited_ids` covering the plan and every task acceptance, and
+`actor: "fixture"`. It cannot run a production model or accept a real plan.
+
+```sh
+./bin/vigil --state-dir STATE project archive-narrative PROJECT_ID PLAN_ID \
+  --synthetic-fixture --file RESULT.json
+```
+
+Project policy `transcript_retention_days` is optional: `0` or omission means
+30 days after plan completion; an explicit value may be 1–36500 days. Only
+application-owned `transcript` artifacts linked to completed-plan runs become
+eligible. Unfinished runs/plans, pending requests, unresolved operations and
+other typed references block expiry. Dry inspection changes nothing. Expiry
+marks references unavailable before deleting unshared bytes; it does not touch
+durable evidence, checkpoint artifacts or global harness history.
+
+```sh
+./bin/vigil --state-dir STATE project retention-inspect PROJECT_ID
+./bin/vigil --state-dir STATE project retention-expire PROJECT_ID --command-id ID
+```
 
 ## Development-only spike runner
 
