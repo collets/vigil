@@ -1,5 +1,7 @@
 # Vigil Stage 5.5 qualification change
 
+<!-- vigil-tier: evidence -->
+
 Prepare a small, reviewable documentation-only plan for the disposable
 Cardtracker copy.
 

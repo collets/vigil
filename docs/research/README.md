@@ -1,9 +1,19 @@
 # Research and validation evidence
 
+<!-- vigil-tier: evidence -->
+
 This directory stores dated implementation evidence and independent reviews by
 the stage that produced them. Historical contents remain records of what was
 observed at the time; later work adds dated sections rather than rewriting past
-results to look current.
+results to look current. It is the `evidence` tier: read it to support a claim
+about what was observed, never as a substitute for a specification.
+
+Every document here carries `<!-- vigil-tier: evidence -->`, and `make docs-check`
+enforces that marker, so evidence cannot be filed as live guidance by accident.
+Because a review record quotes the repository as the reviewer saw it, a path,
+commit or line number inside one may no longer resolve after a later
+restructuring; use [`../START-HERE.md`](../START-HERE.md) to find the current
+path rather than editing the record.
 
 ## Layout
 

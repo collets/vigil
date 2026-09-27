@@ -1,5 +1,7 @@
 # Stage 5.5 blocker log
 
+<!-- vigil-tier: evidence -->
+
 This append-only log separates offline fixture evidence from decisions and runtime
 evidence that require the unavailable user. Fixture actors never resolve these items.
 

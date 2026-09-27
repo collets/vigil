@@ -1,5 +1,7 @@
 # Stage 5.5 qualification proposal — review copy
 
+<!-- vigil-tier: evidence -->
+
 This is the human-readable review copy of the actual persisted proposal. It is
 not the Markdown input that asked the planner to create a proposal.
 

@@ -1,5 +1,7 @@
 # Stage 5 foundation validation
 
+<!-- vigil-tier: evidence -->
+
 Date: 2026-09-20. Scope: persisted planning/control foundation and initial Docker containment primitives; Stage 5 is in progress.
 
 ## Core evidence
@@ -45,7 +47,7 @@ Continue B/C integration and D before connecting production E–J. In particular
 
 ## Provider relay increment
 
-The [concrete boundary design](../../stage-5-boundary.md) now includes an implemented model/route-scoped provider relay and an unprivileged worker-side Unix-socket bridge. Synthetic HTTP tests passed credential substitution, wrong-token/model denial, duplicate/oversized/deep inputs, unsupported hosted tools and routes, redirect/error-header suppression, concurrency limits, revocation/cancellation, and output-flood transport abort. Tests use loopback listeners and therefore need socket permission in restricted development sandboxes. An initial cancellation fixture failed to consume the HTTP request body and waited indefinitely in server cleanup; the corrected fixture consumes the body and has its own deadline, and the full suite passed.
+The [concrete boundary design](../../plans/stage-5/stage-5-boundary.md) now includes an implemented model/route-scoped provider relay and an unprivileged worker-side Unix-socket bridge. Synthetic HTTP tests passed credential substitution, wrong-token/model denial, duplicate/oversized/deep inputs, unsupported hosted tools and routes, redirect/error-header suppression, concurrency limits, revocation/cancellation, and output-flood transport abort. Tests use loopback listeners and therefore need socket permission in restricted development sandboxes. An initial cancellation fixture failed to consume the HTTP request body and waited indefinitely in server cleanup; the corrected fixture consumes the body and has its own deadline, and the full suite passed.
 
 A real Docker worker with `network=none`, no capabilities, no new privileges and a read-only root filesystem successfully reached a host synthetic provider solely through its mounted Unix socket. It received only a fixture run token; the distinct provider credential stayed on the host. One selected-model request reached upstream; the unauthorized-model request was rejected before upstream. This is WSL socket-topology evidence, not a real native harness/model turn.
 
@@ -89,7 +91,7 @@ Exactly one live Mac qualification turn then used `qwen3.8-27b-local` through th
 
 The new conservative planner and alias/replacement tests passed natively on Linux and macOS. The pinned Hermes images supplied Git for inference-free Docker probes on both architectures. Allowed fixture edits succeeded; protected staging/commit/config/ref/raw writes, mount replacement, hard-link creation and a local push into the original Git directory were rejected. Native regression/race suites, builds and the four cross-builds passed. Unsupported nested/alias layouts remain explicit refusals; this does not qualify arbitrary project layouts or hostile concurrent host mutation. No additional inference or publishing occurred in this increment.
 
-The user's away-time spending/safety constraints and deferred decisions are tracked in [pending decisions](../../pending-decisions.md). Stage 6 remains conditional on finishing the accepted Stage 5 milestone.
+The user's away-time spending/safety constraints and deferred decisions are tracked in [pending decisions](../../process/pending-decisions.md). Stage 6 remains conditional on finishing the accepted Stage 5 milestone.
 
 
 ## Enclosing policy restrictions

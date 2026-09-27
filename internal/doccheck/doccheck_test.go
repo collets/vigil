@@ -55,7 +55,7 @@ func loadStatus(t *testing.T) status {
 	}
 	for _, required := range []string{
 		"stage", "stage_accepted", "implementation_commit", "review_record",
-		"project_migrations", "coordination_migrations", "index",
+		"project_migrations", "coordination_migrations", "index", "entry_point",
 		"status_documents", "cli_reference",
 	} {
 		if parsed[required] == "" {
@@ -178,6 +178,186 @@ func TestDocsIndexHasNoOrphans(t *testing.T) {
 	}
 }
 
+// --- every document declares the tier its directory represents --------------
+
+// A documentation tier answers one question for a new agent or a new session:
+// must this document be read before working, or only when working on a specific
+// task? The directory a document lives in states that answer structurally, and
+// the tier marker asserts the document agrees with it. Requiring the marker on
+// every document under docs/ is what stops an unclassified document from being
+// added and quietly never read.
+var tierByDirectory = []struct{ directory, tier string }{
+	{"docs/core/", "core"},
+	{"docs/process/", "process"},
+	{"docs/plans/", "plan"},
+	{"docs/history/", "history"},
+	{"docs/research/", "evidence"},
+	{"docs/spec/", "record"},
+}
+
+// Documents that legitimately sit directly in docs/ rather than in a tier
+// directory: the reading map and the authoritative-for index.
+var tierByRootDocument = map[string]string{
+	"START-HERE.md": "entry",
+	"README.md":     "index",
+}
+
+// expectedTier returns the tier a documentation file must declare, and whether
+// the file belongs to the documentation tree at all.
+func expectedTier(relative string) (string, bool) {
+	relative = filepath.ToSlash(relative)
+	if path.Dir(relative) == "docs" {
+		tier, known := tierByRootDocument[path.Base(relative)]
+		return tier, known
+	}
+	for _, entry := range tierByDirectory {
+		if strings.HasPrefix(relative, entry.directory) {
+			return entry.tier, true
+		}
+	}
+	return "", false
+}
+
+var tierMarkerPattern = regexp.MustCompile(`(?m)^<!-- vigil-tier: ([a-z]+) -->$`)
+
+// markersOnlyOutsideCode returns the document with fenced code blocks and inline
+// code spans removed, so a marker quoted as an example is not mistaken for a
+// declaration. A marker is a whole line, so nothing real is lost.
+var (
+	backtickFencePattern = regexp.MustCompile("(?ms)^[ \t]*```.*?^[ \t]*```[ \t]*$")
+	tildeFencePattern    = regexp.MustCompile("(?ms)^[ \t]*~~~.*?^[ \t]*~~~[ \t]*$")
+	inlineCodePattern    = regexp.MustCompile("`+[^`]*`+")
+)
+
+func markersOnlyOutsideCode(content string) string {
+	for _, fence := range []*regexp.Regexp{backtickFencePattern, tildeFencePattern} {
+		content = fence.ReplaceAllString(content, "")
+	}
+	return inlineCodePattern.ReplaceAllString(content, "")
+}
+
+func validateTierMarker(content, want string) string {
+	markers := tierMarkerPattern.FindAllStringSubmatch(markersOnlyOutsideCode(content), -1)
+	if len(markers) != 1 {
+		return "found " + strconv.Itoa(len(markers)) + " tier markers, want exactly 1"
+	}
+	if markers[0][1] != want {
+		return "found tier " + strconv.Quote(markers[0][1]) +
+			"; its directory declares the " + strconv.Quote(want) + " tier"
+	}
+	return ""
+}
+
+// TestDocsTiersMatchDirectories requires every document under docs/ to carry
+// exactly one tier marker equal to the tier of the directory holding it.
+func TestDocsTiersMatchDirectories(t *testing.T) {
+	for _, file := range markdownFiles(t) {
+		relative, err := filepath.Rel(repoRoot, file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		slash := filepath.ToSlash(relative)
+		if !strings.HasPrefix(slash, "docs/") {
+			continue
+		}
+		want, known := expectedTier(slash)
+		if !known {
+			t.Errorf("%s is not in a documentation tier directory; move it under "+
+				"docs/core, docs/process, docs/plans, docs/history, docs/research or "+
+				"docs/spec, or name it in tierByRootDocument if it belongs directly in docs/",
+				slash)
+			continue
+		}
+		if errText := validateTierMarker(readFile(t, file), want); errText != "" {
+			t.Errorf("%s: %s", slash, errText)
+		}
+	}
+}
+
+func TestExpectedTier(t *testing.T) {
+	tests := []struct {
+		relative string
+		want     string
+		known    bool
+	}{
+		{relative: "docs/README.md", want: "index", known: true},
+		{relative: "docs/START-HERE.md", want: "entry", known: true},
+		{relative: "docs/core/architecture.md", want: "core", known: true},
+		{relative: "docs/core/requirements.md", want: "core", known: true},
+		{relative: "docs/process/next-steps.md", want: "process", known: true},
+		{relative: "docs/plans/stage-5/README.md", want: "plan", known: true},
+		{relative: "docs/plans/stage-5/5.6-delivery-and-finalization.md", want: "plan", known: true},
+		{relative: "docs/history/discovery-notes.md", want: "history", known: true},
+		{relative: "docs/research/stage-5/5.5/results.md", want: "evidence", known: true},
+		{relative: "docs/research/README.md", want: "evidence", known: true},
+		{relative: "docs/spec/draft.md", want: "record", known: true},
+		{relative: "README.md"},
+		{relative: "AGENTS.md"},
+		{relative: "docs/stray.md"},
+	}
+	for _, test := range tests {
+		t.Run(test.relative, func(t *testing.T) {
+			got, known := expectedTier(test.relative)
+			if known != test.known || got != test.want {
+				t.Fatalf("expectedTier(%q) = %q, %t; want %q, %t",
+					test.relative, got, known, test.want, test.known)
+			}
+		})
+	}
+}
+
+func TestTierMarkerValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		tier    string
+		valid   bool
+	}{
+		{name: "exact", content: "# Core\n\n<!-- vigil-tier: core -->\n", tier: "core", valid: true},
+		{name: "missing", content: "# Core\n", tier: "core"},
+		{name: "duplicate", content: "<!-- vigil-tier: core -->\n<!-- vigil-tier: core -->\n", tier: "core"},
+		{name: "wrong tier", content: "<!-- vigil-tier: plan -->\n", tier: "core"},
+		{name: "unparsable", content: "<!-- vigil-tier: Core -->\n", tier: "core"},
+		{name: "inline mention", content: "The tier is <!-- vigil-tier: core --> inline.\n", tier: "core"},
+		{name: "quoted in fenced block", content: "# Doc\n\n```md\n<!-- vigil-tier: core -->\n```\n", tier: "core"},
+		{name: "real marker plus fenced example", content: "<!-- vigil-tier: core -->\n\n```md\n<!-- vigil-tier: plan -->\n```\n", tier: "core", valid: true},
+		{name: "quoted in inline code", content: "Write `<!-- vigil-tier: core -->` at the top.\n", tier: "core"},
+		{name: "duplicate in fenced block", content: "<!-- vigil-tier: core -->\n\n```\n<!-- vigil-tier: plan -->\n```\n", tier: "core", valid: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			errText := validateTierMarker(test.content, test.tier)
+			if test.valid && errText != "" {
+				t.Fatalf("valid marker rejected: %s", errText)
+			}
+			if !test.valid && errText == "" {
+				t.Fatal("invalid marker accepted")
+			}
+		})
+	}
+}
+
+// TestDocsRegistryPathsExist requires the paths STATUS uses as pointers to
+// resolve, so a moved index, reading map or CLI reference fails loudly here
+// instead of silently disabling the entry point for new sessions.
+func TestDocsRegistryPathsExist(t *testing.T) {
+	current := loadStatus(t)
+	for _, key := range []string{"index", "entry_point", "cli_reference", "review_record"} {
+		relative := current[key]
+		if relative == "" {
+			continue
+		}
+		content, err := os.ReadFile(repoPath(relative))
+		if err != nil {
+			t.Errorf("%s: %s names %q, which does not exist", statusFile, key, relative)
+			continue
+		}
+		if len(strings.TrimSpace(string(content))) == 0 {
+			t.Errorf("%s: %s names %q, which is empty", statusFile, key, relative)
+		}
+	}
+}
+
 // --- CLI reference completeness --------------------------------------------
 
 // TestDocsCLIRefIsComplete walks the real Cobra command tree and requires every
@@ -270,17 +450,18 @@ var requiredStatusDocuments = []string{
 	"AGENTS.md",
 	"README.md",
 	"docs/README.md",
-	"docs/next-steps.md",
-	"docs/pending-decisions.md",
-	"docs/requirements.md",
-	"docs/architecture.md",
-	"docs/technology.md",
-	"docs/mvp-acceptance.md",
-	"docs/harness-capabilities.md",
-	"docs/session-audit.md",
-	"docs/stage-5-plan.md",
-	"docs/stage-5-execution.md",
-	"docs/stage-5/README.md",
+	"docs/START-HERE.md",
+	"docs/core/architecture.md",
+	"docs/core/harness-capabilities.md",
+	"docs/core/mvp-acceptance.md",
+	"docs/core/requirements.md",
+	"docs/core/technology.md",
+	"docs/process/next-steps.md",
+	"docs/process/pending-decisions.md",
+	"docs/process/session-audit.md",
+	"docs/plans/stage-5/README.md",
+	"docs/plans/stage-5/stage-5-execution.md",
+	"docs/plans/stage-5/stage-5-plan.md",
 }
 
 func canonicalStatusMarker(current status) string {
@@ -290,7 +471,7 @@ func canonicalStatusMarker(current status) string {
 }
 
 func validateCanonicalStatusMarker(content, want string) string {
-	markers := statusMarkerPattern.FindAllString(content, -1)
+	markers := statusMarkerPattern.FindAllString(markersOnlyOutsideCode(content), -1)
 	if len(markers) != 1 {
 		return "found " + strconv.Itoa(len(markers)) + " canonical status markers, want exactly 1"
 	}
@@ -339,6 +520,7 @@ func TestCanonicalStatusMarkerValidation(t *testing.T) {
 		{name: "wrong stage", content: "<!-- vigil-status: stage=5.6; stage_accepted=true; implementation_commit=84c0275 -->\n", valid: false},
 		{name: "wrong acceptance", content: "<!-- vigil-status: stage=5.5; stage_accepted=false; implementation_commit=84c0275 -->\n", valid: false},
 		{name: "wrong commit", content: "<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=deadbee -->\n", valid: false},
+		{name: "quoted in fenced block", content: "# Doc\n\n```md\n" + want + "\n```\n", valid: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -366,8 +548,8 @@ func TestStatusDocumentRegistryValidation(t *testing.T) {
 	}{
 		{name: "complete required core", raw: complete, valid: true},
 		{name: "additional live document", raw: complete + ",docs/extra-live.md", valid: true},
-		{name: "missing required entry", raw: strings.Replace(complete, ",docs/technology.md", "", 1), valid: false},
-		{name: "duplicate entry", raw: complete + ",docs/technology.md", valid: false},
+		{name: "missing required entry", raw: strings.Replace(complete, ",docs/core/technology.md", "", 1), valid: false},
+		{name: "duplicate entry", raw: complete + ",docs/core/technology.md", valid: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

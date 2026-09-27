@@ -1,5 +1,7 @@
 # Stage 5.2 independent security/correctness review
 
+<!-- vigil-tier: evidence -->
+
 Latest independent follow-up, 2026-09-21, of `d34f894`: **R6 and R8 resolved; all R1–R9 findings are closed. The Stage 5.2 offline implementation review is accepted.** Production dispatch remains disabled pending the shared live qualification gates. Earlier verdicts and findings below are historical evidence; see the independent follow-up acceptance at the end.
 
 Date: 2026-09-21. Baseline: `b167e10`. Reviewed implementation and evidence through `02f11bd`, including `cdb8f75` and `88cd2be`.

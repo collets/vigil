@@ -1,5 +1,7 @@
 # Stage 5.1 execution qualification results
 
+<!-- vigil-tier: evidence -->
+
 Review remediation update, 2026-09-21: follow-up [independent validation](astra-review.md#follow-up-review--r1r3-remediation) confirms R1–R3 are resolved, including a fresh Mac/OrbStack mount regression. The additional P2 finding R4 is now remediated: class-specific requirements use structured class/name keys, and a retained synthetic artifact named `live:provider_idle` is rejected as provider-idle proof. Independent R4 review passed: the retained-artifact spoofing regression, uncached qualification tests and Linux routine/race/build checks all pass. R1–R4 are closed; this does not close live production gates. Production dispatch remains disabled.
 
 Date: 2026-09-20–21. Starting revision: `930ed37`. Status: offline qualification, admission and lifecycle contracts implemented; production dispatch remains disabled. Live Codex containment and the joint Stage 5.2 launch/restart matrix are still required.

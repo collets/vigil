@@ -12,12 +12,41 @@ do not start Stage 5.6 without an explicit instruction.
 
 ## Start here
 
-1. `docs/next-steps.md` — current state, what is pending, and the next action.
-2. `docs/README.md` — the document index: what each document is authoritative for.
-3. `docs/STATUS` — machine-readable current state, read by the documentation check.
-4. `docs/development-workflow.md` — mandatory branch, worktree, review, native
-   validation and integration rules.
-5. `make check` — baseline. Must pass before you report anything as working.
+1. [`docs/START-HERE.md`](docs/START-HERE.md) — the reading order: which documents
+   you must read for this task, and which you can skip.
+2. `docs/process/next-steps.md` — current state, what is pending, and the next action.
+3. `docs/README.md` — the document index: what each document is authoritative for.
+4. `docs/STATUS` — machine-readable current state, read by the documentation check.
+5. `docs/process/development-workflow.md` — mandatory branch, worktree, review,
+   native validation and integration rules.
+6. `make check` — baseline. Must pass before you report anything as working.
+
+## Documentation layout and tiers
+
+Documentation is grouped by **when you need it**, so a new session can read a
+short, sufficient set instead of the whole tree. The folder a document lives in
+*is* its tier, and every Markdown document under `docs/` carries a
+`<!-- vigil-tier: ... -->` marker asserting the same thing; `make docs-check`
+fails when a document has no tier, has the wrong tier for its folder, or sits in
+neither a tier directory nor the small set of documents allowed directly in
+`docs/`. A marker quoted inside a code block or inline code is documentation
+*about* the convention, not a declaration, and is ignored.
+
+| Tier | Folder | Read it |
+| --- | --- | --- |
+| Entry | `docs/START-HERE.md` | Always: reading order and task-to-document routing |
+| Index | `docs/README.md`; `docs/STATUS` (not Markdown, so exempt from the marker) | What each document is authoritative for; machine-readable state |
+| Core | `docs/core/` | Always: requirements, architecture, core specification, technology, harness capabilities, milestone, checkpoints, finalization |
+| Process | `docs/process/` | Always: development workflow, next steps, pending decisions, decision provenance |
+| Plan | `docs/plans/` | Only the slice you are working on; `docs/plans/stage-5/README.md` routes to it |
+| Evidence | `docs/research/` | Only to support a claim about what was observed, or satisfy a gate |
+| History | `docs/history/` | Only to recover why a decision was made, or a superseded alternative |
+| Record | `docs/spec/` | Draft schemas superseded by the installed migrations; never the live schema |
+
+When you add a document, choose its tier first, then write the matching marker.
+A new tier directory needs an entry in `tierByDirectory`, and a new document
+placed directly in `docs/` needs an entry in `tierByRootDocument`, both in
+`internal/doccheck/doccheck_test.go`.
 
 ## Non-negotiable project rules
 
@@ -27,7 +56,7 @@ do not start Stage 5.6 without an explicit instruction.
   technical research, declared dependency downloads, workflow-compliant Git
   synchronization and contained local Docker/OrbStack. Follow the cost, credential,
   egress and container boundaries in
-  [`docs/development-workflow.md`](docs/development-workflow.md). Never use a metered
+  [`docs/development-workflow.md`](docs/process/development-workflow.md). Never use a metered
   API or paid fallback, purchase credits, change a subscription, provision hosting
   or create a chargeable cloud resource without a new explicit user authorization.
   The default test suite must remain offline, credential-free and Docker-free.
@@ -47,7 +76,7 @@ do not start Stage 5.6 without an explicit instruction.
   run destructive recovery outside agent-owned disposable fixtures.
 - **Historical migrations are immutable.** `internal/store/migrations/project-001..009`
   and their recorded digests must never change. Schema changes are forward-only.
-- **Follow [`docs/development-workflow.md`](docs/development-workflow.md).** Develop
+- **Follow [`docs/development-workflow.md`](docs/process/development-workflow.md).** Develop
   on task branches, push checkpoints only to their matching branches, use separate
   worktrees for parallel agents, and propose `main` only after exact-candidate
   validation and independent acceptance. Never force-push. There is no standing
@@ -75,29 +104,40 @@ stale document is a defect, because the next session will plan from the document
 
 | Change | Must update |
 | --- | --- |
-| CLI command, flag, arg count, or output | `docs/stage-5-cli.md` |
+| CLI command, flag, arg count, or output | `docs/plans/stage-5/stage-5-cli.md` |
 | New/removed/renamed package | `README.md` structure block, `docs/README.md` index |
 | New migration, or schema version change | the stage document, `docs/research/<stage>/results.md`, `docs/STATUS` |
-| New/renamed document | `docs/README.md` index (no orphans allowed) |
-| Requirement added, removed, or renumbered | `docs/stage-5-plan.md`, `docs/requirements.md` |
-| Stage status flip (pending → accepted, finding opened/closed) | `docs/STATUS`, the canonical `vigil-status` marker and prose in **every** `status_documents` file, plus `docs/next-steps.md` status line and "Next concrete action" |
-| A new finding from review | the review record, `docs/next-steps.md`, `docs/pending-decisions.md` |
-| A design decision or accepted alternative | `docs/session-audit.md` decision index |
-| Autonomy, tooling, network, Git or authority policy | `docs/development-workflow.md`, `docs/pending-decisions.md`, `docs/session-audit.md` |
+| New/renamed/moved document | `docs/README.md` index (no orphans allowed) and the `<!-- vigil-tier -->` marker matching its folder |
+| Requirement added, removed, or renumbered | `docs/plans/stage-5/stage-5-plan.md`, `docs/core/requirements.md` |
+| Stage status flip (pending → accepted, finding opened/closed) | `docs/STATUS`, the canonical `vigil-status` marker and prose in **every** `status_documents` file, plus `docs/process/next-steps.md` status line and "Next concrete action" |
+| A new finding from review | the review record, `docs/process/next-steps.md`, `docs/process/pending-decisions.md` |
+| A design decision or accepted alternative | `docs/process/session-audit.md` decision index |
+| Autonomy, tooling, network, Git or authority policy | `docs/process/development-workflow.md`, `docs/process/pending-decisions.md`, `docs/process/session-audit.md` |
 | Validation evidence or a gate result | the stage's `docs/research/<stage>/results.md` validation section |
+| A document superseded by a newer decision | move it to `docs/history/`, add the superseded banner, and record the replacement in `docs/history/README.md` |
 
 ### The stage-status trap
 
 The most common failure in this repository is a status flip applied to *some*
 documents. When a stage is accepted, or findings are closed, the new state must
 appear in **every** file listed in `status_documents` in `docs/STATUS`, and the
-"Next concrete action" line in `docs/next-steps.md` must name the range you just
-reviewed — not a superseded one. Each listed document must contain exactly one
-canonical `vigil-status` tuple matching `stage`, `stage_accepted` and
+"Next concrete action" line in `docs/process/next-steps.md` must name the range
+you just reviewed — not a superseded one. Each listed document must contain
+exactly one canonical `vigil-status` tuple matching `stage`, `stage_accepted` and
 `implementation_commit`; `make docs-check` enforces that tuple, not the semantics
 of arbitrary prose, which still require review. Only registered live-status documents
 are checked; do not add a `vigil-status` marker to historical or unregistered records.
 A stale "next action" range has already occurred here twice; do not repeat it.
+
+### The unclassified-document trap
+
+The second most common failure is adding a document that no session ever reads.
+A new document must, in the same change: live in the tier folder matching when it
+is needed, carry that tier's `<!-- vigil-tier -->` marker, and be listed in
+`docs/README.md`. `make docs-check` fails on an orphan or an unclassified
+document, but it cannot tell you the tier is *sensible* — a plan filed as core
+documentation will be read by every session forever, and core documentation filed
+as a plan will be skipped when it is needed. Choose deliberately.
 
 ### Verify before you report
 
@@ -106,11 +146,12 @@ make docs-check   # documentation consistency gate
 make check        # vet + full test suite
 ```
 
-`make docs-check` fails on broken relative links, orphan documents, undocumented
-CLI commands, package lists that do not match `internal/`, commit SHAs that do not
-exist, migration-count drift, and status documents that disagree with `docs/STATUS`.
-If you changed the CLI, migrations, packages, or a stage status, this gate is part
-of your definition of done.
+`make docs-check` fails on broken relative links, orphan documents, documents with a
+missing or mismatched `vigil-tier` marker, undocumented CLI commands, package
+lists that do not match `internal/`, commit SHAs that do not exist,
+migration-count drift, and status documents that disagree with `docs/STATUS`.
+If you changed the CLI, migrations, packages, documentation layout, or a stage
+status, this gate is part of your definition of done.
 
 ## Before you report a change as working
 

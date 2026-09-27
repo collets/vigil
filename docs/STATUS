@@ -6,6 +6,10 @@
 # Update this file in the same commit as any change to the state it describes.
 # Every path listed in status_documents must carry exactly one canonical
 # vigil-status tuple matching stage, stage_accepted and implementation_commit.
+# Every Markdown document under docs/ must carry exactly one vigil-tier marker
+# equal to the tier of the directory holding it: entry, index, core, process,
+# plan, history, evidence or record. docs/STATUS itself is not Markdown and is
+# exempt.
 # Historical per-stage plans/results are intentionally not live status documents.
 # See AGENTS.md, section "Documentation obligations".
 
@@ -15,6 +19,7 @@ implementation_commit=84c0275
 review_record=docs/research/stage-5/5.5/results.md
 project_migrations=16
 coordination_migrations=2
+entry_point=docs/START-HERE.md
 index=docs/README.md
-status_documents=AGENTS.md,README.md,docs/README.md,docs/next-steps.md,docs/pending-decisions.md,docs/requirements.md,docs/architecture.md,docs/technology.md,docs/mvp-acceptance.md,docs/harness-capabilities.md,docs/session-audit.md,docs/stage-5-plan.md,docs/stage-5-execution.md,docs/stage-5/README.md
-cli_reference=docs/stage-5-cli.md
+status_documents=AGENTS.md,README.md,docs/README.md,docs/START-HERE.md,docs/core/architecture.md,docs/core/harness-capabilities.md,docs/core/mvp-acceptance.md,docs/core/requirements.md,docs/core/technology.md,docs/process/next-steps.md,docs/process/pending-decisions.md,docs/process/session-audit.md,docs/plans/stage-5/README.md,docs/plans/stage-5/stage-5-execution.md,docs/plans/stage-5/stage-5-plan.md
+cli_reference=docs/plans/stage-5/stage-5-cli.md

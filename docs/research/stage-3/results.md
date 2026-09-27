@@ -1,6 +1,8 @@
 # Stage 3 — Linux lifecycle and policy findings
 
-Completed available-platform investigation on 2026-09-20. This closes the planned Linux experiments with explicit failed/unqualified guarantees; it does **not** qualify the native profiles for strict autonomous execution. [Machine-readable evidence](results.json) retains successes and failures. [Stage 3.5](../../stage-3.5-macos.md) is reserved for the user's Mac after their return; [Stage 4](../../core-spec.md) incorporates the limits below.
+<!-- vigil-tier: evidence -->
+
+Completed available-platform investigation on 2026-09-20. This closes the planned Linux experiments with explicit failed/unqualified guarantees; it does **not** qualify the native profiles for strict autonomous execution. [Machine-readable evidence](results.json) retains successes and failures. [Stage 3.5](../../history/stage-3.5-macos.md) is reserved for the user's Mac after their return; [Stage 4](../../core/core-spec.md) incorporates the limits below.
 
 Versions stayed pinned: Codex 0.155.1, Hermes 0.21.3 at `6a627e6eb38e28ac421d5ad8df3f676e49d0c287`. Existing ChatGPT authentication / `gpt-6-astra` and exported localhost credentials / `qwen3.8-27b-local` were used. Sixteen model-backed turns were explicitly dispatched across fourteen fresh experiments; a separate controlled provider-error submission was rejected by a loopback relay before inference. No automatic prompt replay, real hosting push, request creation, merge, or global profile change occurred.
 

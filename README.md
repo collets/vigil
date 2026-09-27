@@ -6,26 +6,22 @@ A local control panel for development agents running through existing harnesses,
 
 Status: **pre-release.** The persisted core through Stage 5.5 is independently accepted offline. Stage 5.5 checkpoints A–D and independent-review remediation are implemented through `84c0275`, including stale-dispatch retirement, expiring recovery choices, persisted terminal decisions, bounded planning, shared MCP handlers and native Hermes one-tool isolation; exact-commit Linux/WSL and native macOS gates pass. Automatic plan advancement remains disabled. Production check, model and reviewer dispatch remain deliberately disabled pending live qualification, and nothing in planning or acceptance can commit, push, publish or deliver.
 
-Targets: Linux and macOS, on amd64 and arm64. See [`docs/next-steps.md`](docs/next-steps.md) for current state and [`docs/README.md`](docs/README.md) for the document index.
+Targets: Linux and macOS, on amd64 and arm64. See [`docs/process/next-steps.md`](docs/process/next-steps.md) for current state.
 
-- [Documentation index](docs/README.md): what each document is authoritative for.
-- [Next steps and resumption plan](docs/next-steps.md): ordered work, validation gates, and handoff for the next session.
-- [Agent instructions](AGENTS.md): project rules and the documentation obligations every change must satisfy.
-- [Stage 5 index](docs/stage-5/README.md): Stage 5.1–5.7 ordering and completion gates.
-- [Stage 5 backlog](docs/stage-5-plan.md): implementation slices and R01–R71 coverage.
-- [Stage 5 expanded plan](docs/stage-5-execution.md) and [persisted CLI guide](docs/stage-5-cli.md): implementation order, commands and current limits.
-- [Technology proposal](docs/technology.md): Go versus Python and the proposed foundation.
-- [Minimal architecture](docs/architecture.md): responsibilities and integration boundaries.
-- [Functional requirements](docs/requirements.md): consolidated product baseline and open design questions.
-- [First usable milestone](docs/mvp-acceptance.md): Codex/Hermes acceptance scenario.
-- [Harness investigation](docs/harness-capabilities.md): recommended transports, verified probes, and remaining integration gates.
-- [Stage 1 adapter spike](docs/adapter-spike.md): adapter contract, isolated profile preparation, limits, and runtime prerequisites.
-- [Stage 2 plan and runner](docs/stage-2-plan.md): transport implementation, controlled execution, verification, and limitations.
-- [Stage 3 lifecycle/policy results](docs/research/stage-3/results.md): observed capabilities and strict execution limits.
-- [Stage 3.5 macOS results](docs/research/stage-3.5/results.md): native runtime checks, filesystem identity and platform-specific cleanup limits.
-- [Application core specification](docs/core-spec.md): state, policy, coordination, checkpoints and storage contracts.
-- [Session continuity audit](docs/session-audit.md): decisions, alternatives, open questions, and documentation provenance.
-- [Discovery history](docs/discovery-notes.md): brainstorming decisions and their evolution.
+## Documentation
+
+Documentation is tiered by **when you need it**. Start at
+[`docs/START-HERE.md`](docs/START-HERE.md) for the reading order; the full
+authoritative-for index is [`docs/README.md`](docs/README.md).
+
+| Read | Folder | What it settles |
+| --- | --- | --- |
+| [Agent instructions](AGENTS.md) | repository root | Project rules and the documentation obligations every change must satisfy |
+| [Core product facts](docs/core/requirements.md) | `docs/core/` | Requirements, architecture, core specification, technology, harness capabilities, checkpoints, milestone |
+| [Process and current state](docs/process/next-steps.md) | `docs/process/` | Development workflow, next steps, pending decisions, decision provenance |
+| [Stage 5 index](docs/plans/stage-5/README.md) | `docs/plans/` | Stage 5.1–5.7 ordering, completion gates and the CLI reference — read only the slice you are working on |
+| [Research evidence](docs/research/README.md) | `docs/research/` | Dated observations and independent reviews |
+| [Superseded records](docs/history/README.md) | `docs/history/` | Rejected alternatives and completed-stage plans, kept for provenance only |
 
 ## Run
 
@@ -38,7 +34,7 @@ make build
 ./bin/vigil dashboard PROJECT_ID
 ```
 
-Use the project ID returned by initialization. The dashboard is interactive, refreshes every two seconds, and exits on `q`, `esc` or `ctrl+c`. Use `hello` for noninteractive environments; it only queries `sqlite_version()`. `--help`, `--version`, and Cobra shell completion are available. The full command surface, including every flag and its default, is in the [CLI guide](docs/stage-5-cli.md).
+Use the project ID returned by initialization. The dashboard is interactive, refreshes every two seconds, and exits on `q`, `esc` or `ctrl+c`. Use `hello` for noninteractive environments; it only queries `sqlite_version()`. `--help`, `--version`, and Cobra shell completion are available. The full command surface, including every flag and its default, is in the [CLI guide](docs/plans/stage-5/stage-5-cli.md).
 
 The dashboard and all `project`/`resources` commands read private persisted application state, which defaults to `$XDG_STATE_HOME/vigil` or `~/.local/state/vigil` and is overridden with `--state-dir`. `hello` instead uses a temporary in-memory SQLite database unless given `--db`:
 
@@ -115,6 +111,6 @@ Start llama.cpp before a Hermes run. The runner uses `VIGIL_LLAMA_API_KEY`, a pr
 
 Private activity and result evidence stays under the experiment's `evidence/` directory. Raw stderr and protocol payloads are omitted. Native histories remain private and separate. The runner enforces one attempt at a time per checkout, finite time/output limits, no prompt replay, and immediate denial/cancellation of native requests. A crash may leave `runner.lock` or a private Codex auth copy: inspect the recorded process before removing a stale lock, preserve experiment evidence, and prepare a new fixture. Cross-checkout endpoint coordination belongs to the persisted core, not to the spike.
 
-See [next steps](docs/next-steps.md) for current evidence and the remaining lifecycle, resume, approval, policy, and macOS runtime gates.
+See [next steps](docs/process/next-steps.md) for current evidence and the remaining lifecycle, resume, approval, policy, and macOS runtime gates.
 
-Lifecycle experiments use the same fresh manifest with `--live --scenario resume|interrupt|child|loss|clarify|approval-allow|approval-deny`. The approval stimuli are Codex-specific. These scenarios may intentionally fail and retain partial fixture files; see the Stage 3 plan before running them. Historical draft schemas live in `docs/spec` and are validated by `internal/storage/spec_test.go` under `make check`; they are a design record, not the installed schema. `project init` installs the separately versioned embedded migrations from `internal/store/migrations`, which are the authoritative schema. See the [CLI guide](docs/stage-5-cli.md).
+Lifecycle experiments use the same fresh manifest with `--live --scenario resume|interrupt|child|loss|clarify|approval-allow|approval-deny`. The approval stimuli are Codex-specific. These scenarios may intentionally fail and retain partial fixture files; read the historical [Stage 3 plan](docs/history/stage-3-plan.md) before running them. Historical draft schemas live in `docs/spec` and are validated by `internal/storage/spec_test.go` under `make check`; they are a design record, not the installed schema. `project init` installs the separately versioned embedded migrations from `internal/store/migrations`, which are the authoritative schema. See the [CLI guide](docs/plans/stage-5/stage-5-cli.md).

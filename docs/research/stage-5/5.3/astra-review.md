@@ -1,5 +1,7 @@
 # Stage 5.3 independent security/correctness review
 
+<!-- vigil-tier: evidence -->
+
 Date: 2026-09-21. Baseline `bf09f4d`; implementation range through `5617679`; documentation HEAD `2adba66`.
 
 **Verdict: changes requested. Five P1 and two P2 findings; Stage 5.3 is not independently accepted.** Production dispatch remains disabled. These defects concern the implemented offline contracts, independently of the deferred live qualification gates. Finding IDs below are local to Stage 5.3 and do not reopen the historical Stage 5.2 findings.

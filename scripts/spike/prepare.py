@@ -193,7 +193,7 @@ def main():
         report["config_sha256"]["codex-home/config.toml"] = hashlib.sha256((codex_home / "config.toml").read_bytes()).hexdigest()
     write_json(evidence / "preparation.json", report)
     print(f"Prepared: {work}\nHermes effective settings verified; no inference started.\n"
-          "Codex credentials are only referenced when --harness=both. See docs/adapter-spike.md before live launch.")
+          "Codex credentials are only referenced when --harness=both. See docs/history/adapter-spike.md before live launch.")
 
 
 if __name__ == "__main__":

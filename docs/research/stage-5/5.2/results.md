@@ -1,5 +1,7 @@
 # Stage 5.2 repository and persisted-execution results
 
+<!-- vigil-tier: evidence -->
+
 Date: 2026-09-21. Initial implementation commits: `69de374`, `697b366`, `0e83d10`, `bef5dd4`, `cdb8f75`, plus macOS portability fix `88cd2be`. Astra review remediations are `0d02a9f` (repository revisions) and `b23ee5e` (execution fencing, confinement, budgets and qualification binding); results and handoff updates are separate local documentation commits. Baseline was clean at `b167e10`. No repository-level `AGENTS.md` applied.
 
 ## Verdict

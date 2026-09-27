@@ -1,5 +1,7 @@
 # Stage 5.5 implementation results
 
+<!-- vigil-tier: evidence -->
+
 Status: implementation through checkpoint A commit `4dbb444`, initial B–D
 commit `20ca4d0`, bounded planning/control commit `192c6ba`, native-tool
 isolation fix `959eaaf` and revision-bound quality controls `669467e`; Stage 5.5
@@ -8,7 +10,7 @@ interaction completion is `bdd6e33` and independent-review remediation is
 follow-up and exact-commit native macOS validation.
 
 This record is append-only evidence for the four checkpoints in
-[the Stage 5.5 plan](../../../stage-5/5.5-workflow-and-planning.md). It distinguishes
+[the Stage 5.5 plan](../../../plans/stage-5/5.5-workflow-and-planning.md). It distinguishes
 offline fixture mechanics from real human approval and live model/runtime evidence.
 The complete user-only gate list is maintained in the
 [Stage 5.5 blocker log](blockers.md).

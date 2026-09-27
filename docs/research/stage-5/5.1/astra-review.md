@@ -1,5 +1,7 @@
 # Stage 5.1 independent validation
 
+<!-- vigil-tier: evidence -->
+
 Latest follow-up, 2026-09-21: **R1–R4 resolved; no remaining findings from this review.** The R4 fix and its retained-artifact regression passed independent validation. Production/live qualification gates remain open. Earlier findings and reproduction source below are historical review evidence.
 
 Date: 2026-09-21. Reviewed Sol's uncommitted implementation over `930ed37`, preserving the user's earlier planning/configuration edits. Verdict: **changes requested**. Production dispatch remains disabled; the findings below must be addressed before treating the new contracts as qualified.

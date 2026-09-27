@@ -1,5 +1,7 @@
 # Stage 5.4 implementation results
 
+<!-- vigil-tier: evidence -->
+
 Date: 2026-09-22; updated 2026-09-26
 
 Scope: offline implementation and fixture validation only

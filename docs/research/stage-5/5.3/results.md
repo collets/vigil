@@ -1,5 +1,7 @@
 # Stage 5.3 — recovery, checkpoints and execution controls
 
+<!-- vigil-tier: evidence -->
+
 Independent follow-up, 2026-09-22: **Stage 5.3 offline implementation is accepted at `a182152`; R1–R10 are closed.** Independent retained probes, Linux full/race/build/boundary-build and four cross-builds pass. See the [acceptance and validation limits](astra-review.md#independent-follow-up-acceptance-of-a182152). Live interrupted-session qualification remains open and production dispatch remains disabled.
 
 Implementation started from accepted Stage 5.2 baseline `bf09f4d`. The initial implementation ends at `5617679`; review remediation currently ends at `a182152`. The implementation handoff below is supplemented by the independent offline acceptance above; neither establishes live interrupted-session qualification. Production dispatch remains disabled.
