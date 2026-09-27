@@ -16,7 +16,7 @@ The user has answered the setup questions for 5.1–5.5: existing Codex ChatGPT 
 2. Read this document, the mandatory [development workflow](development-workflow.md), [session continuity audit](session-audit.md), [requirements](requirements.md), [architecture](architecture.md), and [harness investigation](harness-capabilities.md).
 3. Inspect current Git status and applicable repository instructions. Preserve existing files and uncommitted work; do not reset the checkout.
 4. Run `make check` and `make docs-check` to establish the starting baseline. Read [`AGENTS.md`](../AGENTS.md) first: it defines the project rules and the documentation obligations that any change must satisfy. Check installed harness versions against the evidence below; refresh affected protocol research if versions differ.
-5. Read the [documentation index](README.md), the [Stage 5 index](stage-5/README.md), the accepted [Stage 5.5 document](stage-5/5.5-workflow-and-planning.md) and the Stage 5.6 plan before changing delivery/finalization code. Stages 5.1–5.5 are independently accepted offline; the remaining Stage 5 slices are 5.6 delivery/finalization and 5.7 end-to-end qualification. Do not start 5.6 without explicit instruction, and remember that containment qualification gates production editing/delivery.
+5. Read the [documentation index](README.md), the [Stage 5 index](stage-5/README.md), the accepted [Stage 5.5 document](stage-5/5.5-workflow-and-planning.md) and the [Stage 5.6 plan](stage-5/5.6-delivery-and-finalization.md) before changing delivery/finalization code. Stages 5.1–5.5 are independently accepted offline; the remaining Stage 5 slices are 5.6 delivery/finalization and 5.7 end-to-end qualification. Do not start 5.6 without explicit instruction, and remember that containment qualification gates production editing/delivery.
 
 Suggested independent-review handoff prompt:
 
@@ -128,7 +128,7 @@ Deliverable: concrete design decisions and implementation tasks mapped to the ex
 
 ## Stage 5 — Deliver a narrow functional slice
 
-Follow the [expanded execution plan](stage-5-execution.md) and [Stage 5 backlog](stage-5-plan.md), including containment before strict production editing. The initial persisted planning/control slice and read-only project dashboard are implemented; broad B/C requirements, D profile qualification and E–J remain in progress/pending. The original functional order remains:
+Follow the [expanded execution plan](stage-5-execution.md) and [Stage 5 backlog](stage-5-plan.md), including containment before strict production editing. Stages 5.1–5.5 are independently accepted offline at implementation commit `84c0275`; Stage 5.6 delivery/finalization is the next implementation task, followed by Stage 5.7 end-to-end qualification. Production runtime/model/reviewer qualification remains a separate disabled gate. The original functional order remains:
 
 1. Manual project/profile setup, repository discovery, branch preparation, and one persisted task execution.
 2. Sequential dispatch with approvals, pause/stop/recovery, and shared workspace/local-model coordination.

@@ -4,9 +4,9 @@ Instructions for any agent working in this repository. Read this before changing
 
 Vigil is a local control panel that runs existing agent harnesses (Codex, Hermes)
 through a Go core with SQLite state. It is **pre-release**: the offline core through
-Stage 5.5 is implemented and independently accepted, and production dispatch is
-deliberately disabled. Do not enable it, and do not start Stage 5.6 without an
-explicit instruction.
+Stage 5.5 is implemented and independently accepted at implementation commit
+`84c0275`, and production dispatch is deliberately disabled. Do not enable it, and
+do not start Stage 5.6 without an explicit instruction.
 
 ## Start here
 

@@ -2,8 +2,9 @@
 
 Vigil is a local control panel that runs existing agent harnesses through a Go core
 with SQLite state. It is pre-release: the offline core through Stage 5.5 is
-implemented and independently accepted, and production dispatch is deliberately
-disabled.
+implemented and independently accepted at implementation commit `84c0275`, and
+production dispatch is deliberately disabled. Stage 5.6 delivery/finalization is
+the next implementation task.
 
 This index states what each document is authoritative for. Read
 [`next-steps.md`](next-steps.md) first for current state and the next action, and
