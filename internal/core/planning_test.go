@@ -171,3 +171,64 @@ func TestMalformedOversizedAndClarifyingProposalsAreAtomic(t *testing.T) {
 		t.Fatal("missing clarification inbox record", requests)
 	}
 }
+
+func TestProposalHumanApproveRejectAndRevisionRequestRemainDistinct(t *testing.T) {
+	_, e, p := setup(t)
+	ctx := context.Background()
+	apply(t, e, "project.configure", config())
+	apply(t, e, "profile.put", profile())
+	path := filepath.Join(p.Root, "spec.md")
+	if err := os.WriteFile(path, []byte("fixture proposal decisions"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var revision int
+	if err := e.DB.SQL.QueryRow("SELECT revision FROM project").Scan(&revision); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.ImportMarkdown(ctx, "decision-import", revision, "spec", path); err != nil {
+		t.Fatal(err)
+	}
+	revision++
+
+	rejected := fixtureProposal()
+	rejected.ID = "rejected-proposal"
+	if _, err := e.CreateFixtureProposal(ctx, "create-rejected", revision, rejected); err != nil {
+		t.Fatal(err)
+	}
+	rejectPayload, _ := json.Marshal(map[string]any{"proposal_id": rejected.ID, "proposal_revision": 1, "action": "reject", "rationale": "fixture rejection exercises the explicit negative path"})
+	if _, err := e.Apply(ctx, Human, Envelope{CommandID: "reject-exact-proposal", ExpectedRevision: revision, Kind: "planning.proposal.decide", Payload: rejectPayload}); err != nil {
+		t.Fatal(err)
+	}
+	revision++
+	if proposal, err := e.Proposal(ctx, rejected.ID, 1); err != nil || proposal.State != "rejected" {
+		t.Fatal("proposal rejection was not persisted", proposal.State, err)
+	}
+
+	revised := fixtureProposal()
+	revised.ID = "revised-proposal"
+	if _, err := e.CreateFixtureProposal(ctx, "create-revision-one", revision, revised); err != nil {
+		t.Fatal(err)
+	}
+	revisionPayload, _ := json.Marshal(map[string]any{"proposal_id": revised.ID, "proposal_revision": 1, "action": "request_revision", "rationale": "fixture requests a corrected immutable revision"})
+	if _, err := e.Apply(ctx, Human, Envelope{CommandID: "request-exact-revision", ExpectedRevision: revision, Kind: "planning.proposal.decide", Payload: revisionPayload}); err != nil {
+		t.Fatal(err)
+	}
+	revision++
+	if proposal, err := e.Proposal(ctx, revised.ID, 1); err != nil || proposal.State != "stale" {
+		t.Fatal("revision request did not retire the exact proposal", proposal.State, err)
+	}
+	revised.Rationale = "corrected fixture proposal"
+	if proposal, err := e.CreateFixtureProposal(ctx, "create-revision-two", revision, revised); err != nil || proposal.Revision != 2 || proposal.State != "proposed" {
+		t.Fatal("replacement immutable revision was not created", proposal, err)
+	}
+	applyPayload, _ := json.Marshal(map[string]any{"proposal_id": revised.ID, "proposal_revision": 2, "authorize_criteria_changes": false})
+	if _, err := e.Apply(ctx, Human, Envelope{CommandID: "approve-revision-two", ExpectedRevision: revision, Kind: "planning.proposal.apply", Payload: applyPayload}); err != nil {
+		t.Fatal(err)
+	}
+	if proposal, err := e.Proposal(ctx, revised.ID, 2); err != nil || proposal.State != "applied" {
+		t.Fatal("exact replacement revision was not applied", proposal.State, err)
+	}
+	if proposal, err := e.Proposal(ctx, rejected.ID, 1); err != nil || proposal.State != "rejected" {
+		t.Fatal("approving a different revision changed the rejected proposal", proposal.State, err)
+	}
+}

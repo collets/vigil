@@ -79,10 +79,12 @@ type RecoveryEligibility struct {
 }
 
 type RecoveryChoiceRequest struct {
-	CommandID        string `json:"command_id"`
-	ExpectedRevision int    `json:"expected_revision"`
-	RunID            string `json:"run_id"`
-	Mode             string `json:"mode"`
+	CommandID            string `json:"command_id"`
+	ExpectedRevision     int    `json:"expected_revision"`
+	RunID                string `json:"run_id"`
+	Mode                 string `json:"mode"`
+	DisplayedRequestID   string `json:"displayed_request_id,omitempty"`
+	ExpectedTaskRevision int    `json:"expected_task_revision,omitempty"`
 }
 
 type RecoveryChoiceReceipt struct {
@@ -239,6 +241,20 @@ func (r *Runner) ChooseRecovery(ctx context.Context, request RecoveryChoiceReque
 			}
 			if revision != request.ExpectedRevision {
 				return nil, fmt.Errorf("stale project revision: expected %d, current %d", request.ExpectedRevision, revision)
+			}
+			if request.DisplayedRequestID != "" {
+				if !store.SafeID(request.DisplayedRequestID) || request.ExpectedTaskRevision < 1 {
+					return nil, errors.New("valid displayed recovery request binding required")
+				}
+				var state, kind, boundRun string
+				var taskRevision int
+				var deadline sql.NullInt64
+				if err := tx.QueryRowContext(ctx, `SELECT state,kind,coalesce(run_id,''),coalesce(task_revision,0),deadline FROM requests WHERE id=?`, request.DisplayedRequestID).Scan(&state, &kind, &boundRun, &taskRevision, &deadline); err != nil {
+					return nil, err
+				}
+				if state != "pending" || kind != "recovery" || boundRun != request.RunID || taskRevision != request.ExpectedTaskRevision || deadline.Valid && deadline.Int64 <= store.Now() {
+					return nil, errors.New("displayed recovery request is stale, expired or foreign")
+				}
 			}
 			choiceID := store.ID()
 			if _, err := tx.ExecContext(ctx, `INSERT INTO recovery_choices(id,run_id,source_generation_id,mode,state,eligibility_json,created_at) VALUES(?,?,?,?,'prepared','{}',?)`, choiceID, request.RunID, prepared.GenerationID, request.Mode, store.Now()); err != nil {

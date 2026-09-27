@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -38,6 +39,8 @@ type model struct {
 	mutating                                bool
 	feedback                                string
 	mutate                                  mutator
+	inputRequest                            string
+	inputText                               string
 	tab, offset, inbox, task, width, height int
 }
 
@@ -88,6 +91,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = true
 		return m, tea.Batch(m.fetch(), tick())
 	case tea.KeyPressMsg:
+		if m.inputRequest != "" {
+			switch msg.String() {
+			case "ctrl+c":
+				return m, tea.Quit
+			case "esc":
+				m.inputRequest, m.inputText = "", ""
+				m.feedback = "clarification answer cancelled locally"
+			case "backspace":
+				if runes := []rune(m.inputText); len(runes) > 0 {
+					m.inputText = string(runes[:len(runes)-1])
+				}
+			case "enter":
+				answer := strings.TrimSpace(m.inputText)
+				if answer == "" {
+					m.feedback = "clarification answer cannot be empty"
+					return m, nil
+				}
+				action := "answer-clarification:" + m.inputRequest + ":" + base64.RawURLEncoding.EncodeToString([]byte(answer))
+				m.inputRequest, m.inputText = "", ""
+				m.mutating = true
+				m.feedback = "answer-clarification pending"
+				return m, m.act(action)
+			default:
+				if msg.Text != "" && len(m.inputText)+len(msg.Text) <= 4096 {
+					m.inputText += msg.Text
+				}
+			}
+			return m, nil
+		}
 		if m.snapshot != nil && m.mutate != nil && !m.mutating {
 			action := ""
 			switch msg.String() {
@@ -109,6 +141,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.tab == 2 && len(m.snapshot.Inbox) > 0 {
 					action = "remain-blocked:" + m.snapshot.Inbox[m.inbox].ID
 				}
+			case "x":
+				if m.tab == 2 && len(m.snapshot.Inbox) > 0 {
+					action = "exact-resume:" + m.snapshot.Inbox[m.inbox].ID
+				}
+			case "f":
+				if m.tab == 2 && len(m.snapshot.Inbox) > 0 {
+					action = "fresh-context:" + m.snapshot.Inbox[m.inbox].ID
+				}
+			case "v":
+				if m.tab == 2 && len(m.snapshot.Inbox) > 0 {
+					action = "request-proposal-revision:" + m.snapshot.Inbox[m.inbox].ID
+				}
+			case "i":
+				if m.tab == 2 && len(m.snapshot.Inbox) > 0 {
+					entry := m.snapshot.Inbox[m.inbox]
+					if entry.Kind == "input" && entry.SessionID != "" && entry.NativeRequestKey != "" {
+						m.inputRequest = entry.ID
+						m.inputText = ""
+						m.feedback = "enter clarification answer; Enter submits, Esc cancels locally"
+						return m, nil
+					}
+				}
 			case "h", "m", "t":
 				if (m.tab == 1 || m.tab == 4) && len(m.snapshot.Tasks) > 0 {
 					prefix := map[string]string{"h": "human-accept", "m": "manual-pass", "t": "accept-task"}[msg.String()]
@@ -127,7 +181,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "n":
 				if m.tab == 2 && len(m.snapshot.Inbox) > 0 {
-					action = "deny:" + m.snapshot.Inbox[m.inbox].ID
+					entry := m.snapshot.Inbox[m.inbox]
+					switch {
+					case entry.Kind == "input" && entry.SessionID != "":
+						action = "cancel-clarification:" + entry.ID
+					case entry.Kind == "approval" && proposalRequest(entry):
+						action = "reject-proposal:" + entry.ID
+					default:
+						action = "deny:" + entry.ID
+					}
 				}
 			}
 			if action != "" {
@@ -194,6 +256,23 @@ func clean(value string) string {
 	}, value)
 }
 
+func boundedText(value string, limit int) string {
+	value = clean(value)
+	runes := []rune(value)
+	if limit < 1 || len(runes) <= limit {
+		return value
+	}
+	return string(runes[:limit]) + "…"
+}
+
+func proposalRequest(entry core.InboxEntry) bool {
+	var proposal struct {
+		ID       string `json:"proposal_id"`
+		Revision int    `json:"proposal_revision"`
+	}
+	return json.Unmarshal(entry.Context, &proposal) == nil && store.SafeID(proposal.ID) && proposal.Revision > 0
+}
+
 func (m model) lines() []string {
 	if m.snapshot == nil {
 		if m.err != nil {
@@ -232,7 +311,7 @@ func (m model) lines() []string {
 			lines = []string{"No tasks defined."}
 		}
 	case 2:
-		lines = []string{"Resolve the displayed revision only: y allow once · n deny · g apply proposal · b remain blocked.", "Task acceptance and manual Pass are distinct task actions; native clarification is not yet available here.", "Showing up to 100 pending/expired decisions.", ""}
+		lines = []string{"Resolve the displayed revision only: y allow · n deny/reject/cancel · g apply · v revise.", "Recovery: x exact resume · f fresh context · b remain blocked. Native input: i answer.", "Task acceptance and manual Pass remain distinct revision-bound actions.", "Showing up to 100 pending/expired decisions.", ""}
 		for index, entry := range s.Inbox {
 			marker := "  "
 			if index == m.inbox {
@@ -251,6 +330,34 @@ func (m model) lines() []string {
 			}
 			if entry.OperationID != "" {
 				lines = append(lines, "  Operation: "+clean(entry.OperationID), "  Resource digest: "+clean(entry.ResourceDigest), "  Arguments digest: "+clean(entry.ArgumentsDigest), fmt.Sprintf("  Policy revision: %d · decision scope: once", entry.PolicyEpoch))
+			}
+			if entry.Kind == "approval" {
+				var proposal struct {
+					ID        string `json:"proposal_id"`
+					Revision  int    `json:"proposal_revision"`
+					Digest    string `json:"definition_digest"`
+					Operation string `json:"operation"`
+				}
+				if json.Unmarshal(entry.Context, &proposal) == nil && proposal.ID != "" {
+					lines = append(lines, fmt.Sprintf("  Proposal: %s r%d · %s", clean(proposal.ID), proposal.Revision, clean(proposal.Operation)), "  Definition digest: "+clean(proposal.Digest))
+				}
+			}
+			if entry.Kind == "input" && entry.SessionID != "" {
+				var clarification struct {
+					Prompt json.RawMessage `json:"prompt"`
+				}
+				if json.Unmarshal(entry.Context, &clarification) == nil && len(clarification.Prompt) > 0 {
+					lines = append(lines, "  Native prompt (untrusted): "+boundedText(string(clarification.Prompt), 1024))
+				}
+			}
+			if entry.Kind == "recovery" {
+				var recovery struct {
+					Reason string `json:"reason"`
+					Stage  string `json:"stage"`
+				}
+				if json.Unmarshal(entry.Context, &recovery) == nil && recovery.Reason != "" {
+					lines = append(lines, "  Recovery reason: "+clean(recovery.Reason)+" · "+clean(recovery.Stage))
+				}
 			}
 			var request core.OperationRequest
 			if json.Unmarshal(entry.Context, &request) == nil && request.Category != "" {
@@ -329,13 +436,20 @@ func (m model) View() tea.View {
 	if m.feedback != "" {
 		status += " · " + clean(m.feedback)
 	}
+	if m.inputRequest != "" {
+		status = "Clarification input for " + clean(m.inputRequest)
+	}
 	lines := m.lines()
 	space := max(1, m.height-5)
 	start := min(m.offset, max(0, len(lines)-space))
 	end := min(len(lines), start+space)
 	output := []string{"Vigil  " + strings.Join(tabs, "  "), status, ""}
 	output = append(output, lines[start:end]...)
-	output = append(output, "", fmt.Sprintf("p/c/s control · a/u plan · y/n permission · h human · m manual Pass · t accept task · q quit  (%d–%d/%d)", start+1, end, len(lines)))
+	footer := fmt.Sprintf("p/c/s control · a/u plan · inbox g/v/x/f/b/i/y/n · h/m/t quality · q quit  (%d–%d/%d)", start+1, end, len(lines))
+	if m.inputRequest != "" {
+		footer = "Answer: " + clean(m.inputText) + "  (Enter submit · Esc cancel locally · Ctrl+C quit)"
+	}
+	output = append(output, "", footer)
 	for n, line := range output {
 		output[n] = ansi.Truncate(line, max(1, m.width), "…")
 	}
@@ -348,9 +462,13 @@ func (m model) View() tea.View {
 }
 
 func RunProject(ctx context.Context, engine *core.Engine, coordination *coordinator.Coordinator, input io.Reader, output io.Writer) error {
+	return RunProjectWithOwner(ctx, engine, coordination, nil, input, output)
+}
+
+func RunProjectWithOwner(ctx context.Context, engine *core.Engine, coordination *coordinator.Coordinator, owner *supervisor.InteractiveOwner, input io.Reader, output io.Writer) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	final, err := tea.NewProgram(model{ctx: ctx, load: engine.Dashboard, mutate: projectMutator(engine, coordination), loading: true, width: 80, height: 24}, tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output)).Run()
+	final, err := tea.NewProgram(model{ctx: ctx, load: engine.Dashboard, mutate: projectMutator(engine, coordination, owner), loading: true, width: 80, height: 24}, tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output)).Run()
 	if err != nil {
 		return fmt.Errorf("run dashboard: %w", err)
 	}
@@ -360,7 +478,7 @@ func RunProject(ctx context.Context, engine *core.Engine, coordination *coordina
 	return nil
 }
 
-func projectMutator(engine *core.Engine, coordination *coordinator.Coordinator) mutator {
+func projectMutator(engine *core.Engine, coordination *coordinator.Coordinator, owner *supervisor.InteractiveOwner) mutator {
 	return func(ctx context.Context, s core.DashboardSnapshot, action string) error {
 		revision := s.Readiness.Project.Revision
 		switch action {
@@ -432,8 +550,18 @@ func projectMutator(engine *core.Engine, coordination *coordinator.Coordinator) 
 					return err
 				}
 			}
-			if (decision != "allow" && decision != "deny" && decision != "apply-proposal" && decision != "remain-blocked") || !found || requestID == "" {
+			if (decision != "allow" && decision != "deny" && decision != "apply-proposal" && decision != "reject-proposal" && decision != "request-proposal-revision" && decision != "remain-blocked" && decision != "exact-resume" && decision != "fresh-context" && decision != "answer-clarification" && decision != "cancel-clarification") || !found || requestID == "" {
 				return fmt.Errorf("unknown dashboard action")
+			}
+			answerText := ""
+			if decision == "answer-clarification" {
+				var encoded string
+				requestID, encoded, found = strings.Cut(requestID, ":")
+				decoded, decodeErr := base64.RawURLEncoding.DecodeString(encoded)
+				if !found || decodeErr != nil || len(decoded) == 0 || len(decoded) > 4096 {
+					return fmt.Errorf("invalid bounded clarification answer")
+				}
+				answerText = string(decoded)
 			}
 			if len(s.Inbox) == 0 {
 				return fmt.Errorf("no displayed pending request")
@@ -463,11 +591,52 @@ func projectMutator(engine *core.Engine, coordination *coordinator.Coordinator) 
 				_, err := engine.Apply(ctx, core.Human, core.Envelope{CommandID: store.ID(), ExpectedRevision: revision, Kind: "planning.proposal.apply", Payload: payload})
 				return err
 			}
-			if decision == "remain-blocked" {
+			if decision == "reject-proposal" || decision == "request-proposal-revision" {
+				if entry.Kind != "approval" {
+					return fmt.Errorf("displayed request is not a planning approval")
+				}
+				var proposal struct {
+					ID       string `json:"proposal_id"`
+					Revision int    `json:"proposal_revision"`
+				}
+				if err := json.Unmarshal(entry.Context, &proposal); err != nil || !store.SafeID(proposal.ID) || proposal.Revision < 1 {
+					return fmt.Errorf("displayed approval is not a closed planning proposal")
+				}
+				action, rationale := "reject", "Explicit rejection from Vigil dashboard"
+				if decision == "request-proposal-revision" {
+					action, rationale = "request_revision", "Explicit replacement revision requested from Vigil dashboard"
+				}
+				payload, _ := json.Marshal(map[string]any{"proposal_id": proposal.ID, "proposal_revision": proposal.Revision, "action": action, "rationale": rationale})
+				_, err := engine.Apply(ctx, core.Human, core.Envelope{CommandID: store.ID(), ExpectedRevision: revision, Kind: "planning.proposal.decide", Payload: payload})
+				return err
+			}
+			if decision == "remain-blocked" || decision == "exact-resume" || decision == "fresh-context" {
 				if entry.Kind != "recovery" || entry.RunID == "" {
 					return fmt.Errorf("displayed request is not a recovery choice")
 				}
-				_, err := (&supervisor.Runner{Engine: engine}).ChooseRecovery(ctx, supervisor.RecoveryChoiceRequest{CommandID: store.ID(), ExpectedRevision: revision, RunID: entry.RunID, Mode: "remain_blocked"}, nil)
+				mode := map[string]string{"remain-blocked": "remain_blocked", "exact-resume": "exact_resume", "fresh-context": "fresh_context"}[decision]
+				if owner == nil {
+					if mode != "remain_blocked" {
+						return fmt.Errorf("live recovery owner is unavailable")
+					}
+					_, err := (&supervisor.Runner{Engine: engine}).ChooseRecovery(ctx, supervisor.RecoveryChoiceRequest{CommandID: store.ID(), ExpectedRevision: revision, RunID: entry.RunID, Mode: mode, DisplayedRequestID: entry.ID, ExpectedTaskRevision: entry.TaskRevision}, nil)
+					return err
+				}
+				_, err := owner.ChooseRecovery(ctx, supervisor.RecoveryChoiceRequest{CommandID: store.ID(), ExpectedRevision: revision, RunID: entry.RunID, Mode: mode, DisplayedRequestID: entry.ID, ExpectedTaskRevision: entry.TaskRevision})
+				return err
+			}
+			if decision == "answer-clarification" || decision == "cancel-clarification" {
+				if entry.Kind != "input" || entry.SessionID == "" || entry.NativeRequestKey == "" {
+					return fmt.Errorf("displayed request is not an owner-routed native clarification")
+				}
+				if owner == nil {
+					return fmt.Errorf("live clarification owner is unavailable")
+				}
+				nativeDecision := "answer"
+				if decision == "cancel-clarification" {
+					nativeDecision = "cancel"
+				}
+				_, err := owner.AnswerClarification(ctx, supervisor.ClarificationAnswerRequest{CommandID: store.ID(), ExpectedRevision: revision, RequestID: entry.ID, SessionID: entry.SessionID, NativeRequestKey: entry.NativeRequestKey, Decision: nativeDecision, Answer: answerText})
 				return err
 			}
 			if entry.Kind != "approval" {

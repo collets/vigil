@@ -130,6 +130,12 @@ Missing task questions also create distinct clarification items.
 ./bin/vigil project proposal-show PROJECT_ID proposal-1 1
 ./bin/vigil project proposal-apply PROJECT_ID proposal-1 1 \
   --command-id proposal-apply-001 --expected-revision 5
+./bin/vigil project proposal-decide PROJECT_ID proposal-1 1 \
+  --command-id proposal-reject-001 --expected-revision 5 \
+  --decision reject --rationale "The proposal does not match the requested scope"
+./bin/vigil project proposal-decide PROJECT_ID proposal-1 1 \
+  --command-id proposal-revise-001 --expected-revision 5 \
+  --decision request_revision --rationale "Split the first task and preserve its criteria"
 ```
 
 `proposal-apply` is the human application command bound to the exact proposal,
@@ -137,6 +143,13 @@ specification and expected plan revision. Criteria changes additionally require
 `--authorize-criteria-changes`. Application is atomic and reuses `plan.put`'s
 active/accepted-task protection and evidence invalidation. It creates no commit,
 push, publication, spending or delivery authority.
+
+`proposal-decide` records an exact revision-bound human rejection or replacement-
+revision request. `reject` leaves the immutable revision in `rejected`;
+`request_revision` leaves it in `stale`, so a planner can create a new immutable
+revision without modifying the reviewed one. Both actions retire that revision's
+pending approval and clarification items atomically. A later revision still needs
+its own explicit application.
 
 ## Repository enrollment and branch preparation
 
@@ -368,9 +381,44 @@ Operation restrictions are checked when requesting permission, granting it and i
 ```sh
 ./bin/vigil dashboard PROJECT_ID
 # or: make dashboard PROJECT=PROJECT_ID
+
+# Offline interaction mechanics in marked disposable synthetic repositories only:
+./bin/vigil dashboard PROJECT_ID --synthetic-interactions \
+  --history-state readable --history-class interrupted
+
+# Optionally persist one visibly labelled fixture clarification for the same
+# live dashboard owner (the session must already belong to the synthetic run):
+./bin/vigil dashboard PROJECT_ID --synthetic-interactions \
+  --clarification-run RUN_ID --clarification-session SESSION_RECORD_ID \
+  --clarification-key fixture-request-1 \
+  --clarification-prompt "Which fixture color should be recorded?"
 ```
 
-The dashboard reads one consistent database snapshot for readiness, queue, task/plan evidence, the first 100 pending decisions and latest 100 history events. It refreshes asynchronously every two seconds. Failed refreshes retain the previous snapshot with a visible warning. Project text is stripped of terminal control sequences. Queue, continue, pause, advance and permission allow/deny use the same receipt/revision handlers as the CLI and run asynchronously with pending/success/failure feedback. In Tasks or Detail, `h` records explicit human acceptance, `m` records Pass for the exact displayed manual criterion, and `t` invokes core task acceptance through a registered coordinator owner. The focused task and exact displayed task revision are carried into and transactionally rechecked by each quality command; concurrent definition changes fail stale. Native clarification is deliberately not offered because no production supervisor driver yet persists and owns its delivery. No dashboard key starts a model, performs delivery or invents a runtime driver for stop/recovery/clarification.
+The dashboard reads one consistent database snapshot for readiness, queue, task/plan evidence, the first 100 pending decisions and latest 100 history events. It refreshes asynchronously every two seconds. Failed refreshes retain the previous snapshot with a visible warning. Project text is stripped of terminal control sequences. Queue, continue, pause, advance and permission allow/deny use the same receipt/revision handlers as the CLI and run asynchronously with pending/success/failure feedback. In Tasks or Detail, `h` records explicit human acceptance, `m` records Pass for the exact displayed manual criterion, and `t` invokes core task acceptance through a registered coordinator owner. The focused task and exact displayed task revision are carried into and transactionally rechecked by each quality command; concurrent definition changes fail stale.
+
+In Inbox, planning approval, rejection and replacement-revision requests are
+distinct exact-revision actions. Recovery offers exact resume, fresh context and
+remain blocked; exact/fresh choices require the injected live owner and its trusted
+history/checkpoint inspector. Native clarification input enters a bounded text mode
+and binds the visibly displayed request, session and native request key. The owner
+persists the response intent before delivery; a failed or unproven delivery becomes
+uncertain and is never replayed automatically. A standalone dashboard without the
+owning runtime capability can still display these requests but fails closed if an
+owner-only action is attempted. No key starts a model or reconstructs a provider
+request handle from persisted or rendered text.
+
+`--synthetic-interactions` is the reachable offline application path for those
+owner-only mechanics. Every repository in the selected run must carry the
+disposable-fixture marker and the run must have `runtime_kind=synthetic`.
+`--history-state` accepts `readable`, `missing`, `corrupt` or `unsupported`;
+`--history-class` and `--history-automatic-work` complete the explicit synthetic
+history observation. The optional `--clarification-run`, `--clarification-session`,
+`--clarification-key` and `--clarification-prompt` flags create one bounded,
+visibly fixture-labelled request owned for that dashboard lifetime. Its successful
+mechanical delivery writes a `fixture_native_clarification_delivered` event and is
+never production/native-provider evidence. Without `--synthetic-interactions`, all
+of these fixture flags are rejected and the normal dashboard gains no runtime
+authority.
 
 Keys:
 
@@ -382,7 +430,11 @@ Keys:
 | `home`, `end` | Jump to start / end |
 | `r` | Refresh now |
 | `p`, `c`, `a`, `u` | Pause, continue, advance, or queue the first displayed queueable plan |
-| `y`, `n` | In Inbox only, allow once or deny the visibly focused permission request; other inbox kinds are refused and name their distinct command |
+| `g`, `v`, `n` | Apply, request replacement of, or reject the exact visibly focused planning proposal revision (`n` remains deny/cancel for the relevant non-proposal request) |
+| `x`, `f`, `b` | Choose exact resume, fresh context or remain blocked for the visibly focused recovery request; resume choices require the live owner inspector |
+| `i` | Answer the visibly focused owner-routed native clarification; `Enter` submits, `Esc` abandons local input and `Ctrl+C` exits |
+| `y`, `n` | Allow once or deny/cancel the visibly focused permission or native-input request, according to its distinct type |
+| `h`, `m`, `t` | On Tasks/Detail, record exact-revision human acceptance, manual Pass or core task acceptance |
 | `q`, `esc`, `ctrl+c` | Quit |
 
 

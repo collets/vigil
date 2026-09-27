@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -430,6 +431,30 @@ func projectCommand(stateDir *string) *cobra.Command {
 	proposalApply.Flags().IntVar(&applyProposalExpected, "expected-revision", 0, "Expected project revision")
 	proposalApply.Flags().BoolVar(&authorizeCriteria, "authorize-criteria-changes", false, "Explicitly authorize criteria changes in this exact proposal")
 	root.AddCommand(proposalApply)
+	var decideProposalCommand, proposalDecision, proposalDecisionRationale string
+	var decideProposalExpected int
+	proposalDecide := &cobra.Command{Use: "proposal-decide PROJECT_ID PROPOSAL_ID REVISION", Short: "Human-reject or request replacement of one exact proposal revision", Args: cobra.ExactArgs(3), RunE: func(cmd *cobra.Command, args []string) error {
+		revision, err := strconv.Atoi(args[2])
+		if err != nil || revision < 1 {
+			return errors.New("REVISION must be positive")
+		}
+		if decideProposalCommand == "" || decideProposalExpected < 1 || (proposalDecision != "reject" && proposalDecision != "request_revision") || strings.TrimSpace(proposalDecisionRationale) == "" {
+			return errors.New("--command-id, --expected-revision, --decision reject|request_revision and --rationale required")
+		}
+		payload, _ := json.Marshal(map[string]any{"proposal_id": args[1], "proposal_revision": revision, "action": proposalDecision, "rationale": proposalDecisionRationale})
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			result, err := e.Apply(cmd.Context(), core.Human, core.Envelope{CommandID: decideProposalCommand, ExpectedRevision: decideProposalExpected, Kind: "planning.proposal.decide", Payload: payload})
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, result)
+		})
+	}}
+	proposalDecide.Flags().StringVar(&decideProposalCommand, "command-id", "", "Unique replay-safe human decision command")
+	proposalDecide.Flags().IntVar(&decideProposalExpected, "expected-revision", 0, "Expected project revision")
+	proposalDecide.Flags().StringVar(&proposalDecision, "decision", "", "reject or request_revision")
+	proposalDecide.Flags().StringVar(&proposalDecisionRationale, "rationale", "", "Bounded human rationale for the exact decision")
+	root.AddCommand(proposalDecide)
 	root.AddCommand(&cobra.Command{Use: "reservation PROJECT_ID OPERATION_ID", Short: "Inspect a persisted core resource reservation without acquiring or releasing anything", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
 		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
 			r, err := e.Reservation(cmd.Context(), args[1])

@@ -263,6 +263,47 @@ func (o *Owner) live() error {
 	return nil
 }
 
+// ValidateLive proves that this process still holds the coordinator owner
+// capability. It grants no workspace or endpoint authority by itself.
+func (o *Owner) ValidateLive() error {
+	if o == nil {
+		return errors.New("owner is unavailable")
+	}
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.live()
+}
+
+// HoldLive keeps the owner capability from being closed or quarantined while
+// an application-owned control callback validates and performs its effect.
+// It does not grant workspace or endpoint authority.
+func (o *Owner) HoldLive(fn func() error) error {
+	if o == nil || fn == nil {
+		return errors.New("owner callback is unavailable")
+	}
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	if err := o.live(); err != nil {
+		return err
+	}
+	return fn()
+}
+
+// HoldControl serializes an application-owned control effect with every other
+// exclusive owner effect and with Close. It grants no workspace or endpoint
+// authority by itself.
+func (o *Owner) HoldControl(fn func() error) error {
+	if o == nil || fn == nil {
+		return errors.New("owner control callback is unavailable")
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if err := o.live(); err != nil {
+		return err
+	}
+	return fn()
+}
+
 func (o *Owner) Claim(ctx context.Context, project, operation string, roots []workspace.Identity) ([]Claim, error) {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
@@ -450,6 +491,38 @@ func (c *Coordinator) ownerAlive(id string) (bool, error) {
 	}
 	syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 	return false, nil
+}
+
+// FenceRetiredOwner proves the prior process no longer holds its owner lock,
+// quarantines every unreleased authority it held, and keeps the lock fenced for
+// the callback. A still-live or in-flight prior owner makes this fail closed.
+func (c *Coordinator) FenceRetiredOwner(ctx context.Context, id string, fn func() error) error {
+	if c == nil || c.DB == nil || !store.SafeID(id) || fn == nil {
+		return errors.New("valid retired owner and callback required")
+	}
+	path := filepath.Join(c.Dir, "locks", id)
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return errors.New("retired owner lock is unavailable")
+	}
+	lock, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return errors.New("prior owner is still live or has an effect in flight")
+		}
+		return err
+	}
+	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	if err := c.DB.Write(ctx, func(tx *store.Tx) error {
+		return quarantine(ctx, tx, id, "retired owner fenced before control reconciliation")
+	}); err != nil {
+		return err
+	}
+	return fn()
 }
 
 // Reap quarantines dead owners. It never releases their workspace or inference slot.

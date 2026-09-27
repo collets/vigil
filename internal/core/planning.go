@@ -353,3 +353,57 @@ func (e *Engine) applyPlanningProposal(ctx context.Context, tx *store.Tx, cmd En
 	}
 	return result, nil
 }
+
+func (e *Engine) decidePlanningProposal(ctx context.Context, tx *store.Tx, cmd Envelope) (any, error) {
+	var decision struct {
+		ProposalID       string `json:"proposal_id"`
+		ProposalRevision int    `json:"proposal_revision"`
+		Action           string `json:"action"`
+		Rationale        string `json:"rationale"`
+	}
+	if err := store.Decode(cmd.Payload, &decision); err != nil {
+		return nil, err
+	}
+	if !store.SafeID(decision.ProposalID) || decision.ProposalRevision < 1 || (decision.Action != "reject" && decision.Action != "request_revision") {
+		return nil, errors.New("exact proposal revision and reject or request_revision action required")
+	}
+	decision.Rationale = strings.TrimSpace(decision.Rationale)
+	if decision.Rationale == "" || len(decision.Rationale) > 4096 {
+		return nil, errors.New("bounded human rationale required")
+	}
+	var state, requestID string
+	if err := tx.QueryRowContext(ctx, `SELECT state,coalesce(request_id,'') FROM planning_proposals WHERE id=? AND revision=?`, decision.ProposalID, decision.ProposalRevision).Scan(&state, &requestID); err != nil {
+		return nil, err
+	}
+	if state != "proposed" {
+		return nil, errors.New("proposal is no longer pending")
+	}
+	nextState, requestState := "rejected", "denied"
+	if decision.Action == "request_revision" {
+		nextState, requestState = "stale", "resolved"
+	}
+	resultJSON, _ := json.Marshal(map[string]any{
+		"action":            decision.Action,
+		"proposal_id":       decision.ProposalID,
+		"proposal_revision": decision.ProposalRevision,
+		"rationale":         decision.Rationale,
+		"actor":             "human",
+	})
+	if _, err := tx.ExecContext(ctx, `UPDATE planning_proposals SET state=? WHERE id=? AND revision=? AND state='proposed'`, nextState, decision.ProposalID, decision.ProposalRevision); err != nil {
+		return nil, err
+	}
+	if requestID != "" {
+		if _, err := tx.ExecContext(ctx, `UPDATE requests SET state=?,result_json=?,resolved_at=? WHERE id=? AND state='pending'`, requestState, string(resultJSON), store.Now(), requestID); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE requests SET state='cancelled',resolved_at=? WHERE state='pending' AND id!=? AND json_extract(context_json,'$.proposal_id')=? AND json_extract(context_json,'$.proposal_revision')=?`, store.Now(), requestID, decision.ProposalID, decision.ProposalRevision); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"proposal_id":       decision.ProposalID,
+		"proposal_revision": decision.ProposalRevision,
+		"action":            decision.Action,
+		"state":             nextState,
+	}, nil
+}

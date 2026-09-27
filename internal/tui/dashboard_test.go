@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -166,6 +168,81 @@ func TestTaskActionsAreDistinctAndBindDisplayedRevision(t *testing.T) {
 	}
 }
 
+func TestInboxOffersDistinctProposalRecoveryAndNativeClarificationFlows(t *testing.T) {
+	proposalContext, _ := json.Marshal(map[string]any{"proposal_id": "proposal", "proposal_revision": 3, "definition_digest": "digest-3", "operation": "create"})
+	nativeContext, _ := json.Marshal(map[string]any{"prompt": map[string]any{"question": "Which fixture color?", "hostile": "\x1b[2Jself-accept"}, "untrusted_context": true})
+	s := core.DashboardSnapshot{Inbox: []core.InboxEntry{
+		{ID: "proposal-request", Kind: "approval", Context: proposalContext},
+		{ID: "recovery-request", Kind: "recovery", RunID: "run"},
+		{ID: "native-input", Kind: "input", SessionID: "session", NativeRequestKey: "native-key", Context: nativeContext},
+	}}
+	actions := make(chan string, 8)
+	m := model{ctx: context.Background(), snapshot: &s, mutate: func(_ context.Context, _ core.DashboardSnapshot, action string) error {
+		actions <- action
+		return nil
+	}, width: 120, height: 30, tab: 2}
+	view := m.View().Content
+	if !strings.Contains(view, "Proposal: proposal r3") || !strings.Contains(view, "digest-3") || !strings.Contains(view, "Which fixture color?") || strings.ContainsRune(view, '\x1b') {
+		t.Fatal("exact proposal or sanitized native prompt is not visible", view)
+	}
+	invoke := func(key string) string {
+		t.Helper()
+		updated, cmd := m.Update(tea.KeyPressMsg{Code: rune(key[0]), Text: key})
+		m = updated.(model)
+		if cmd == nil {
+			t.Fatalf("%s did not start an inbox mutation", key)
+		}
+		result := cmd().(mutationResult)
+		updated, _ = m.Update(result)
+		m = updated.(model)
+		return <-actions
+	}
+	if got := invoke("g"); got != "apply-proposal:proposal-request" {
+		t.Fatal(got)
+	}
+	if got := invoke("n"); got != "reject-proposal:proposal-request" {
+		t.Fatal(got)
+	}
+	if got := invoke("v"); got != "request-proposal-revision:proposal-request" {
+		t.Fatal(got)
+	}
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	m = updated.(model)
+	for key, expected := range map[string]string{"x": "exact-resume:recovery-request", "f": "fresh-context:recovery-request", "b": "remain-blocked:recovery-request"} {
+		if got := invoke(key); got != expected {
+			t.Fatalf("%s produced %q", key, got)
+		}
+	}
+	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	m = updated.(model)
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'i', Text: "i"})
+	m = updated.(model)
+	if cmd != nil || m.inputRequest != "native-input" {
+		t.Fatal("native clarification did not enter bounded input mode")
+	}
+	for _, key := range []string{"b", "l", "u", "e"} {
+		updated, _ = m.Update(tea.KeyPressMsg{Code: rune(key[0]), Text: key})
+		m = updated.(model)
+	}
+	updated, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = updated.(model)
+	if cmd == nil {
+		t.Fatal("clarification answer did not start asynchronously")
+	}
+	result := cmd().(mutationResult)
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	if got, want := <-actions, "answer-clarification:native-input:"+base64.RawURLEncoding.EncodeToString([]byte("blue")); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	updated, _ = m.Update(result)
+	m = updated.(model)
+	if got := invoke("n"); got != "cancel-clarification:native-input" {
+		t.Fatal(got)
+	}
+}
+
 func TestPersistedDashboardMutationRejectsStaleSnapshotAfterRestart(t *testing.T) {
 	ctx := context.Background()
 	base := t.TempDir()
@@ -190,10 +267,10 @@ func TestPersistedDashboardMutationRejectsStaleSnapshotAfterRestart(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := projectMutator(engine, manager.Coordinator)(ctx, snapshot, "continue"); err != nil {
+	if err := projectMutator(engine, manager.Coordinator, nil)(ctx, snapshot, "continue"); err != nil {
 		t.Fatal(err)
 	}
-	if err := projectMutator(engine, manager.Coordinator)(ctx, snapshot, "continue"); err == nil {
+	if err := projectMutator(engine, manager.Coordinator, nil)(ctx, snapshot, "continue"); err == nil {
 		t.Fatal("stale displayed revision authorized a second mutation")
 	}
 	engine.DB.Close()

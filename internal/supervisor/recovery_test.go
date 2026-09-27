@@ -107,6 +107,33 @@ func TestExplicitRemainBlockedCompletesWithoutReplacementAttempt(t *testing.T) {
 	}
 }
 
+func TestDisplayedRecoveryChoiceRejectsExpiredForeignAndStaleRequest(t *testing.T) {
+	fixture := setupFixture(t)
+	prepareInterruptedRecovery(t, fixture)
+	insert := func(id, runID string, taskRevision int, deadline int64) {
+		t.Helper()
+		if _, err := fixture.engine.DB.SQL.Exec(`INSERT INTO requests(id,kind,state,plan_id,task_id,task_revision,run_id,context_json,blocking,created_at,deadline) VALUES(?,'recovery','pending',?,?,?,?, '{}',1,?,?)`, id, fixture.prepared.PlanID, fixture.prepared.TaskID, taskRevision, runID, store.Now(), deadline); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert("expired-recovery", fixture.prepared.RunID, 1, store.Now()-1)
+	request := RecoveryChoiceRequest{CommandID: "choose-expired", ExpectedRevision: projectRevision(t, fixture), RunID: fixture.prepared.RunID, Mode: "remain_blocked", DisplayedRequestID: "expired-recovery", ExpectedTaskRevision: 1}
+	if _, err := (&Runner{Engine: fixture.engine}).ChooseRecovery(context.Background(), request, nil); err == nil {
+		t.Fatal("expired displayed recovery request was accepted")
+	}
+	insert("valid-recovery", fixture.prepared.RunID, 1, store.Now()+60000)
+	request.CommandID, request.DisplayedRequestID = "choose-wrong-revision", "valid-recovery"
+	request.ExpectedTaskRevision = 2
+	if _, err := (&Runner{Engine: fixture.engine}).ChooseRecovery(context.Background(), request, nil); err == nil {
+		t.Fatal("foreign task revision recovery request was accepted")
+	}
+	request.CommandID, request.ExpectedTaskRevision = "choose-valid-request", 1
+	receipt, err := (&Runner{Engine: fixture.engine}).ChooseRecovery(context.Background(), request, nil)
+	if err != nil || receipt.State != "consumed" {
+		t.Fatal("exact displayed recovery request was not consumed", receipt, err)
+	}
+}
+
 type completedResumeDriver struct{ *FixtureDriver }
 
 func (d *completedResumeDriver) Resume(ctx context.Context, prepared PreparedRun, nativeSessionID string) error {
