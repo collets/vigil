@@ -229,10 +229,14 @@ Before pushing `main`, verify all of the following:
 - documentation and `docs/STATUS` describe the same accepted state;
 - the worktree is clean and the push is a fast-forward normal push.
 
-When these conditions hold, this workflow gives standing authorization for a normal
-non-force push of the accepted integration candidate to `main`. If any condition is
-ambiguous, stop before the main push and request direction. Never use force to make
-the remote accept a candidate.
+When these conditions hold, the candidate is ready to propose. Meeting them makes
+the candidate acceptable, not pre-authorized: this workflow grants no standing
+authorization to commit or push to `main`. A normal non-force push of the accepted
+integration candidate to `main` requires explicit user authorization for that
+operation, which the user may give for a session or a named candidate. Checkpoint
+pushes to a task branch are separately standing-authorized; `main` is not. If any
+condition is ambiguous, stop before the main push and request direction. Never use
+force to make the remote accept a candidate.
 
 ## Explicit user exceptions
 
@@ -245,6 +249,12 @@ priority platform and system safety constraints still apply.
 
 This includes a clear instruction to work, commit or push directly on `main`: the
 user may authorize that exact exception even though the default workflow requires a
-task branch and independent acceptance. Record the named operation and scope before
-acting; do not reuse it for later work or infer permission to force-push, publish,
-merge a request or perform product delivery.
+task branch and independent acceptance. Such an authorization is the only way the
+agent commits or pushes to `main`, it is bound to the named operation and scope, and
+it never becomes a standing default for later work. Record it before acting; do not
+infer permission to force-push, publish, merge a request or perform product delivery.
+
+Server-side branch protection is deliberately not configured yet. Do not assume
+`main` is protected against force-push or deletion, and do not add repository-setting
+recommendations to this document in anticipation of a later change; the process rules
+above are the only enforcement until the user configures protection deliberately.

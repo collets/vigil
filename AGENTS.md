@@ -47,8 +47,10 @@ do not start Stage 5.6 without an explicit instruction.
   and their recorded digests must never change. Schema changes are forward-only.
 - **Follow [`docs/development-workflow.md`](docs/development-workflow.md).** Develop
   on task branches, push checkpoints only to their matching branches, use separate
-  worktrees for parallel agents, and push `main` only after exact-candidate validation
-  and independent acceptance. Never force-push. Git synchronization never implies
+  worktrees for parallel agents, and propose `main` only after exact-candidate
+  validation and independent acceptance. Never force-push. There is no standing
+  authorization to commit or push to `main`; that requires explicit user
+  authorization for the named operation or session. Git synchronization never implies
   release, request, merge or Vigil delivery authority.
 - **The user may explicitly authorize an exception** to a repository policy for a
   concrete operation. The authorization must clearly identify the conflicting
