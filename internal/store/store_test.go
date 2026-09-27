@@ -21,6 +21,9 @@ func TestProjectV6UpgradeAndRollback(t *testing.T) {
 	if _, err = db.SQL.Exec("INSERT INTO config_snapshots VALUES('existing','digest',1,'{}','{}',1)"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err = db.SQL.Exec("DROP INDEX one_draft_delivery_per_head_base"); err != nil {
+		t.Fatal(err)
+	}
 	for _, trigger := range qualityAuthorityTriggers {
 		if _, err = db.SQL.Exec("DROP TRIGGER " + trigger); err != nil {
 			t.Fatal(err)
@@ -82,7 +85,7 @@ func TestProjectV6UpgradeAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer upgraded.Close()
-	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 16 {
+	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 17 {
 		t.Fatal("v6 database was not upgraded", versions, err)
 	}
 	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM config_snapshots WHERE id='existing'").Scan(&existing); err != nil || existing != 1 {
@@ -109,6 +112,8 @@ func TestProjectV14UpgradeAndRollback(t *testing.T) {
 	}
 	for _, statement := range []string{
 		"PRAGMA foreign_keys=OFF",
+		"DROP INDEX one_draft_delivery_per_head_base",
+		"DELETE FROM schema_migrations WHERE version=17",
 		"DROP TRIGGER planning_attempt_terminal_no_update",
 		"DROP TRIGGER planning_attempt_no_delete",
 		"DROP TABLE planning_budget_transfers",
@@ -162,7 +167,7 @@ func TestProjectV14UpgradeAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer upgraded.Close()
-	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 16 {
+	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 17 {
 		t.Fatal("v14 database was not upgraded", versions, err)
 	}
 	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM config_snapshots WHERE id='pre15'").Scan(&retained); err != nil || retained != 1 {
@@ -181,6 +186,8 @@ func TestProjectV15UpgradeAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, statement := range []string{
+		"DROP INDEX one_draft_delivery_per_head_base",
+		"DELETE FROM schema_migrations WHERE version=17",
 		"DROP INDEX one_active_tool_generation",
 		"DROP TRIGGER planning_attempt_terminal_no_update",
 		"DROP TRIGGER planning_attempt_no_delete",
@@ -225,7 +232,7 @@ func TestProjectV15UpgradeAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer upgraded.Close()
-	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 16 {
+	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 17 {
 		t.Fatal("v15 database was not upgraded", versions, err)
 	}
 	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM config_snapshots WHERE id='pre16'").Scan(&retained); err != nil || retained != 1 {
@@ -274,6 +281,7 @@ func TestProjectV8UpgradePreservesRecoverySnapshotsAndPermitsEqualDigests(t *tes
 	}
 	statements := []string{
 		"PRAGMA foreign_keys=OFF",
+		"DROP INDEX one_draft_delivery_per_head_base",
 		"DROP TRIGGER planning_attempt_terminal_no_update",
 		"DROP TRIGGER planning_attempt_no_delete",
 		"DROP TABLE planning_budget_transfers",

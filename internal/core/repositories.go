@@ -286,8 +286,11 @@ func (e *Engine) repositoryRevision(ctx context.Context, id string, revision int
 		return result, err
 	}
 	result.Baseline.Dirty = dirty == 1
-	for raw, target := range map[string]any{identityJSON: &result.Identity, includedJSON: &result.IncludedPaths, nestedJSON: &result.NestedBoundaries, dirtyJSON: &result.Baseline.DirtyPaths, exclusionsJSON: &result.Baseline.Exclusions} {
-		if err := json.Unmarshal([]byte(raw), target); err != nil {
+	for _, field := range []struct {
+		raw    string
+		target any
+	}{{identityJSON, &result.Identity}, {includedJSON, &result.IncludedPaths}, {nestedJSON, &result.NestedBoundaries}, {dirtyJSON, &result.Baseline.DirtyPaths}, {exclusionsJSON, &result.Baseline.Exclusions}} {
+		if err := json.Unmarshal([]byte(field.raw), field.target); err != nil {
 			return result, err
 		}
 	}

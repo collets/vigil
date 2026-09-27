@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -21,18 +22,58 @@ import (
 // FactualArchive is a portable snapshot of persisted facts. It deliberately
 // contains no generated prose or ambient configuration/credential values.
 type FactualArchive struct {
-	SchemaVersion  int               `json:"schema_version"`
-	PlanID         string            `json:"plan_id"`
-	PlanRevision   int               `json:"plan_revision"`
-	PlanDefinition json.RawMessage   `json:"plan_definition"`
-	SpecDigest     string            `json:"spec_digest"`
-	AcceptanceID   string            `json:"acceptance_id"`
-	Tasks          []ArchiveTask     `json:"tasks"`
-	Evidence       []ArchiveEvidence `json:"evidence"`
-	Artifacts      []ArchiveArtifact `json:"artifacts"`
-	Runs           []ArchiveRun      `json:"runs"`
-	Deliveries     []ArchiveDelivery `json:"deliveries"`
-	Recovery       []ArchiveRecovery `json:"recovery"`
+	SchemaVersion        int                    `json:"schema_version"`
+	PlanID               string                 `json:"plan_id"`
+	PlanRevision         int                    `json:"plan_revision"`
+	PlanDefinition       json.RawMessage        `json:"plan_definition"`
+	Specification        string                 `json:"specification"`
+	SpecDigest           string                 `json:"spec_digest"`
+	SourceSpecifications []ArchiveSpecification `json:"source_specifications"`
+	Config               ArchiveConfig          `json:"config"`
+	Repositories         []ArchiveRepository    `json:"repositories"`
+	Scopes               []ArchiveScope         `json:"quality_scopes"`
+	AcceptanceID         string                 `json:"acceptance_id"`
+	Tasks                []ArchiveTask          `json:"tasks"`
+	Evidence             []ArchiveEvidence      `json:"evidence"`
+	Artifacts            []ArchiveArtifact      `json:"artifacts"`
+	Runs                 []ArchiveRun           `json:"runs"`
+	Deliveries           []ArchiveDelivery      `json:"deliveries"`
+	Operations           []ArchiveOperation     `json:"operations"`
+	Recovery             []ArchiveRecovery      `json:"recovery"`
+}
+
+type ArchiveSpecification struct {
+	ID         string `json:"id"`
+	Revision   int    `json:"revision"`
+	Digest     string `json:"digest"`
+	ArtifactID string `json:"artifact_id"`
+}
+
+type ArchiveConfig struct {
+	SnapshotID string          `json:"snapshot_id"`
+	Revision   int             `json:"revision"`
+	Digest     string          `json:"digest"`
+	Definition json.RawMessage `json:"definition"`
+}
+
+type ArchiveRepository struct {
+	ID       string             `json:"id"`
+	Revision int                `json:"revision"`
+	Identity workspace.Identity `json:"identity"`
+	Observed workspace.Baseline `json:"observed"`
+}
+
+type ArchiveScope struct {
+	ID                    string `json:"id"`
+	TargetKind            string `json:"target_kind"`
+	CriteriaDigest        string `json:"criteria_digest"`
+	DefinitionDigest      string `json:"definition_digest"`
+	ConfigDigest          string `json:"config_digest"`
+	CheckSetDigest        string `json:"check_set_digest"`
+	ReviewerProfileID     string `json:"reviewer_profile_id"`
+	ReviewerProfileRev    int    `json:"reviewer_profile_revision"`
+	ReviewerProfileDigest string `json:"reviewer_profile_digest"`
+	InstructionDigest     string `json:"instruction_digest"`
 }
 
 type ArchiveTask struct {
@@ -70,12 +111,22 @@ type ArchiveRun struct {
 }
 
 type ArchiveDelivery struct {
-	ID         string `json:"id"`
-	Kind       string `json:"kind"`
-	State      string `json:"state"`
-	Repository string `json:"repository_id"`
-	HeadOID    string `json:"head_oid"`
-	URL        string `json:"url,omitempty"`
+	ID             string `json:"id"`
+	Kind           string `json:"kind"`
+	State          string `json:"state"`
+	Repository     string `json:"repository_id"`
+	RemoteIdentity string `json:"remote_identity,omitempty"`
+	HeadOID        string `json:"head_oid"`
+	BaseRef        string `json:"base_ref,omitempty"`
+	ExternalID     string `json:"external_id,omitempty"`
+	URL            string `json:"url,omitempty"`
+}
+
+type ArchiveOperation struct {
+	ID             string `json:"id"`
+	Kind           string `json:"kind"`
+	State          string `json:"state"`
+	ResourceDigest string `json:"resource_digest"`
 }
 
 type ArchiveRecovery struct {
@@ -162,6 +213,14 @@ func (e *Engine) BuildFactualArchive(ctx context.Context, commandID, planID stri
 		if err := tx.QueryRowContext(ctx, "SELECT id FROM quality_acceptances_v2 WHERE plan_id=? AND target_kind='plan' AND invalidated_at IS NULL", planID).Scan(&currentAcceptance); err != nil || currentAcceptance != manifest.AcceptanceID {
 			return nil, errors.New("current plan acceptance changed before archive publication")
 		}
+		currentFacts := FactualArchive{Runs: []ArchiveRun{}, Deliveries: []ArchiveDelivery{}, Operations: []ArchiveOperation{}, Recovery: []ArchiveRecovery{}}
+		if err := collectArchiveOperations(ctx, tx, planID, &currentFacts); err != nil {
+			return nil, err
+		}
+		if !reflect.DeepEqual(currentFacts.Runs, manifest.Runs) || !reflect.DeepEqual(currentFacts.Deliveries, manifest.Deliveries) ||
+			!reflect.DeepEqual(currentFacts.Operations, manifest.Operations) || !reflect.DeepEqual(currentFacts.Recovery, manifest.Recovery) {
+			return nil, errors.New("run, delivery or recovery facts changed before archive publication")
+		}
 		if err := tx.QueryRowContext(ctx, "SELECT coalesce(max(revision),0) FROM archives WHERE plan_id=?", planID).Scan(&latest); err != nil {
 			return nil, err
 		}
@@ -198,7 +257,7 @@ func (e *Engine) BuildFactualArchive(ctx context.Context, commandID, planID stri
 }
 
 func (e *Engine) collectFactualArchive(ctx context.Context, planID string) (FactualArchive, int, int64, error) {
-	manifest := FactualArchive{SchemaVersion: 1, PlanID: planID, Tasks: []ArchiveTask{}, Evidence: []ArchiveEvidence{}, Artifacts: []ArchiveArtifact{}, Runs: []ArchiveRun{}, Deliveries: []ArchiveDelivery{}, Recovery: []ArchiveRecovery{}}
+	manifest := FactualArchive{SchemaVersion: 1, PlanID: planID, SourceSpecifications: []ArchiveSpecification{}, Repositories: []ArchiveRepository{}, Scopes: []ArchiveScope{}, Tasks: []ArchiveTask{}, Evidence: []ArchiveEvidence{}, Artifacts: []ArchiveArtifact{}, Runs: []ArchiveRun{}, Deliveries: []ArchiveDelivery{}, Operations: []ArchiveOperation{}, Recovery: []ArchiveRecovery{}}
 	var state, definition, acceptanceArtifact, acceptanceDigest, scopeID string
 	var qualityRevision int64
 	var latest int
@@ -213,26 +272,34 @@ func (e *Engine) collectFactualArchive(ctx context.Context, planID string) (Fact
 		return manifest, 0, 0, errors.New("plan must have accepted quality gates before finalization")
 	}
 	manifest.PlanDefinition = json.RawMessage(definition)
+	var planDefinition Plan
+	if err := json.Unmarshal([]byte(definition), &planDefinition); err != nil || planDefinition.ID != planID || store.Digest([]byte(planDefinition.Specification)) != manifest.SpecDigest {
+		return manifest, 0, 0, errors.New("plan specification content does not match its persisted digest")
+	}
+	manifest.Specification = planDefinition.Specification
+	if err := e.DB.SQL.QueryRowContext(ctx, `SELECT c.revision,s.id,s.digest,s.resolved_json FROM project_configurations c
+		JOIN config_snapshots s ON s.id=c.config_id ORDER BY c.revision DESC LIMIT 1`).
+		Scan(&manifest.Config.Revision, &manifest.Config.SnapshotID, &manifest.Config.Digest, &definition); err != nil {
+		return manifest, 0, 0, err
+	}
+	manifest.Config.Definition = json.RawMessage(definition)
+	if store.Digest([]byte(definition)) != manifest.Config.Digest {
+		return manifest, 0, 0, errors.New("configuration snapshot digest is inconsistent")
+	}
 	var scopePlanRevision int
-	var scopeRepositories string
-	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT plan_revision,repository_manifest_json FROM quality_scopes_v2 WHERE id=?", scopeID).Scan(&scopePlanRevision, &scopeRepositories); err != nil || scopePlanRevision != manifest.PlanRevision {
+	var scopeRepositories, acceptedConfigDigest string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT plan_revision,repository_manifest_json,config_digest FROM quality_scopes_v2 WHERE id=?", scopeID).Scan(&scopePlanRevision, &scopeRepositories, &acceptedConfigDigest); err != nil || scopePlanRevision != manifest.PlanRevision || acceptedConfigDigest != manifest.Config.Digest {
 		return manifest, 0, 0, errors.New("accepted plan scope is stale or unavailable")
 	}
-	var acceptedRepositories []struct {
-		ID       string             `json:"id"`
-		Revision int                `json:"revision"`
-		Identity workspace.Identity `json:"identity"`
-		Observed workspace.Baseline `json:"observed"`
-	}
-	if err := json.Unmarshal([]byte(scopeRepositories), &acceptedRepositories); err != nil || len(acceptedRepositories) == 0 {
+	if err := json.Unmarshal([]byte(scopeRepositories), &manifest.Repositories); err != nil || len(manifest.Repositories) == 0 {
 		return manifest, 0, 0, errors.New("accepted plan has no repository fingerprint manifest")
 	}
 	var enrolledCount int
-	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT count(*) FROM plan_repositories WHERE plan_id=?", planID).Scan(&enrolledCount); err != nil || enrolledCount != len(acceptedRepositories) {
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT count(*) FROM plan_repositories WHERE plan_id=?", planID).Scan(&enrolledCount); err != nil || enrolledCount != len(manifest.Repositories) {
 		return manifest, 0, 0, errors.New("accepted repository set changed")
 	}
 	seenRepositories := map[string]bool{}
-	for _, accepted := range acceptedRepositories {
+	for _, accepted := range manifest.Repositories {
 		if seenRepositories[accepted.ID] {
 			return manifest, 0, 0, errors.New("duplicate accepted repository")
 		}
@@ -288,7 +355,10 @@ func (e *Engine) collectFactualArchive(ctx context.Context, planID string) (Fact
 	if err := e.collectArchiveEvidence(ctx, planID, scopes, &manifest); err != nil {
 		return manifest, 0, 0, err
 	}
-	if err := e.collectArchiveOperations(ctx, planID, &manifest); err != nil {
+	if err := e.collectArchiveProvenance(ctx, planID, scopes, &manifest); err != nil {
+		return manifest, 0, 0, err
+	}
+	if err := collectArchiveOperations(ctx, e.DB.SQL, planID, &manifest); err != nil {
 		return manifest, 0, 0, err
 	}
 	repository, err := artifacts.New(e.DB)
@@ -377,8 +447,47 @@ func (e *Engine) collectArchiveEvidence(ctx context.Context, planID string, scop
 	return err
 }
 
-func (e *Engine) collectArchiveOperations(ctx context.Context, planID string, manifest *FactualArchive) error {
-	rows, err := e.DB.SQL.QueryContext(ctx, `SELECT r.id,r.task_id,r.role,r.state,u.input_tokens,u.output_tokens,u.cost_microunits,coalesce(u.provenance,'')
+func (e *Engine) collectArchiveProvenance(ctx context.Context, planID string, scopes map[string]bool, manifest *FactualArchive) error {
+	ids := make([]string, 0, len(scopes))
+	for id := range scopes {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		var scope ArchiveScope
+		err := e.DB.SQL.QueryRowContext(ctx, `SELECT id,target_kind,criteria_digest,definition_digest,config_digest,check_set_digest,
+			reviewer_profile_id,reviewer_profile_revision,reviewer_profile_digest,instruction_digest
+			FROM quality_scopes_v2 WHERE id=? AND plan_id=?`, id, planID).
+			Scan(&scope.ID, &scope.TargetKind, &scope.CriteriaDigest, &scope.DefinitionDigest, &scope.ConfigDigest,
+				&scope.CheckSetDigest, &scope.ReviewerProfileID, &scope.ReviewerProfileRev, &scope.ReviewerProfileDigest, &scope.InstructionDigest)
+		if err != nil || scope.ConfigDigest != manifest.Config.Digest {
+			return errors.New("accepted quality scope configuration changed")
+		}
+		manifest.Scopes = append(manifest.Scopes, scope)
+	}
+	rows, err := e.DB.SQL.QueryContext(ctx, `SELECT DISTINCT s.id,s.revision,s.content_digest,s.artifact_id
+		FROM planning_proposals p JOIN specification_revisions s ON s.id=p.specification_id AND s.revision=p.specification_revision
+		WHERE p.expected_plan_id=? AND p.state='applied' ORDER BY s.id,s.revision`, planID)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var source ArchiveSpecification
+		if err := rows.Scan(&source.ID, &source.Revision, &source.Digest, &source.ArtifactID); err != nil {
+			rows.Close()
+			return err
+		}
+		manifest.SourceSpecifications = append(manifest.SourceSpecifications, source)
+		manifest.Artifacts = append(manifest.Artifacts, ArchiveArtifact{Purpose: fmt.Sprintf("source_specification:%s:%d", source.ID, source.Revision),
+			ID: source.ArtifactID, Digest: source.Digest, Kind: "specification.markdown"})
+	}
+	err = rows.Err()
+	rows.Close()
+	return err
+}
+
+func collectArchiveOperations(ctx context.Context, reader readinessReader, planID string, manifest *FactualArchive) error {
+	rows, err := reader.QueryContext(ctx, `SELECT r.id,r.task_id,r.role,r.state,u.input_tokens,u.output_tokens,u.cost_microunits,coalesce(u.provenance,'')
 		FROM runs r LEFT JOIN usage_observations u ON u.id=(SELECT id FROM usage_observations WHERE run_id=r.id ORDER BY observed_at DESC,id DESC LIMIT 1)
 		WHERE r.plan_id=? ORDER BY r.created_at,r.id`, planID)
 	if err != nil {
@@ -407,15 +516,23 @@ func (e *Engine) collectArchiveOperations(ctx context.Context, planID string, ma
 	if err != nil {
 		return err
 	}
-	rows, err = e.DB.SQL.QueryContext(ctx, "SELECT id,kind,state,repository_id,head_oid,coalesce(url,'') FROM deliveries WHERE plan_id=? ORDER BY id", planID)
+	rows, err = reader.QueryContext(ctx, "SELECT id,kind,state,repository_id,coalesce(remote_identity,''),head_oid,coalesce(base_ref,''),coalesce(external_id,''),coalesce(url,'') FROM deliveries WHERE plan_id=? ORDER BY id", planID)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
 		var delivery ArchiveDelivery
-		if err := rows.Scan(&delivery.ID, &delivery.Kind, &delivery.State, &delivery.Repository, &delivery.HeadOID, &delivery.URL); err != nil {
+		if err := rows.Scan(&delivery.ID, &delivery.Kind, &delivery.State, &delivery.Repository, &delivery.RemoteIdentity, &delivery.HeadOID, &delivery.BaseRef, &delivery.ExternalID, &delivery.URL); err != nil {
 			rows.Close()
 			return err
+		}
+		if delivery.URL != "" {
+			parsed, err := url.Parse(delivery.URL)
+			if err != nil || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" ||
+				(parsed.Scheme != "https" && !fixtureLoopback(parsed.Scheme+"://"+parsed.Host)) {
+				rows.Close()
+				return errors.New("delivery has an unsafe external URL")
+			}
 		}
 		manifest.Deliveries = append(manifest.Deliveries, delivery)
 	}
@@ -424,7 +541,24 @@ func (e *Engine) collectArchiveOperations(ctx context.Context, planID string, ma
 	if err != nil {
 		return err
 	}
-	rows, err = e.DB.SQL.QueryContext(ctx, "SELECT c.id,c.state FROM checkpoint_sets c JOIN runs r ON r.id=c.run_id WHERE r.plan_id=? ORDER BY c.id", planID)
+	rows, err = reader.QueryContext(ctx, "SELECT id,kind,state,resource_digest FROM operations WHERE plan_id=? ORDER BY id", planID)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var operation ArchiveOperation
+		if err := rows.Scan(&operation.ID, &operation.Kind, &operation.State, &operation.ResourceDigest); err != nil {
+			rows.Close()
+			return err
+		}
+		manifest.Operations = append(manifest.Operations, operation)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	rows, err = reader.QueryContext(ctx, "SELECT c.id,c.state FROM checkpoint_sets c JOIN runs r ON r.id=c.run_id WHERE r.plan_id=? ORDER BY c.id", planID)
 	if err != nil {
 		return err
 	}
@@ -470,7 +604,10 @@ func (e *Engine) Archive(ctx context.Context, planID string, revision int) (Arch
 	if err := json.Unmarshal(b, &manifest); err != nil {
 		return record, manifest, err
 	}
-	if manifest.PlanID != planID || manifest.SchemaVersion != 1 || manifest.PlanRevision < 1 {
+	if manifest.PlanID != planID || manifest.SchemaVersion != 1 || manifest.PlanRevision < 1 ||
+		store.Digest([]byte(manifest.Specification)) != manifest.SpecDigest ||
+		manifest.Config.SnapshotID == "" || manifest.Config.Revision < 1 || store.Digest(manifest.Config.Definition) != manifest.Config.Digest ||
+		len(manifest.Repositories) == 0 || len(manifest.Scopes) == 0 {
 		return record, manifest, errors.New("factual archive identity is inconsistent")
 	}
 	for _, ref := range manifest.Artifacts {
@@ -497,23 +634,32 @@ func (e *Engine) Archive(ctx context.Context, planID string, revision int) (Arch
 // enabling model dispatch. Fixture provenance remains visible in the command
 // receipt and can only complete a plan carrying fixture acceptance evidence.
 func (e *Engine) RecordFixtureNarrative(ctx context.Context, request NarrativeResult) (ArchiveRecord, error) {
+	if request.Actor != "fixture" {
+		return ArchiveRecord{}, errors.New("fixture narrative actor required")
+	}
+	return e.recordNarrative(ctx, request)
+}
+
+func (e *Engine) recordNarrative(ctx context.Context, request NarrativeResult) (ArchiveRecord, error) {
 	var record ArchiveRecord
-	if !store.SafeID(request.CommandID) || !store.SafeID(request.PlanID) || request.ManifestRevision < 1 || request.Actor != "fixture" || len(request.Text) == 0 || len(request.Text) > store.MaxDocument || strings.TrimSpace(request.Text) == "" || len(request.CitedIDs) == 0 || len(request.CitedIDs) > 1000 {
+	if !store.SafeID(request.CommandID) || !store.SafeID(request.PlanID) || request.ManifestRevision < 1 || (request.Actor != "fixture" && request.Actor != "core") || len(request.Text) == 0 || len(request.Text) > store.MaxDocument || strings.TrimSpace(request.Text) == "" || len(request.CitedIDs) == 0 || len(request.CitedIDs) > 1000 {
 		return record, errors.New("bounded fixture narrative and exact archive identity required")
 	}
 	args, err := json.Marshal(request)
 	if err != nil || len(args) > store.MaxDocument {
 		return record, errors.New("narrative result exceeds command limit")
 	}
-	command := store.Command{ID: request.CommandID, Actor: "fixture", Kind: "archive.narrative", Args: args}
+	command := store.Command{ID: request.CommandID, Actor: request.Actor, Kind: "archive.narrative", Args: args}
 	if receipt, found, err := e.DB.Receipt(ctx, command); err != nil || found {
 		if err == nil {
 			err = json.Unmarshal(receipt, &record)
 		}
 		return record, err
 	}
-	if err := e.requireFixtureArchive(ctx, request.PlanID); err != nil {
-		return record, err
+	if request.Actor == "fixture" {
+		if err := e.requireFixtureArchive(ctx, request.PlanID); err != nil {
+			return record, err
+		}
 	}
 	record, manifest, err := e.Archive(ctx, request.PlanID, request.ManifestRevision)
 	if err != nil {
@@ -580,8 +726,9 @@ func (e *Engine) RecordFixtureNarrative(ctx context.Context, request NarrativeRe
 		if err := tx.QueryRowContext(ctx, "SELECT factual_manifest,state FROM archives WHERE plan_id=? AND revision=?", request.PlanID, request.ManifestRevision).Scan(&manifestID, &archiveState); err != nil || manifestID != record.ManifestID || archiveState != "narrative_pending" {
 			return nil, errors.New("archive state changed before narrative publication")
 		}
-		if err := tx.QueryRowContext(ctx, "SELECT actor FROM quality_acceptances_v2 WHERE id=? AND invalidated_at IS NULL", manifest.AcceptanceID).Scan(&acceptanceActor); err != nil || acceptanceActor != "fixture_core" {
-			return nil, errors.New("fixture acceptance is no longer current")
+		if err := tx.QueryRowContext(ctx, "SELECT actor FROM quality_acceptances_v2 WHERE id=? AND invalidated_at IS NULL", manifest.AcceptanceID).Scan(&acceptanceActor); err != nil ||
+			(request.Actor == "fixture" && acceptanceActor != "fixture_core") || (request.Actor == "core" && acceptanceActor != "core") {
+			return nil, errors.New("plan acceptance provenance is no longer current")
 		}
 		for _, task := range manifest.Tasks {
 			var id string

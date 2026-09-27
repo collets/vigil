@@ -635,7 +635,75 @@ This is an observed inventory. It does not enroll repositories, select bases, cr
 
 ## Stage 5.6 factual archives and retention
 
-These controls are local and do not create a delivery operation. `archive-build`
+`commit-prepare` reads a bounded JSON request with `command_id`, `plan_id`,
+`repository_id`, `task_id`, exact repository-relative `paths`, `message`,
+`author_name` and `author_email`. It requires a current accepted task scope,
+previews a tree using temporary Git objects and index, then creates an inbox
+approval request with the exact tree, parent, plan ref, paths and acceptance
+identity. Retry the same command ID with identical arguments to retrieve the
+same request. Pre-existing dirty paths must have been explicitly included at
+repository enrollment. Paths outside the accepted task scope, nested repos,
+filters and hooks are rejected or bypassed.
+
+```sh
+./bin/vigil --state-dir STATE project commit-prepare PROJECT_ID --file COMMIT.json
+# Resolve its inbox request with the existing permission.grant command.
+./bin/vigil --state-dir STATE project commit-execute PROJECT_ID OPERATION_ID --grant-id GRANT_ID
+```
+
+`commit-execute` consumes an exact grant once, rechecks accepted bytes and
+identity, creates a deterministic commit object, journals it, and advances
+only the approved non-checked-out plan ref by compare-and-swap. It never
+changes the user's index, worktree or HEAD. Re-run without `--grant-id` only
+to reconcile an already started operation after a crash. A commit is not
+task acceptance, push authority or draft-request authority.
+
+`push-prepare` observes the enrolled remote's single fetch/push URL, the
+exact local plan ref and head commit, and the exact remote destination ref.
+It requires a successful app-owned plan commit and issues a separate human
+approval request. Local/bare remotes need no credential; SSH remotes require
+`--credential-ref env:SSH_AUTH_SOCK` and an already available agent socket.
+HTTPS token embedding, changed push URLs, configured extra refspecs, tags,
+force/mirror pushes and checkpoint refs are not used. The operator must review
+the destination identity, old and new object IDs in the returned intent.
+
+```sh
+./bin/vigil --state-dir STATE project push-prepare PROJECT_ID PLAN_ID REPOSITORY_ID \
+  --command-id ID --remote NAME [--credential-ref env:SSH_AUTH_SOCK]
+# Resolve its distinct inbox request with permission.grant.
+./bin/vigil --state-dir STATE project push-execute PROJECT_ID OPERATION_ID --grant-id GRANT_ID
+```
+
+`push-execute` rechecks remote configuration and the local head before
+consuming the grant, pushes exactly `HEAD_OID:PLAN_REF` without force, then
+observes the exact remote ref. A lost or ambiguous response leaves the
+operation uncertain; rerunning without `--grant-id` only reconciles the
+remote observation and never automatically pushes again. These product
+commands are not used against a real remote in the default test suite.
+
+`draft-prepare` reads JSON with `command_id`, `plan_id`, `repository_id`,
+`provider` (`github` or `gitlab`), exact `project`, `api_base`, `base_branch`,
+`title`, optional `body`, and `credential_ref` (`env:NAME` for the trusted
+application). It requires a succeeded exact-head push, a current plan
+acceptance and factual archive, and binds the observed destination base OID.
+Only official GitHub/GitLab API endpoints match real SSH remotes; a marked
+disposable fixture may use credential-free loopback hosting with
+`synthetic_fixture: true`. Production dispatch remains disabled.
+
+```sh
+./bin/vigil --state-dir STATE project draft-prepare PROJECT_ID --file DRAFT.json
+# Resolve this third, distinct inbox request with permission.grant.
+./bin/vigil --state-dir STATE project draft-execute PROJECT_ID OPERATION_ID --grant-id GRANT_ID
+```
+
+`draft-execute` searches bounded exact head/base results before a single POST,
+requires a verified draft response, then appends its URL to a new factual
+archive revision. A timeout or ambiguous result becomes uncertain; retry
+without `--grant-id` performs observation only, never a second POST. There is
+no merge command or endpoint. Routine tests use fake hosting and local bare
+remotes only; real publication needs its own exact operation grant.
+
+The archive controls below are local and do not create a delivery operation. `archive-build`
 requires a current independently accepted plan and task set, unchanged accepted
 repository fingerprints, and available durable evidence. It persists the factual
 manifest before any narrative and creates one visible system finalization task.
@@ -665,6 +733,26 @@ contain `command_id`, `plan_id`, `manifest_revision`, `manifest_digest`, bounded
 ```sh
 ./bin/vigil --state-dir STATE project archive-narrative PROJECT_ID PLAN_ID \
   --synthetic-fixture --file RESULT.json
+```
+
+`finalization-run` selects a current profile with the `finalization` role and
+matching contained local Hermes provider. It reserves a bounded allowance
+from the shared 30-minute plan-services ledger, creates one durable
+finalization run, sends only the verified factual manifest to the provider,
+requires terminal idle, and validates closed narrative citations before
+completing the plan. A failed idle-observed result charges elapsed time and
+leaves the accepted plan `finalization_pending`; a new command can retry only
+the narrative. An unconfirmed provider outcome is `unknown` and is never
+replayed automatically. It does not turn on production implementation or
+review dispatch and requires explicit `--live-local` for the prepared llama
+route. No metered endpoint fallback is permitted.
+
+```sh
+./bin/vigil --state-dir STATE project finalization-run PROJECT_ID PLAN_ID \
+  --live-local --manifest PREPARED.json --command-id ID \
+  --archive-revision N --manifest-digest SHA256 \
+  --profile-id PROFILE --profile-revision N --active-limit-ms 300000 \
+  [--key-file PRIVATE_KEY_FILE]
 ```
 
 Project policy `transcript_retention_days` is optional: `0` or omission means

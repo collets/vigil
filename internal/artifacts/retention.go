@@ -140,7 +140,10 @@ func (r *Repository) expiryCandidates(ctx context.Context, db retentionReader, n
 		err := db.QueryRowContext(ctx, `SELECT count(*),
 			coalesce(sum(CASE WHEN p.state!='completed' OR p.completed_at IS NULL OR p.completed_at>? OR
 				r.state NOT IN ('completed','failed','interrupted') OR
+				EXISTS(SELECT 1 FROM runs x WHERE x.plan_id=p.id AND (x.state NOT IN ('completed','failed','interrupted') OR x.writer_state='unconfirmed')) OR
+				EXISTS(SELECT 1 FROM checkpoint_sets c JOIN runs cr ON cr.id=c.run_id WHERE cr.plan_id=p.id AND c.state!='restored') OR
 				EXISTS(SELECT 1 FROM operations o WHERE o.plan_id=p.id AND o.state IN ('prepared','executing','uncertain')) OR
+				EXISTS(SELECT 1 FROM deliveries d WHERE d.plan_id=p.id AND d.state IN ('prepared','pending','uncertain')) OR
 				EXISTS(SELECT 1 FROM requests q WHERE q.plan_id=p.id AND q.state='pending')
 			THEN 1 ELSE 0 END),0), max(p.completed_at)
 			FROM run_artifacts ra JOIN runs r ON r.id=ra.run_id JOIN plans p ON p.id=r.plan_id

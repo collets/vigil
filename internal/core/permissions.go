@@ -19,6 +19,7 @@ type OperationRequest struct {
 	PlanID          string `json:"plan_id,omitempty"`
 	TaskID          string `json:"task_id,omitempty"`
 	TaskRevision    int    `json:"task_revision,omitempty"`
+	IntentJSON      string `json:"intent_json,omitempty"`
 }
 type GrantRequest struct {
 	RequestID string `json:"request_id"`
@@ -59,6 +60,11 @@ func validateOperation(ctx context.Context, tx *store.Tx, p OperationRequest, c 
 	}
 	if !validDigest(p.ResourceDigest) || !validDigest(p.ArgumentsDigest) {
 		return errors.New("exact SHA-256 resource and arguments digests required")
+	}
+	if p.IntentJSON != "" {
+		if len(p.IntentJSON) > store.MaxDocument || !json.Valid([]byte(p.IntentJSON)) || store.Digest([]byte(p.IntentJSON)) != p.ArgumentsDigest {
+			return errors.New("operation arguments must match the exact canonical intent")
+		}
 	}
 	layers := []policy.Layer{{Name: "project", Restrictions: c.Restrictions}}
 	if p.TaskID != "" {
