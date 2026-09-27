@@ -3,7 +3,8 @@
 Status: implementation through checkpoint A commit `4dbb444`, initial B–D
 commit `20ca4d0`, bounded planning/control commit `192c6ba`, native-tool
 isolation fix `959eaaf` and revision-bound quality controls `669467e`; Stage 5.5
-is unaccepted.
+interaction completion is `bdd6e33`. Checkpoints A–D are implemented offline;
+Stage 5.5 is unaccepted pending independent review.
 
 This record is append-only evidence for the four checkpoints in
 [the Stage 5.5 plan](../../../stage-5/5.5-workflow-and-planning.md). It distinguishes
@@ -341,16 +342,98 @@ make cross-build (linux/amd64, linux/arm64, darwin/amd64, darwin/arm64)         
 git diff --check                                                                               PASS
 ```
 
+## 2026-09-27 interactive completion
+
+Commit `bdd6e33` closes the remaining offline checkpoint-B interaction boundary:
+
+- `planning.proposal.decide` records exact immutable proposal rejection or a
+  replacement-revision request without applying a plan. Fixture tests separately
+  exercise approve, reject and revision-request followed by revision-2 approval;
+- Inbox renders proposal identity/revision/digest and bounded sanitized native
+  prompt context. PTY keys keep proposal, permission, recovery, clarification and
+  quality decisions distinct;
+- exact/fresh/remain-blocked recovery binds the visibly displayed request, run and
+  task revision and rejects expired, stale or foreign generations;
+- native clarification persistence reloads the authoritative run/session/task,
+  binds owner, generation and opaque request key, persists intent before delivery,
+  and never automatically replays uncertain delivery;
+- explicit reconciliation accepts only adapter-observed `delivered` or
+  `proven_not_delivered`. A replacement owner must first fence the prior owner's
+  OS lock and quarantine its authority, preventing inspection while an old delivery
+  remains live. Proven non-delivery transfers the request binding but not its old
+  answer;
+- `dashboard --synthetic-interactions` is an explicit application path only for
+  synthetic runs whose every repository marker and physical/common-Git identity
+  revalidate. The Linux CLI/PTTY test runs the real Cobra command through a
+  persisted request and `InteractiveOwner` to a durable
+  `fixture_native_clarification_delivered` event. This is labelled fixture mechanics,
+  not a real human or provider decision.
+
+The required read-only adversarial review initially reported five P1 and three P2
+findings, then four and one follow-up findings. Fixes added displayed recovery
+binding, current-generation validation, authoritative prepared-run reloads,
+prompt/proposal rendering, guarded outcome writes, exclusive owner control,
+delivery-side reconciliation proof, prior-owner lock fencing, physical fixture
+identity checks and the persisted CLI/PTTY test. The final follow-up reported no
+remaining P1/P2 findings. This review is not independent Stage acceptance.
+
+Linux/WSL2 x86_64 validation with pinned Go 1.27.1 after `bdd6e33`:
+
+```text
+go test ./internal/core ./internal/supervisor ./internal/tui ./internal/cli ./internal/coordinator  PASS
+go test ./internal/cli -run 'TestDashboardSynthetic|TestSyntheticInteraction' -count=1 -v     PASS
+make check                                                                                      PASS
+make check-race                                                                                 PASS
+make build                                                                                      PASS
+make docs-check                                                                                 PASS
+make build-boundary                                                                             PASS
+make cross-build (linux/amd64, linux/arm64,
+                  darwin/amd64, darwin/arm64)                                                   PASS
+git diff --check                                                                                PASS
+```
+
+No model/provider, paid, Docker, hosting, publishing or Cardtracker mutation was
+performed.
+
+The exact implementation commit was then transferred as a complete-history Git
+bundle with SHA-256
+`c32a3b90a4873409130faaf079b37dcd5d5e00f45148e4bf25b429b974150516`.
+The bundle digest was reverified on `Simones-MBP.home`, and exact commit
+`bdd6e3341fcbd88e773b885ce71ec487bd6cf79f` was detached in an isolated
+temporary checkout. Darwin 25.6.0 arm64, macOS 26.6.2 (25G83), Go 1.27.1 passed:
+
+```text
+make check                                             PASS
+make check-race                                        PASS
+make build                                             PASS
+make docs-check                                        PASS
+make build-boundary                                    PASS
+make cross-build (linux/amd64, linux/arm64,
+                  darwin/amd64, darwin/arm64)          PASS
+git diff --check                                       PASS
+```
+
+The initial non-login-shell invocation omitted Homebrew's Go directory and failed
+before executing tests; rerunning with the installed Go 1.27.1 path produced the
+results above. The fresh isolated cache downloaded public Go modules. The remote
+checkout/cache and bundle plus the local transfer bundle were removed and verified
+absent. The normal Mac checkout and Cardtracker checkout were not accessed or
+changed.
+
 The first focused test invocation inside the restricted filesystem could not use
 the existing Go build cache; the identical offline command passed with build-cache
-access. `make check` used loopback access only for existing local `httptest`
-fixtures. No external network, model, paid, Docker, hosting or publishing call was
-made. Cross-build is compile coverage only; native macOS execution remains B4.
+access. The final restricted `make check` attempt was likewise denied an existing
+local IPv6 `httptest` listener; the identical full gate matrix passed when rerun
+with loopback access. No external network, model, paid, Docker, hosting or
+publishing call was made. Cross-build is compile coverage only; the exact-commit
+native macOS runtime result is recorded above and does not close the inherited
+Darwin fork-accounting observation.
 
 ## Limitations and blockers
 
-See the [blocker log](blockers.md). Stage 5.5 remains unaccepted pending
-independent review. Production dispatch, production model/reviewer and native
-Codex qualification, real proposal/manual/clarification decisions, the live crash
-matrix and the Darwin fork-accounting observation remain pending. Native Hermes
-one-tool integration and the Stage 5.5 macOS suite are now demonstrated.
+See the [blocker log](blockers.md). Stage 5.5 offline implementation is complete at
+`bdd6e33` and remains unaccepted pending independent review. Production dispatch,
+production model/reviewer and native Codex qualification, real project decisions,
+the live crash matrix and the Darwin fork-accounting observation remain disabled
+future gates. Native Hermes one-tool integration and the Stage 5.5 macOS suite are
+demonstrated.

@@ -3,6 +3,14 @@
 Status: review packet for implementation commit `20ca4d0`; no choice in this
 document is itself an approval, grant or authorization.
 
+Resolution update, 2026-09-27: the user selected autonomous fixture exercise of
+all proposal outcomes and terminal flows rather than an attended application of
+the example proposal. Commit `bdd6e33` completes the offline A–D mechanics and
+leaves independent review as the remaining offline acceptance step. The option
+descriptions below are retained as the dated decision record; statements that B
+or native Hermes/macOS qualification were incomplete describe the earlier
+`20ca4d0` review point and are superseded by the current plan/results documents.
+
 User response, 2026-09-26: select 1A, use local llama while it is the available
 safe planning route with a five-minute first-run cap, select 3A, select 4B, and
 select 5A. Online research and bounded Codex use within the existing ChatGPT

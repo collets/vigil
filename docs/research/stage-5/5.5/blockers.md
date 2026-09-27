@@ -4,6 +4,11 @@ This append-only log separates offline fixture evidence from decisions and runti
 evidence that require the unavailable user. Fixture actors never resolve these items.
 
 ## B1 — Real specification, plan and criteria approval
+- Offline disposition: RESOLVED 2026-09-27 — the user directed autonomous
+  fixture coverage instead of applying the example. Approve, reject and request-
+  revision mechanics now pass through exact persisted revisions and a real PTY;
+  the example remains deliberately unapproved. Real-project intent remains the
+  production gate described below and is not required to complete offline 5.5.
 - User input: PARTIALLY RESOLVED 2026-09-26 — use a small qualification
   specification in an agent-owned disposable copy of `cardtracker`; never change
   or commit the real checkout. The immutable proposal now exists as
@@ -36,6 +41,10 @@ evidence that require the unavailable user. Fixture actors never resolve these i
 - Logged: 2026-09-26
 
 ## B3 — Native model-tool integration qualification
+- Offline disposition: RESOLVED 2026-09-27 — shared handlers/transport, native
+  Hermes isolation and the fixture-gated owner interaction route satisfy Stage 5.5
+  offline implementation. Native Codex and production reviewer qualification remain
+  disabled production gates; no API-key fallback or simulated qualification was used.
 - Hermes portion: RESOLVED 2026-09-27 — exact pinned Hermes `0.21.3`
   (`6a627e6…`) in a disposable clone performed exactly one
   `mcp__vigil__project_read` through generation `tool-qualification-1`, then
@@ -68,6 +77,17 @@ evidence that require the unavailable user. Fixture actors never resolve these i
 - Logged: 2026-09-26
 
 ## B4 — Native macOS Stage 5.5 validation
+- REVALIDATED 2026-09-27 — the final interactive implementation was transferred
+  as a verified complete-history bundle (SHA-256
+  `c32a3b90a4873409130faaf079b37dcd5d5e00f45148e4bf25b429b974150516`)
+  and detached at exact commit
+  `bdd6e3341fcbd88e773b885ce71ec487bd6cf79f` on Darwin 25.6.0 arm64,
+  macOS 26.6.2, Go 1.27.1. Native full, race, application, documentation,
+  boundary and four-target cross-build gates passed. The isolated checkout/cache
+  and local/remote bundles were removed and verified absent; the normal Mac and
+  Cardtracker checkouts were untouched. The first non-login invocation lacked the
+  Homebrew Go path and stopped before tests; the corrected invocation supplied the
+  installed toolchain explicitly.
 - REVALIDATED 2026-09-27 — after the checkpoint-B quality-control follow-up,
   bundle SHA-256
   `698bb5fd349c26970affb049620684d8565738abf8672b3c8026c8205e9b39ea`
