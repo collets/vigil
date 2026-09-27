@@ -4,8 +4,8 @@ Instructions for any agent working in this repository. Read this before changing
 
 Vigil is a local control panel that runs existing agent harnesses (Codex, Hermes)
 through a Go core with SQLite state. It is **pre-release**: the offline core through
-Stage 5.4 is implemented and independently accepted, and production dispatch is
-deliberately disabled. Do not enable it, and do not start Stage 5.5 without an
+Stage 5.5 is implemented and independently accepted, and production dispatch is
+deliberately disabled. Do not enable it, and do not start Stage 5.6 without an
 explicit instruction.
 
 ## Start here
@@ -13,13 +13,16 @@ explicit instruction.
 1. `docs/next-steps.md` — current state, what is pending, and the next action.
 2. `docs/README.md` — the document index: what each document is authoritative for.
 3. `docs/STATUS` — machine-readable current state, read by the documentation check.
-4. `make check` — baseline. Must pass before you report anything as working.
+4. `docs/development-workflow.md` — mandatory branch, worktree, review, native
+   validation and integration rules.
+5. `make check` — baseline. Must pass before you report anything as working.
 
 ## Non-negotiable project rules
 
 - **No paid or model calls, no Docker, no hosting, no network egress** unless the
-  user authorizes it in this session. The default test suite must stay runnable
-  offline with no credentials.
+  user authorizes it in this session. Normal Git fetches and workflow-compliant
+  branch pushes to the verified configured origin are the sole standing network
+  exception. The default test suite must stay runnable offline with no credentials.
 - The existing local llama route takes `OPENAI_API_KEY` from the inherited
   environment and requires `OPENAI_BASE_URL` to name the prepared loopback
   endpoint. Check presence and route identity only: never print, copy, persist or
@@ -36,10 +39,11 @@ explicit instruction.
   run destructive recovery outside agent-owned disposable fixtures.
 - **Historical migrations are immutable.** `internal/store/migrations/project-001..009`
   and their recorded digests must never change. Schema changes are forward-only.
-- **Do not push or publish** unless the user explicitly authorizes it. A standing
-  authorization may cover ordinary non-force pushes to the existing configured
-  origin; verify the remote and branch first. Never infer release, PR, merge,
-  force-push or other publication authority from a normal push authorization.
+- **Follow [`docs/development-workflow.md`](docs/development-workflow.md).** Develop
+  on task branches, push checkpoints only to their matching branches, use separate
+  worktrees for parallel agents, and push `main` only after exact-candidate validation
+  and independent acceptance. Never force-push. Git synchronization never implies
+  release, request, merge or Vigil delivery authority.
 - Use the pinned toolchain: `make` prefers `.tools/go/bin/go` (Go 1.27.1) and
   clears `GOROOT`. If you invoke `go` directly, use `env -u GOROOT .tools/go/bin/go`.
 

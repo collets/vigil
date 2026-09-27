@@ -1,7 +1,7 @@
 # Vigil documentation index
 
 Vigil is a local control panel that runs existing agent harnesses through a Go core
-with SQLite state. It is pre-release: the offline core through Stage 5.4 is
+with SQLite state. It is pre-release: the offline core through Stage 5.5 is
 implemented and independently accepted, and production dispatch is deliberately
 disabled.
 
@@ -18,6 +18,7 @@ This index states what each document is authoritative for. Read
 | [`pending-decisions.md`](pending-decisions.md) | Decisions awaiting the user; what is still a user gate | Current |
 | [`session-audit.md`](session-audit.md) | Decision index, alternatives, unresolved questions, provenance | Current, append-only |
 | [`checkpoints.md`](checkpoints.md) | Checkpoint product behavior and preservation boundaries | Current |
+| [`development-workflow.md`](development-workflow.md) | Mandatory Git branches, worktrees, review, native validation and main-integration rules | Current |
 | [`README.md`](../README.md) | Build/run instructions and repository structure | Current |
 
 ## Product baseline (design records)
