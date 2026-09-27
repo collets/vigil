@@ -1,5 +1,7 @@
 # Decisions to revisit with the user
 
+<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+
 Updated 2026-09-27 while continuing Stage 5.
 
 The user authorized continued autonomous local development and tests while away, and conditional Stage 6 planning/implementation after Stage 5, provided no additional spending or dangerous changes are made to either computer. Record questions here rather than waiting for an immediate answer.

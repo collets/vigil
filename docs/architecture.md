@@ -1,5 +1,7 @@
 # Minimal architecture
 
+<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+
 Status: Stage 4 specified on 2026-09-20. The [application core specification](core-spec.md), [draft schemas](spec/project.sql), and [implementation backlog/requirement map](stage-5-plan.md) are the detailed contracts. [Linux](research/stage-3/results.md) and [macOS](research/stage-3.5/results.md) runtime findings constrain strict execution.
 
 Implementation status: the offline core described below is implemented and independently accepted through Stage 5.5 at `84c0275`; Stage 5.6 delivery/finalization is next (see [next steps](next-steps.md)). This document remains the design authority and [next steps](next-steps.md) is the implementation-status authority. **Production** execution, model dispatch and delivery remain qualification-gated, so the production half of this architecture is still a design.

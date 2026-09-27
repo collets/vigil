@@ -1,5 +1,7 @@
 # Stage 5.5 implementation results
 
+<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+
 Status: implementation through checkpoint A commit `4dbb444`, initial B–D
 commit `20ca4d0`, bounded planning/control commit `192c6ba`, native-tool
 isolation fix `959eaaf` and revision-bound quality controls `669467e`; Stage 5.5

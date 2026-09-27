@@ -1,5 +1,7 @@
 # Functional requirements baseline
 
+<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+
 Status: accepted product direction consolidated on 2026-09-20. The offline core through Stage 5.5 is implemented and independently accepted at `84c0275`; Stage 5.6 delivery/finalization is next, while production execution/model qualification and delivery authority remain gated (see [next steps](next-steps.md)). This baseline defines intended behavior; it is not an implementation-completion claim.
 
 The application owns reliable coordination and state; existing harnesses execute agent work. See [MVP acceptance](mvp-acceptance.md), [architecture](architecture.md), and [discovery history](discovery-notes.md). Detailed design questions are listed below separately.

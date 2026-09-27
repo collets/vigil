@@ -1,5 +1,7 @@
 # Session continuity audit
 
+<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+
 Audited 2026-09-20 against the available conversation and project documents. Purpose: preserve product intent, accepted decisions, alternatives, unresolved questions, and implementation evidence for a new session.
 
 ## Reading order and authority

@@ -1,5 +1,7 @@
 # AGENTS.md
 
+<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+
 Instructions for any agent working in this repository. Read this before changing code.
 
 Vigil is a local control panel that runs existing agent harnesses (Codex, Hermes)
@@ -90,8 +92,11 @@ The most common failure in this repository is a status flip applied to *some*
 documents. When a stage is accepted, or findings are closed, the new state must
 appear in **every** file listed in `status_documents` in `docs/STATUS`, and the
 "Next concrete action" line in `docs/next-steps.md` must name the range you just
-reviewed — not a superseded one. A stale "next action" range has already occurred
-here twice; do not repeat it.
+reviewed — not a superseded one. Each listed document must contain exactly one
+canonical `vigil-status` tuple matching `stage`, `stage_accepted` and
+`implementation_commit`; `make docs-check` enforces that tuple, not the semantics
+of arbitrary prose, which still require review. A stale "next action" range has
+already occurred here twice; do not repeat it.
 
 ### Verify before you report
 

@@ -1,5 +1,7 @@
 # Next steps and resumption plan
 
+<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+
 Updated: 2026-09-27. Stage 5.3 and Stage 5.4 remain independently accepted offline and are not reopened. Stage 5.5 is independently accepted offline at remediation commit `84c0275`: the narrow follow-up closes 5.5-R1–5.5-R7 and accepts 5.5-R8's explicit run-less-session retirement boundary, while exact-commit native macOS full/race/build/documentation/boundary/cross-build gates pass. Production dispatch, real human approval and native Codex/production model/reviewer qualification remain disabled future gates.
 
 Status: Stage 3 Linux experiments and adapter improvements are complete, with explicit unresolved qualification gates. See [Stage 3 results](research/stage-3/results.md). Both Stage 3 and Stage 4 plans were prepared before implementation. Stage 4 is complete: [core specification](core-spec.md), [validated draft schemas](spec/project.sql), and [Stage 5 backlog/requirements map](stage-5-plan.md). [Stage 3.5 macOS checks](research/stage-3.5/results.md) are also complete: basic runtime behavior passed, but both harnesses left writers after abrupt loss and strict production containment remains unsupported.

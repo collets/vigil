@@ -1,5 +1,7 @@
 # Stage 5.1–5.7 execution plans
 
+<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+
 Prepared 2026-09-20 against foundation commit `930ed37`. These seven plans organize the **remaining** Stage 5 work; they do not mark it implemented or move unfinished requirements into Stage 6. Recheck the checkout and newer evidence before starting.
 
 ## Why these seven slices

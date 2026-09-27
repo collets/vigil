@@ -1,5 +1,7 @@
 # Stage 5 execution plan
 
+<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+
 Prepared 2026-09-20 before implementation, from the [core specification](core-spec.md), [A–J backlog](stage-5-plan.md) and Stage 3/3.5 evidence. This plan defines the order, usable increments and validation; checkboxes represent delivered behavior only.
 
 The remaining work is now organized into [seven standalone execution plans, Stage 5.1–5.7](stage-5/README.md). Use that index to select the next bounded assignment, dependencies, user gates and fresh-context handoff. The A–J sections below preserve the original scope and requirement mapping; consult the dated checkpoints below for delivered state.

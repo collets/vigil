@@ -264,9 +264,18 @@ func TestDocsMigrationCountsMatch(t *testing.T) {
 
 // --- status documents agree with STATUS ------------------------------------
 
-// TestDocsStatusDocumentsAgree requires every document that carries stage status
-// to name the current implementation commit. A status flip applied to only some
-// documents is the failure this catches.
+var statusMarkerPattern = regexp.MustCompile(`(?m)^<!-- vigil-status: stage=[^;]+; stage_accepted=(?:true|false); implementation_commit=[0-9a-f]{7,40} -->$`)
+
+func canonicalStatusMarker(current status) string {
+	return "<!-- vigil-status: stage=" + current["stage"] +
+		"; stage_accepted=" + current["stage_accepted"] +
+		"; implementation_commit=" + current["implementation_commit"] + " -->"
+}
+
+// TestDocsStatusDocumentsAgree requires every document that carries live stage
+// status to contain exactly one canonical stage/acceptance/implementation tuple.
+// This catches partial flips and stale or duplicated machine-readable status, while
+// prose still receives ordinary documentation review.
 func TestDocsStatusDocumentsAgree(t *testing.T) {
 	current := loadStatus(t)
 	commit := current["implementation_commit"]
@@ -283,9 +292,16 @@ func TestDocsStatusDocumentsAgree(t *testing.T) {
 			t.Errorf("%s: status document listed in %s does not exist: %v", statusFile, statusFile, err)
 			continue
 		}
-		if !strings.Contains(string(raw), commit) {
-			t.Errorf("%s does not mention the current implementation commit %s from %s; a status change must reach every status document",
-				relative, commit, statusFile)
+		markers := statusMarkerPattern.FindAllString(string(raw), -1)
+		want := canonicalStatusMarker(current)
+		if len(markers) != 1 {
+			t.Errorf("%s has %d canonical status markers, want exactly 1 matching %q",
+				relative, len(markers), want)
+			continue
+		}
+		if markers[0] != want {
+			t.Errorf("%s has stale or contradictory canonical status %q, want %q from %s",
+				relative, markers[0], want, statusFile)
 		}
 	}
 }

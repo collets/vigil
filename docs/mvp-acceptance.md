@@ -1,5 +1,7 @@
 # First usable milestone
 
+<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+
 Status: scenario accepted on 2026-09-20. The Go application now persists project planning, permissions, resource coordination and the bounded interactive workflow; the offline core through Stage 5.5 is independently accepted at `84c0275` (see [next steps](next-steps.md)). Stage 5.6 delivery/finalization is next. Contained Hermes probes passed on Linux and macOS. **The milestone itself has still not been demonstrated**: the acceptance below requires real execution through both harnesses and real recovery/boundary checks, and production dispatch, live reviewer qualification and real user/manual decisions are still open.
 
 ## Accepted demonstration

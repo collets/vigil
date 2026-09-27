@@ -1,5 +1,7 @@
 # Initial harness capability investigation
 
+<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+
 Investigated 2026-09-20. Recommendation: Codex app-server over stdio and Hermes TUI gateway over stdio for the first adapters. Both retain the original harness. The Go application owns task state, scheduling, approval policy, and acceptance.
 
 Verdict: the transport/execution foundation passes a controlled model-backed fixture through both harnesses on Linux. Stage 3 runtime validation is complete (see [Stage 3 results](research/stage-3/results.md)) and offline recovery, policy, workflow and bounded-planning boundaries are independently accepted through Stage 5.5 at `84c0275` (see [next steps](next-steps.md)). Stage 5.6 delivery/finalization is next. Do not advertise complete approval enforcement, live recovery qualification, or production containment: the native approval and abrupt-loss gaps found in Stage 3 remain open, and production dispatch is still disabled.
