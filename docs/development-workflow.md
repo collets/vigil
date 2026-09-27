@@ -180,17 +180,28 @@ After the accepted candidate is pushed to `main`, the integrator may remove its
 agent-owned worktree and delete the corresponding local and remote task/integration
 branches without another approval only when all of these checks pass:
 
-- `origin/main` has been refreshed and the exact branch tip is an ancestor of it;
-- the branch has no unique commit, open finding, active worktree or unresolved handoff;
+- `origin/main` has been refreshed and either the exact branch tip is its ancestor,
+  or a recorded squash/rebase integration maps the source base/range/tip to an
+  independently accepted commit reachable from `origin/main` and confirms that no
+  source change was omitted;
+- the branch has no unintegrated change, open finding, active worktree or unresolved
+  handoff;
 - review/evidence records retain the accepted commit or range; and
 - the branch is not protected, user-owned, shared by another task or otherwise
   marked for retention.
 
-Use an ordinary branch deletion, never a force push or history rewrite. If ancestry
-or ownership is unclear, retain the branch and ask. Removing a branch ref must not
-make its accepted commits unreachable from `origin/main`.
+Use an ordinary branch deletion, never a force push or history rewrite. A squash or
+rebase may make the original commits unreachable from `origin/main`, so its durable
+integration record must retain the source SHA/range, accepted destination SHA and
+content-equivalence evidence before the ref is removed. If mapping, completeness or
+ownership is unclear, retain the branch and ask.
 
 ## Integration to `main`
+
+The **designated integrator** is the single agent/session assigned to construct,
+validate and publish the current integration candidate. Implementers and parallel
+agents do not become integrators implicitly, and only one integrator may own a given
+`main` update.
 
 The unit approved for `main` is the exact integration candidate:
 
@@ -200,6 +211,12 @@ The unit approved for `main` is the exact integration candidate:
   combine the accepted task there. Resolve no conflict casually: conflict resolution
   is a material change and requires affected validation plus narrow independent
   review of the integration delta.
+- Merge commits are the simplest way to retain exact task ancestry. Squash or rebase
+  integration is permitted only on a new integration branch, never by rewriting a
+  published task branch. Record the source base/range/tip and resulting candidate;
+  independently review the resulting integration commit because its SHA and history
+  differ from the task candidate. Before deleting the source branch, retain evidence
+  that every accepted source change is represented in the destination.
 - If multiple accepted tasks are combined, validate and independently review their
   interaction before updating `main`.
 
@@ -217,15 +234,6 @@ non-force push of the accepted integration candidate to `main`. If any condition
 ambiguous, stop before the main push and request direction. Never use force to make
 the remote accept a candidate.
 
-## Recommended server-side enforcement
-
-Process rules should also be backed by repository settings when available. Protect
-`main` against force pushes and deletion, require pull requests or an equivalent
-reviewed integration path, require the Linux/documentation checks, dismiss approvals
-when material commits are added and restrict direct main updates to the integrator.
-Changing those settings is an external administrative action and requires explicit
-user authorization.
-
 ## Explicit user exceptions
 
 The user may override a rule in this document for a specific operation. A valid
@@ -234,3 +242,9 @@ target/scope; a general request to continue, be autonomous or finish quickly is 
 enough. Confirm the narrow interpretation in the work record, preserve unaffected
 rules and do not treat a one-time exception as a permanent policy amendment. Higher-
 priority platform and system safety constraints still apply.
+
+This includes a clear instruction to work, commit or push directly on `main`: the
+user may authorize that exact exception even though the default workflow requires a
+task branch and independent acceptance. Record the named operation and scope before
+acting; do not reuse it for later work or infer permission to force-push, publish,
+merge a request or perform product delivery.

@@ -79,6 +79,7 @@ stale document is a defect, because the next session will plan from the document
 | Stage status flip (pending → accepted, finding opened/closed) | `docs/STATUS`, plus **every** document in `status_documents`, plus `docs/next-steps.md` status line and "Next concrete action" |
 | A new finding from review | the review record, `docs/next-steps.md`, `docs/pending-decisions.md` |
 | A design decision or accepted alternative | `docs/session-audit.md` decision index |
+| Autonomy, tooling, network, Git or authority policy | `docs/development-workflow.md`, `docs/pending-decisions.md`, `docs/session-audit.md` |
 | Validation evidence or a gate result | the stage's `docs/research/<stage>/results.md` validation section |
 
 ### The stage-status trap
