@@ -129,12 +129,12 @@ Missing task questions also create distinct clarification items.
   --command-id proposal-001 --expected-revision 5 --synthetic-fixture
 ./bin/vigil project proposal-show PROJECT_ID proposal-1 1
 ./bin/vigil project proposal-apply PROJECT_ID proposal-1 1 \
-  --command-id proposal-apply-001 --expected-revision 5
+  --command-id proposal-apply-001 --expected-revision 6
 ./bin/vigil project proposal-decide PROJECT_ID proposal-1 1 \
-  --command-id proposal-reject-001 --expected-revision 5 \
+  --command-id proposal-reject-001 --expected-revision 6 \
   --decision reject --rationale "The proposal does not match the requested scope"
 ./bin/vigil project proposal-decide PROJECT_ID proposal-1 1 \
-  --command-id proposal-revise-001 --expected-revision 5 \
+  --command-id proposal-revise-001 --expected-revision 6 \
   --decision request_revision --rationale "Split the first task and preserve its criteria"
 ./bin/vigil project input-resolve PROJECT_ID REQUEST_ID \
   --command-id input-answer-001 --expected-revision 6 \

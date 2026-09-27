@@ -113,11 +113,22 @@ evidence that require the unavailable user. Fixture actors never resolve these i
   reachability, not by missing authorization.
 - Checkpoint: D
 - Requirement or checklist item: R60
-- What is blocked and why it needs the user: RESOLVED; native host access and the
-  exact-commit validation completed.
-- Exact action/resource/decision needed: None for the Stage 5.5 native suite.
-- What was implemented instead, and what remains unproven: Native Stage 5.5
-  full/race/build gates are proven. The pre-existing Darwin fork-accounting
-  limitation and live production runtime crash matrix remain separate gates.
-- Safe to resume when: No resumption is needed for this blocker.
+- What is blocked and why it needs the user: REOPENED for remediation commit
+  `84c0275`; the previously authorized Mac was unreachable at both its documented
+  IP and hostname, so exact-remediation native execution needs the host online.
+- Exact action/resource/decision needed: Make the documented Mac reachable by SSH
+  and provide its current address only if it changed again.
+- What was implemented instead, and what remains unproven: Linux full/race/build,
+  boundary and four-target cross-build gates pass at `84c0275`; exact native macOS
+  runtime behavior for the remediation remains unproven. Exact `bdd6e33` native
+  evidence remains valid historical coverage. The Darwin fork-accounting limitation
+  and live production runtime crash matrix remain separate gates.
+- Safe to resume when: The Mac accepts the existing SSH identity at a known address.
 - Logged: 2026-09-26
+- REOPENED 2026-09-27 — complete-history bundle SHA-256
+  `26f8df61c98588a360432449331522f028ed13ee9f01906abf40982a7caf6d96`
+  was verified locally for exact commit
+  `84c0275fa5eab599b2fa66cebd12d89f617eb484`. Transfer to
+  `192.168.0.108` returned `No route to host`; `Simones-MBP.home` did not
+  resolve. No remote file, directory or process was created. The local bundle was
+  removed after the attempt.

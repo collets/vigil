@@ -3,8 +3,9 @@
 Status: implementation through checkpoint A commit `4dbb444`, initial B–D
 commit `20ca4d0`, bounded planning/control commit `192c6ba`, native-tool
 isolation fix `959eaaf` and revision-bound quality controls `669467e`; Stage 5.5
-interaction completion is `bdd6e33`. Checkpoints A–D are implemented offline;
-Stage 5.5 is unaccepted pending independent review.
+interaction completion is `bdd6e33` and independent-review remediation is
+`84c0275`. Checkpoints A–D are implemented offline; Stage 5.5 is unaccepted
+pending narrow independent follow-up.
 
 This record is append-only evidence for the four checkpoints in
 [the Stage 5.5 plan](../../../stage-5/5.5-workflow-and-planning.md). It distinguishes
@@ -461,7 +462,7 @@ acceptance status flip.
 
 ## 2026-09-27 remediation of 5.5-R1–5.5-R8
 
-The remediation working tree closes the blocking and checkpoint-B findings and
+Commit `84c0275` closes the blocking and checkpoint-B findings and
 addresses every concrete P3 implementation gap except the accepted observation
 that run-less planning/supervisor/finalization tool sessions rely on explicit
 retirement rather than an automatic persisted run-generation fence:
@@ -502,13 +503,18 @@ git diff --check                                                                
 ```
 
 No model/provider, credential, paid, Docker, hosting, publishing or Cardtracker
-operation occurred. Native macOS execution has not yet been repeated for the
+operation occurred. A verified complete-history bundle for exact `84c0275`
+(SHA-256 `26f8df61c98588a360432449331522f028ed13ee9f01906abf40982a7caf6d96`)
+could not be transferred because `192.168.0.108` returned `No route to host` and
+`Simones-MBP.home` did not resolve. No remote artifact was created and the local
+bundle was removed. Native macOS execution therefore has not been repeated for the
 remediation commit; the earlier exact-`bdd6e33` result remains historical evidence.
 
 ## Limitations and blockers
 
-See the [blocker log](blockers.md). Stage 5.5 offline implementation is complete at
-`bdd6e33` and remains unaccepted pending independent review. Production dispatch,
+See the [blocker log](blockers.md). Stage 5.5 offline implementation and review
+remediation are complete at `84c0275` and remain unaccepted pending narrow
+independent follow-up. Production dispatch,
 production model/reviewer and native Codex qualification, real project decisions,
 the live crash matrix and the Darwin fork-accounting observation remain disabled
 future gates. Native Hermes one-tool integration and the Stage 5.5 macOS suite are
