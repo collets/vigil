@@ -80,7 +80,7 @@ stale document is a defect, because the next session will plan from the document
 | New migration, or schema version change | the stage document, `docs/research/<stage>/results.md`, `docs/STATUS` |
 | New/renamed document | `docs/README.md` index (no orphans allowed) |
 | Requirement added, removed, or renumbered | `docs/stage-5-plan.md`, `docs/requirements.md` |
-| Stage status flip (pending → accepted, finding opened/closed) | `docs/STATUS`, plus **every** document in `status_documents`, plus `docs/next-steps.md` status line and "Next concrete action" |
+| Stage status flip (pending → accepted, finding opened/closed) | `docs/STATUS`, the canonical `vigil-status` marker and prose in **every** `status_documents` file, plus `docs/next-steps.md` status line and "Next concrete action" |
 | A new finding from review | the review record, `docs/next-steps.md`, `docs/pending-decisions.md` |
 | A design decision or accepted alternative | `docs/session-audit.md` decision index |
 | Autonomy, tooling, network, Git or authority policy | `docs/development-workflow.md`, `docs/pending-decisions.md`, `docs/session-audit.md` |
@@ -95,8 +95,9 @@ appear in **every** file listed in `status_documents` in `docs/STATUS`, and the
 reviewed — not a superseded one. Each listed document must contain exactly one
 canonical `vigil-status` tuple matching `stage`, `stage_accepted` and
 `implementation_commit`; `make docs-check` enforces that tuple, not the semantics
-of arbitrary prose, which still require review. A stale "next action" range has
-already occurred here twice; do not repeat it.
+of arbitrary prose, which still require review. Only registered live-status documents
+are checked; do not add a `vigil-status` marker to historical or unregistered records.
+A stale "next action" range has already occurred here twice; do not repeat it.
 
 ### Verify before you report
 

@@ -1,7 +1,5 @@
 # Stage 5.5 implementation results
 
-<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
-
 Status: implementation through checkpoint A commit `4dbb444`, initial B–D
 commit `20ca4d0`, bounded planning/control commit `192c6ba`, native-tool
 isolation fix `959eaaf` and revision-bound quality controls `669467e`; Stage 5.5
@@ -556,3 +554,34 @@ production model/reviewer and native Codex qualification, real project decisions
 the live crash matrix and the Darwin fork-accounting observation remain disabled
 future gates. Native Hermes one-tool integration and the Stage 5.5 macOS suite are
 demonstrated.
+
+## 2026-09-27 canonical live-status gate validation
+
+The post-acceptance workflow-policy review found that `status_documents` previously
+proved only that each file mentioned `implementation_commit`, not that its live stage
+and acceptance state agreed with `docs/STATUS`. The gate now requires exactly one
+canonical `vigil-status` tuple per registered live-status document and compares its
+stage, acceptance flag and implementation commit as a unit. Historical Stage 5.5
+plan/results records are deliberately excluded from `status_documents`, so a future
+Stage 5.6 flip will not relabel Stage 5.5 evidence.
+
+Permanent table-driven coverage mutates the marker through the following matrix:
+
+| Case | Expected result |
+| --- | --- |
+| Exact canonical tuple | accept |
+| Missing marker | reject |
+| Duplicate marker | reject |
+| Wrong stage | reject |
+| Wrong acceptance flag | reject |
+| Wrong implementation commit | reject |
+
+`env -u GOROOT GOENV=off GOPATH="$PWD/.cache/gopath"
+GOCACHE="$PWD/.cache/go-build" .tools/go/bin/go test ./internal/doccheck -run
+TestCanonicalStatusMarkerValidation -count=1 -v`, `make docs-check`, `make check`
+and `git diff --check` pass on the policy branch. An initial direct invocation
+without the repository-local `GOCACHE` failed during setup against the ambient
+read-only cache; it ran no test and was superseded by the pinned-cache command above.
+An unregistered document can still contain an inert stale HTML marker without being
+examined; this is an accepted list-boundary limitation, and agents are instructed not
+to place live markers in historical or unregistered records.

@@ -272,6 +272,49 @@ func canonicalStatusMarker(current status) string {
 		"; implementation_commit=" + current["implementation_commit"] + " -->"
 }
 
+func validateCanonicalStatusMarker(content, want string) string {
+	markers := statusMarkerPattern.FindAllString(content, -1)
+	if len(markers) != 1 {
+		return "found " + strconv.Itoa(len(markers)) + " canonical status markers, want exactly 1"
+	}
+	if markers[0] != want {
+		return "canonical status marker does not match docs/STATUS"
+	}
+	return ""
+}
+
+func TestCanonicalStatusMarkerValidation(t *testing.T) {
+	current := status{
+		"stage":                 "5.5",
+		"stage_accepted":        "true",
+		"implementation_commit": "84c0275",
+	}
+	want := canonicalStatusMarker(current)
+	tests := []struct {
+		name    string
+		content string
+		valid   bool
+	}{
+		{name: "exact", content: "# Current\n\n" + want + "\n", valid: true},
+		{name: "missing", content: "# Current\n", valid: false},
+		{name: "duplicate", content: want + "\n" + want + "\n", valid: false},
+		{name: "wrong stage", content: "<!-- vigil-status: stage=5.6; stage_accepted=true; implementation_commit=84c0275 -->\n", valid: false},
+		{name: "wrong acceptance", content: "<!-- vigil-status: stage=5.5; stage_accepted=false; implementation_commit=84c0275 -->\n", valid: false},
+		{name: "wrong commit", content: "<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=deadbee -->\n", valid: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			errText := validateCanonicalStatusMarker(test.content, want)
+			if test.valid && errText != "" {
+				t.Fatalf("valid marker rejected: %s", errText)
+			}
+			if !test.valid && errText == "" {
+				t.Fatal("invalid marker accepted")
+			}
+		})
+	}
+}
+
 // TestDocsStatusDocumentsAgree requires every document that carries live stage
 // status to contain exactly one canonical stage/acceptance/implementation tuple.
 // This catches partial flips and stale or duplicated machine-readable status, while
@@ -292,16 +335,9 @@ func TestDocsStatusDocumentsAgree(t *testing.T) {
 			t.Errorf("%s: status document listed in %s does not exist: %v", statusFile, statusFile, err)
 			continue
 		}
-		markers := statusMarkerPattern.FindAllString(string(raw), -1)
 		want := canonicalStatusMarker(current)
-		if len(markers) != 1 {
-			t.Errorf("%s has %d canonical status markers, want exactly 1 matching %q",
-				relative, len(markers), want)
-			continue
-		}
-		if markers[0] != want {
-			t.Errorf("%s has stale or contradictory canonical status %q, want %q from %s",
-				relative, markers[0], want, statusFile)
+		if errText := validateCanonicalStatusMarker(string(raw), want); errText != "" {
+			t.Errorf("%s: %s; want %q from %s", relative, errText, want, statusFile)
 		}
 	}
 }

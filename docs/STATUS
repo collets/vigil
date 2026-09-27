@@ -4,7 +4,9 @@
 # (`make docs-check` -> internal/doccheck). Read and understood by AGENTS.md.
 #
 # Update this file in the same commit as any change to the state it describes.
-# Every path listed in status_documents must mention implementation_commit.
+# Every path listed in status_documents must carry exactly one canonical
+# vigil-status tuple matching stage, stage_accepted and implementation_commit.
+# Historical per-stage plans/results are intentionally not live status documents.
 # See AGENTS.md, section "Documentation obligations".
 
 stage=5.5
@@ -14,5 +16,5 @@ review_record=docs/research/stage-5/5.5/results.md
 project_migrations=16
 coordination_migrations=2
 index=docs/README.md
-status_documents=AGENTS.md,README.md,docs/README.md,docs/next-steps.md,docs/pending-decisions.md,docs/requirements.md,docs/architecture.md,docs/technology.md,docs/mvp-acceptance.md,docs/harness-capabilities.md,docs/session-audit.md,docs/stage-5-plan.md,docs/stage-5-execution.md,docs/stage-5/README.md,docs/stage-5/5.5-workflow-and-planning.md,docs/research/stage-5/5.5/results.md
+status_documents=AGENTS.md,README.md,docs/README.md,docs/next-steps.md,docs/pending-decisions.md,docs/requirements.md,docs/architecture.md,docs/technology.md,docs/mvp-acceptance.md,docs/harness-capabilities.md,docs/session-audit.md,docs/stage-5-plan.md,docs/stage-5-execution.md,docs/stage-5/README.md
 cli_reference=docs/stage-5-cli.md
