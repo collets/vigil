@@ -60,6 +60,16 @@ func (w *walkthrough) auditOptIns() {
 	if !Enabled(w.report.OptIns, CapabilityCodexLive) {
 		w.note("No contained Codex route exists, so no live Codex turn was attempted. The recorded blocker is " + CodexLiveBlocker)
 	}
+	// State the live-turn position precisely. The local opt-in permits a metadata
+	// probe of the loopback route; it does not by itself produce a model turn, and
+	// claiming otherwise would misdescribe what the run did.
+	if Enabled(w.report.OptIns, CapabilityLocalInference) {
+		w.report.LiveTurn.Notes = append(w.report.LiveTurn.Notes,
+			"the local-inference opt-in was granted and the loopback route was probed, but no stage of this walkthrough drives a live model turn; the turn count above is therefore the observed count, not an estimate")
+		w.note("The bounded live local model turn is NOT yet driven by this walkthrough. The opt-in gate, the route probe and the turn budget are implemented and tested, but no stage calls the live execution path, so a real local Hermes turn remains unrecorded work rather than evidence.")
+		w.report.Pending = append(w.report.Pending,
+			"a real bounded live local Hermes turn: the opt-in and budget exist, but no walkthrough stage drives one")
+	}
 }
 
 // auditCleanup inspects only what this run created. It never removes anything it

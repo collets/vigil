@@ -49,20 +49,39 @@ build-scenario:
 	CGO_ENABLED=0 $(GO) build -o bin/vigil-scenario ./cmd/vigil-scenario
 	CGO_ENABLED=0 $(GO) build -o bin/vigil ./cmd/vigil
 
+# The disposable root is created outside any checkout, and the scenario binary
+# refuses a root that already holds content. `rm -rf` is therefore applied only
+# after checking the path is the documented disposable location, so an overridden
+# SCENARIO_ROOT can never make this target delete something else.
+define scenario_root_guard
+	case "$(1)" in \
+		/tmp/vigil-stage-5.7-scenario|/tmp/vigil-stage-5.7-scenario/*) ;; \
+		*) echo "refusing to touch SCENARIO_ROOT=$(1): it is not the disposable /tmp location" >&2; exit 1 ;; \
+	esac
+endef
+
 scenario: build-scenario
+	@$(call scenario_root_guard,$(SCENARIO_ROOT))
 	@rm -rf $(SCENARIO_ROOT)
 	@mkdir -p $(SCENARIO_ROOT)
 	./bin/vigil-scenario --binary bin/vigil --root $(SCENARIO_ROOT) \
 		--source-commit $(SCENARIO_COMMIT) --verbose
 
-# Same walkthrough with the bounded live-local opt-in. It uses only the existing
-# loopback llama route; it never falls back to a metered endpoint and never
+# The same offline walkthrough, with the bounded local-inference capability
+# permitted. Be precise about what this does: the opt-in lets the run *probe* the
+# existing loopback llama route with a metadata read and record its identity. It
+# does not yet start a live model turn, because no stage of the walkthrough drives
+# a live turn — the report records the turn count, and wiring a real turn is a
+# recorded pending item. It never falls back to a metered endpoint and never
 # enables production dispatch.
 scenario-live: build-scenario
+	@$(call scenario_root_guard,$(SCENARIO_ROOT))
 	@mkdir -p $(SCENARIO_ROOT)
 	./bin/vigil-scenario --binary bin/vigil --root $(SCENARIO_ROOT) \
 		--source-commit $(SCENARIO_COMMIT) --allow-local-inference --verbose
 
-# Removes only the agent-owned disposable scenario root.
+# Removes only the agent-owned disposable scenario root, and only under the same
+# guard as the run itself.
 scenario-clean:
+	@$(call scenario_root_guard,$(SCENARIO_ROOT))
 	rm -rf $(SCENARIO_ROOT)

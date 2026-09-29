@@ -153,6 +153,7 @@ left as the reviewer saw them, so a quoted path may no longer exist — see
 | [`research/stage-5/5.5/qualification-input.md`](research/stage-5/5.5/qualification-input.md) | Visible credential-free review copy of the immutable Stage 5.5 qualification Markdown input |
 | [`research/stage-5/5.5/qualification-proposal.md`](research/stage-5/5.5/qualification-proposal.md) | Human-readable review copy of exact pending qualification proposal revision 1 |
 | [`research/stage-5/5.6/results.md`](research/stage-5/5.6/results.md) | Stage 5.6 implementation, review and validation evidence (**accepted `b0a085b`, autonomous scope only; human gates in Stage 8**) |
+| [`research/stage-5/5.7/results.md`](research/stage-5/5.7/results.md) | Stage 5.7 autonomous qualification evidence, the evidence matrix, and **blocking finding 5.7-F1** (unreachable delivery path) |
 | `research/stage-5/5.2/review-probes/`, `research/stage-5/5.3/review-probes/`, `research/stage-5/5.4/review-probes/` | Retained inert review probes (`.go.txt`) |
 
 Review probes are stored as `.go.txt` so they cannot compile. To run one, copy it

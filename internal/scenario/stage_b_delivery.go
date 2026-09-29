@@ -229,7 +229,7 @@ func (w *walkthrough) attemptDelivery(ctx context.Context) DeliveryEvidence {
 		w.note("Observation 2: " + secondRefusal)
 		return DeliveryEvidence{
 			Finding: "5.7-F1",
-			Detail: firstRefusal + "; then, after an explicit base-branch checkout, " + secondRefusal,
+			Detail:  firstRefusal + "; then, after an explicit base-branch checkout, " + secondRefusal,
 		}
 	}
 	w.note("Observation 2: commit-prepare succeeded once the checkout was on its base branch, which no production command performs.")
@@ -268,24 +268,25 @@ func (w *walkthrough) returnFixtureToBase(ctx context.Context) error {
 }
 
 // closeDeliveryMatrixUnreachable records the delivery rows that could not be
-// driven, each with the exact finding that blocked it.
+// driven. They are `unmet`, not pending: the cause is a product defect, not a
+// human gate, and the distinction is what tells a reader where the work belongs.
 func (w *walkthrough) closeDeliveryMatrixUnreachable(evidence DeliveryEvidence) {
-	detail := "not driven by this run: " + evidence.Detail
-	for id, blocker := range map[string]string{
-		CaseBaseBranchReturn: "BLOCKING FINDING 5.7-F1: the production CLI exposes no command that returns an enrolled repository to its base branch, and the commit path refuses to move the checked-out plan ref, so the documented prepare/execute/accept path cannot reach commit, push or draft delivery. Both refusals are recorded in the report.",
-		CaseNoUnintendedRefs:  "BLOCKING FINDING 5.7-F1: no push could be prepared, so the destination ref set could not be observed. The Stage 5.6 accepted suite covers this boundary with local bare remotes; this run could not reach it through the production commands.",
-		CaseGitAndHostingBoundary: "BLOCKING FINDING 5.7-F1: no push or draft could be prepared, so the hosting boundary could not be exercised through the production commands from the accepted state. The Stage 5.6 accepted suite covers it with local bare remotes and fake hosting.",
+	finding := "BLOCKING FINDING 5.7-F1: the production CLI exposes no command that returns an enrolled repository to its base branch, and the commit path refuses to move the checked-out plan ref, so the documented prepare/execute/accept path cannot reach commit, push or draft delivery. This is a product defect in the Stage 5.2/5.6 delivery path, not a human gate. Observed refusals: " + evidence.Detail
+	for id, why := range map[string]string{
+		CaseBaseBranchReturn:      finding,
+		CaseNoUnintendedRefs:      finding + " No push could be prepared, so the destination ref set could not be observed. The Stage 5.6 accepted suite covers this boundary with local bare remotes; this run could not reach it through the production commands.",
+		CaseGitAndHostingBoundary: finding + " No push or draft could be prepared, so the hosting boundary could not be exercised through the production commands from the accepted state. The Stage 5.6 accepted suite covers it with local bare remotes and fake hosting.",
 	} {
-		if err := w.report.Matrix.Defer("recovery", id, blocker, detail); err != nil {
+		if err := w.report.Matrix.MarkUnmet("recovery", id, why, "docs/plans/stage-5/5.7-end-to-end-qualification.md"); err != nil {
 			panic(&ScenarioAbort{Step: "matrix:" + id, Err: err})
 		}
 	}
-	if err := w.report.Matrix.Defer("milestone", StepDraftRequest,
+	if err := w.report.Matrix.MarkUnmet("milestone", StepDraftRequest,
 		"BLOCKING FINDING 5.7-F1: the draft request milestone could not be rehearsed through the production commands, because the commit stage that precedes it is unreachable from the accepted state. A real draft request additionally requires an authorized destination and is Stage 8's regardless.",
-		detail); err != nil {
+		"docs/plans/stage-5/5.7-end-to-end-qualification.md"); err != nil {
 		panic(&ScenarioAbort{Step: "matrix:draft-gap", Err: err})
 	}
-	w.note("BLOCKING FINDING 5.7-F1: the production delivery path is unreachable from the documented workflow. Preparing the plan branch is required for execution and binds the accepted fingerprint to a checked-out plan ref, while the commit path refuses to move a checked-out plan ref; returning the checkout to the base branch then invalidates the accepted fingerprint. Push and draft delivery could not be rehearsed through the production commands at all.")
+	w.note("BLOCKING FINDING 5.7-F1: the production delivery path is unreachable from the documented workflow. Preparing the plan branch is required for execution and binds the accepted fingerprint to a checked-out plan ref, while the commit path refuses to move a checked-out plan ref; returning the checkout to the base branch then invalidates the accepted fingerprint. Push and draft delivery could not be rehearsed through the production commands at all. The affected matrix rows are recorded as unmet, because the cause is this product defect and not a human gate.")
 }
 
 // continueDelivery completes the commit, push and draft triples from whichever
@@ -469,7 +470,7 @@ func (w *walkthrough) draftRequest(ctx context.Context, push PushEvidence, hosti
 		"command_id": "draft-prepare-001", "plan_id": PlanID, "repository_id": RepositoryID,
 		"provider": "github", "project": hosting.Project, "api_base": hosting.Base(),
 		"base_branch": "main", "title": "Implement the specified greeting",
-		"body": "Stage 5.7 autonomous delivery rehearsal against a local bare remote and a loopback provider stand-in.",
+		"body":              "Stage 5.7 autonomous delivery rehearsal against a local bare remote and a loopback provider stand-in.",
 		"synthetic_fixture": true,
 	})
 	if err != nil {
@@ -517,15 +518,15 @@ type PreparedDraft struct {
 	OperationID string `json:"operation_id"`
 	RequestID   string `json:"request_id"`
 	Intent      struct {
-		Provider    string `json:"provider"`
-		Project     string `json:"project"`
-		APIBase     string `json:"api_base"`
-		BaseRef     string `json:"base_ref"`
-		BaseOID     string `json:"base_oid"`
-		HeadBranch  string `json:"head_branch"`
-		HeadOID     string `json:"head_oid"`
-		Title       string `json:"title"`
-		Credential  string `json:"credential_ref"`
+		Provider   string `json:"provider"`
+		Project    string `json:"project"`
+		APIBase    string `json:"api_base"`
+		BaseRef    string `json:"base_ref"`
+		BaseOID    string `json:"base_oid"`
+		HeadBranch string `json:"head_branch"`
+		HeadOID    string `json:"head_oid"`
+		Title      string `json:"title"`
+		Credential string `json:"credential_ref"`
 	} `json:"intent"`
 }
 

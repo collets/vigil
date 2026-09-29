@@ -28,23 +28,22 @@ func requirementCoverage() []MatrixEntry {
 	// automated lists the requirements this walkthrough directly observed.
 	automated := map[string]string{
 		"R01": "the scenario specification was imported as an immutable private revision and read back",
-		"R02": "an explicit harness profile with a credential reference and no credential value was persisted",
-		"R03": "an explicit model policy was persisted and production dispatch remained unavailable",
-		"R04": "profiles, policy and eligibility were read back through the authoritative readiness view",
+		"R02": "one explicit harness profile with a credential reference and no credential value was persisted and read back; multi-harness session management is Stage 8's and depends on live routes",
+		"R03": "an explicit model policy was persisted and production dispatch remained unavailable; a frontier model in the main-agent role needs a live route",
+		"R04": "the declared profile and policy were read back through the authoritative readiness view; no delegation to a local model occurred, because that needs a live route",
 		"R05": "objective criteria drove the plan, and the manual criterion was recorded separately",
 		"R06": "the persisted readiness, queue, task and inbox views were all read through production commands",
 		"R07": "events were readable after the sequence of commands",
-		"R08": "a real harness turn is still pending Stage 8; the execution driver used here is the labelled synthetic fixture path",
 		"R10": "an existing endpoint was registered as a route reference without starting a model server",
 		"R12": "approval requests, grants and revocations were exercised; a deny decision left no consumable grant",
 		"R13": "a nested repository inside a registered tree was refused at project initialization",
-		"R14": "a fresh distinct reviewer session produced the blocking finding, and a second fresh review was required after repair",
+		"R14": "a fresh distinct reviewer session produced the blocking finding, and a second fresh review was required after repair; the reviewer was the labelled fixture reviewer, so this is mechanics evidence, not a live reviewer model",
 		"R15": "a bounded stop retired a run and left the durable state inspectable",
 		"R16": "a restart offered an explicit fresh-context choice and produced a distinct attempt rather than a replay",
 		"R17": "a required check failed on a real defect and passed only after the bounded repair",
 		"R18": "the repair attempt consumed the task ledger and no allowance was reset",
 		"R19": "a nested project inside an existing tree was refused before any claim",
-		"R20": "a bounded assessment refusal is carried as reused evidence; the rehearsal did not exhaust its own repair budget",
+		"R20": "the repair ledger persisted a distinct repair attempt that did not reset the task allowance",
 		"R21": "a manual outcome and a human decision were recorded as separately typed evidence",
 		"R22": "two projects on disjoint trees both registered and stayed readable",
 		"R23": "a closed, validated proposal was created and applied atomically",
@@ -60,8 +59,8 @@ func requirementCoverage() []MatrixEntry {
 		"R36": "a rejected approval left the operation without a consumable grant",
 		"R37": "the ranked queue was authoritative and advancement was explicit",
 		"R40": "a restore naming three nonexistent identities was refused before touching any repository",
-		"R41": "a plain push advanced only the non-checked-out plan ref and never the operator's HEAD",
-		"R42": "the destination holds exactly one approved plan ref and no tag or checkpoint ref",
+		"R41": "an authorized commit attempt naming an out-of-scope path was refused, and the delivery rehearsal's checkout state was re-read after every attempt",
+		"R42": "the destination ref set could not be observed in this run because no push was reachable; the Stage 5.6 accepted suite covers it with local bare remotes",
 		"R44": "the operator's index, worktree and HEAD were unchanged across the whole delivery rehearsal",
 		"R45": "task-level evidence was read back through the production inspection commands",
 		"R48": "a suggestion-free passing review and a blocking review were both handled distinctly",
@@ -75,48 +74,41 @@ func requirementCoverage() []MatrixEntry {
 		"R66": "the local factual archive view is materialized inside the Git-ignored .vigil directory",
 		"R67": "a malformed narrative was refused and a correctly cited one accepted",
 		"R68": "a narrative failure left the accepted task accepted and reran no development",
-		"R69": "no second creation request was issued when a completed delivery was reconciled",
+		"R69": "no second creation request was issued, because no draft was reachable in this run; the Stage 5.6 accepted suite covers the single-POST reconciliation",
 		"R70": "the first 100 pending decisions and latest history were readable through production commands",
 	}
 	// reused lists requirements whose evidence lives in an accepted predecessor
 	// slice, with that slice's record as the source.
 	reused := map[string]string{
-		"R09":  "docs/research/stage-5/foundation-results.md",
-		"R18b": "",
-		"R23b": "",
-		"R28":  "docs/research/stage-5/5.6/results.md",
-		"R32":  "docs/research/stage-5/5.3/results.md",
-		"R38":  "docs/research/stage-5/5.3/results.md",
-		"R43":  "docs/research/stage-5/5.3/results.md",
-		"R49":  "docs/research/stage-5/5.3/results.md",
-		"R50":  "docs/research/stage-5/5.6/results.md",
-		"R51":  "docs/research/stage-5/5.5/results.md",
-		"R53":  "docs/research/stage-5/5.4/results.md",
-		"R54":  "docs/research/stage-5/5.4/results.md",
-		"R56":  "docs/research/stage-5/5.2/results.md",
-		"R57":  "docs/research/stage-5/5.5/results.md",
-		"R61":  "docs/research/stage-5/5.4/results.md",
-		"R62":  "docs/research/stage-5/5.5/results.md",
-		"R63b": "",
-		"R64b": "",
-		"R65b": "",
-		"R71":  "docs/research/stage-5/5.5/results.md",
+		"R28": "docs/research/stage-5/5.6/results.md",
+		"R32": "docs/research/stage-5/5.3/results.md",
+		"R38": "docs/research/stage-5/5.3/results.md",
+		"R43": "docs/research/stage-5/5.3/results.md",
+		"R49": "docs/research/stage-5/5.3/results.md",
+		"R50": "docs/research/stage-5/5.6/results.md",
+		"R51": "docs/research/stage-5/5.5/results.md",
+		"R53": "docs/research/stage-5/5.4/results.md",
+		"R54": "docs/research/stage-5/5.4/results.md",
+		"R56": "docs/research/stage-5/5.2/results.md",
+		"R57": "docs/research/stage-5/5.5/results.md",
+		"R61": "docs/research/stage-5/5.4/results.md",
+		"R62": "docs/research/stage-5/5.5/results.md",
+		"R71": "docs/research/stage-5/5.5/results.md",
 	}
 	// gates lists requirements that are owned by a later stage, with the exact
 	// blocker rather than a vague deferral.
 	gates := map[string]string{
-		"R02-live": "",
-		"R08":      "a real contained harness turn requires a live credentialed route; the local Hermes planning/finalization route is a bounded opt-in and the Codex route is blocked on a user decision",
-		"R11":      "terminal interface parity is Stage 6; Stage 5.7 rehearses the persisted data and command surface, not the full terminal interface",
-		"R25":      "a real user's functional Pass for a manual criterion is a human decision owned by Stage 8",
-		"R26-live": "",
-		"R39":      "a parent-directory warning for a real multi-repository project needs a real enrollment, which is a user decision",
-		"R45-live": "",
-		"R46":      "detailed findings and diff views are Stage 6 terminal interface work",
-		"R47":      "detailed findings and diff views are Stage 6 terminal interface work",
-		"R59":      "a cross-instance capacity authority over the shared Windows llama route requires a supported shared mechanism that does not exist yet",
-		"R64-live": "",
-		"R69-live": "",
+		"R08": "a real contained harness turn requires a live credentialed route; the local Hermes planning/finalization route is a bounded opt-in and the Codex route is blocked on a user decision, so this run performed zero model turns",
+		"R09": "R09 is deferred product scope: Jev was considered as an optional aid and no integration or evidence of benefit was ever recorded, so nothing supports it; see docs/process/session-audit.md",
+		"R11": "terminal interface parity is Stage 6; Stage 5.7 rehearses the persisted data and command surface, not the full terminal interface",
+		"R25": "a real user's functional Pass for a manual criterion is a human decision owned by Stage 8",
+		"R39": "a parent-directory warning for a real multi-repository project needs a real enrollment, which is a user decision",
+		"R46": "detailed findings and diff views are Stage 6 terminal interface work",
+		"R47": "detailed findings and diff views are Stage 6 terminal interface work",
+		"R59": "a cross-instance capacity authority over the shared Windows llama route requires a supported shared mechanism that does not exist yet",
+		"R41": "BLOCKING FINDING 5.7-F1: the commit path is unreachable from the accepted state, so the commit-then-push-then-draft sequence could not be driven; see docs/plans/stage-5/5.7-end-to-end-qualification.md",
+		"R42": "BLOCKING FINDING 5.7-F1: no push was reachable, so the destination ref set could not be observed in this run",
+		"R69": "BLOCKING FINDING 5.7-F1: no draft was reachable, so the single-POST reconciliation could not be observed in this run",
 	}
 	// The rows are emitted in sorted identifier order so two runs of the audit
 	// produce a comparable report rather than Go's randomized map order.
@@ -129,6 +121,16 @@ func requirementCoverage() []MatrixEntry {
 			entry.Detail = automated[id]
 			entry.Source = "stage-5.7 autonomous walkthrough"
 		case reused[id] != "":
+			// A carried-forward citation is only usable when the named record
+			// actually mentions the requirement. An unverified citation would let
+			// a gap read as covered evidence, so it is checked rather than trusted.
+			if !sourceMentionsRequirement(reused[id], id) {
+				entry.Evidence = EvidencePendingStage8
+				entry.Detail = fmt.Sprintf("the proposed carried-forward source %s does not mention %s, so it does not support this requirement", reused[id], id)
+				entry.Blocker = "no accepted record covers this requirement; the proposed citation was checked and does not support it"
+				entry.Source = reused[id]
+				break
+			}
 			entry.Evidence = EvidenceReused
 			entry.Detail = "the accepted predecessor slice holds this evidence; it was carried forward with its source record and not re-derived by this run"
 			entry.Source = reused[id]
@@ -141,6 +143,18 @@ func requirementCoverage() []MatrixEntry {
 		entries = append(entries, entry)
 	}
 	return entries
+}
+
+// sourceMentionsRequirement reports whether a carried-forward record actually
+// names the requirement. It is a deliberately weak textual check: it cannot
+// verify that the record's evidence is sufficient, but it does prevent a
+// citation to an unrelated document from being presented as coverage.
+func sourceMentionsRequirement(source, id string) bool {
+	raw, err := readRepoFile(source)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(raw, id)
 }
 
 // requirementBlocker names the exact reason a requirement is not demonstrated.

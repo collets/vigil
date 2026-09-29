@@ -422,9 +422,13 @@ func (w *walkthrough) executeAndRepair(ctx context.Context) {
 	}
 	w.assert("fresh-review-after-repair", true, "distinct session and native identity, status pass",
 		"a distinct fresh review is required after a repair, not a re-run of the prior one")
-	if err := w.report.Matrix.Mark("milestone", StepExecuteSequentially, EvidenceAutomated,
-		"one persisted implementation attempt ran through the production execution path via the disposable synthetic driver; the task moved to checking and was never accepted by completion",
-		"bin/vigil project execution-prepare/execution-start"); err != nil {
+	// The production execution path ran, but through the labelled synthetic
+	// fixture driver rather than a live harness. The plan is explicit that a
+	// harness whose live route is unavailable is recorded as pending and never as
+	// passing, so this row is deferred rather than claimed.
+	if err := w.report.Matrix.Defer("milestone", StepExecuteSequentially,
+		"execution ran through the labelled --synthetic-fixture driver, not a qualified live harness. The plan requires a harness whose live route is unavailable to be recorded as pending and never as passing. A real contained harness turn is Stage 8's, and the contained Codex route is additionally blocked on a user decision; see docs/process/pending-decisions.md",
+		"bin/vigil project execution-prepare/execution-start ran the full persisted execution lifecycle (journalling, submission, result validation, writer containment) via the disposable synthetic driver: the task moved to checking and was never accepted by completion"); err != nil {
 		panic(&ScenarioAbort{Step: "matrix:execute", Err: err})
 	}
 	if err := w.report.Matrix.Mark("milestone", StepReviewAndRepair, EvidenceAutomated,
@@ -432,7 +436,8 @@ func (w *walkthrough) executeAndRepair(ctx context.Context) {
 		"bin/vigil project quality-review, execution-followup-prepare, execution-start, quality-check"); err != nil {
 		panic(&ScenarioAbort{Step: "matrix:repair", Err: err})
 	}
-	w.note("The reviewer here is the labelled fixture reviewer. It exercised the fresh-session, blocking-derivation and post-repair mechanics; it is not evidence of a live reviewer model.")
+	w.note("The reviewer here is the labelled fixture reviewer. It exercised the fresh-session, blocking-derivation and post-repair mechanics; it is not evidence of a live reviewer model. The milestone row for the review/repair cycle inherits the same caveat.")
+	w.note("The execution driver is the labelled synthetic fixture driver throughout, so no step of this walkthrough is evidence of a live harness turn.")
 }
 
 // PreparedRun is the prepared execution identity.

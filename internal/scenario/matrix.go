@@ -21,8 +21,8 @@ const (
 	// authorized real destination. It is never reported as a pass.
 	EvidencePendingStage8 = "pending_stage_8"
 	// EvidenceUnmet means the autonomous slice could not produce this evidence
-	// and it is not a human gate either. It is a defect or a documented
-	// limitation, and is reported as such.
+	// and it is not a human gate either. It is a defect in the product, and it is
+	// reported as such so the work is not filed as somebody else's to-do.
 	EvidenceUnmet = "unmet"
 )
 
@@ -140,25 +140,59 @@ func NewMatrix() *Matrix {
 	return matrix
 }
 
+// MarkPartial records a row this run only partially observed. The row stays in
+// the automated class — the narrower observation did happen through the
+// production path — but the detail names exactly what was and was not observed,
+// so a reader can tell a demonstrated case from a partially observed one.
+//
+// A case name describes the full property; the detail states the narrower thing
+// that was actually measured. Collapsing the two would overstate the evidence.
+
+// MarkUnmet records a row that this run could not demonstrate because of a
+// defect in the product, rather than because a human gate owns it.
+//
+// This class is deliberately distinct from a pending gate. A pending row says
+// "a person must do this"; an unmet row says "the product cannot do this yet",
+// and conflating them would let a product defect be filed as somebody else's
+// to-do.
+func (m *Matrix) MarkUnmet(section, id, detail, source string) error {
+	return m.mark(section, id, EvidenceUnmet, detail, source, false)
+}
+
 // Mark records the outcome for one matrix row. A row that is claimed as
 // automated or reused evidence requires a detail, so no row can be marked
 // demonstrated with no explanation.
 func (m *Matrix) Mark(section, id, evidence, detail, source string) error {
+	return m.mark(section, id, evidence, detail, source, true)
+}
+
+// MarkPartial records a partially observed row. It is Mark with the narrower
+// observation named in the detail.
+func (m *Matrix) MarkPartial(section, id, detail, source string) error {
+	return m.Mark(section, id, EvidenceAutomated, detail, source)
+}
+
+func (m *Matrix) mark(section, id, evidence, detail, source string, pending bool) error {
 	rows := m.section(section)
 	if rows == nil {
 		return fmt.Errorf("unknown matrix section %q", section)
+	}
+	if evidence != EvidencePendingStage8 && evidence != EvidenceUnmet && strings.TrimSpace(detail) == "" {
+		return fmt.Errorf("matrix row %q cannot be marked %q without a detail", id, evidence)
 	}
 	for index := range rows {
 		if rows[index].ID != id {
 			continue
 		}
-		if evidence != EvidencePendingStage8 && strings.TrimSpace(detail) == "" {
-			return fmt.Errorf("matrix row %q cannot be marked %q without a detail", id, evidence)
-		}
 		rows[index].Evidence = evidence
 		rows[index].Detail = detail
 		rows[index].Source = source
-		rows[index].Blocker = ""
+		if pending {
+			rows[index].Blocker = ""
+		} else {
+			// An unmet row names the defect, which is the finding itself.
+			rows[index].Blocker = detail
+		}
 		return nil
 	}
 	return fmt.Errorf("matrix row %q is not declared in section %q", id, section)
@@ -222,8 +256,8 @@ func (m *Matrix) RequireComplete() error {
 			default:
 				return fmt.Errorf("matrix row %q has an undecided evidence class %q", row.ID, row.Evidence)
 			}
-			if row.Evidence == EvidencePendingStage8 && strings.TrimSpace(row.Blocker) == "" {
-				return fmt.Errorf("matrix row %q is pending but records no exact blocker", row.ID)
+			if (row.Evidence == EvidencePendingStage8 || row.Evidence == EvidenceUnmet) && strings.TrimSpace(row.Blocker) == "" {
+				return fmt.Errorf("matrix row %q is %q but records no exact blocker", row.ID, row.Evidence)
 			}
 			if (row.Evidence == EvidenceAutomated || row.Evidence == EvidenceReused) && strings.TrimSpace(row.Detail) == "" {
 				return fmt.Errorf("matrix row %q claims %q evidence with no detail", row.ID, row.Evidence)

@@ -875,6 +875,43 @@ evidence, checkpoint artifacts or global harness history.
   --command-id ID --inspect-command-id INSPECT_ID
 ```
 
+## Development-only autonomous qualification runner
+
+`vigil-scenario` is a Stage 5.7 development qualification tool, **not a product
+path**. It drives the production `vigil` binary as real subprocesses against a
+disposable fixture and writes a JSON evidence report. It creates no delivery,
+spending or dispatch authority, contacts no provider or hosting service, and
+refuses a root that already has content or that sits inside any checkout. It is a
+separate binary, so it adds no command to the `vigil` command tree.
+
+```sh
+make build-scenario
+./bin/vigil-scenario --binary bin/vigil --root /tmp/vigil-stage-5.7-scenario \
+  --source-commit "$(git rev-parse HEAD)" --verbose
+```
+
+| Flag | Required | Default | Meaning |
+| --- | --- | --- | --- |
+| `--binary PATH` | no | `bin/vigil` | Production binary under qualification; it must already be built |
+| `--root PATH` | **yes** | — | Agent-owned disposable root; must be new or empty, and outside any checkout |
+| `--source-commit SHA` | no | — | Candidate commit recorded in the manifest |
+| `--stage A\|B\|C\|D` | no | all | Limit the run to one work checkpoint |
+| `--out PATH` | no | `ROOT/report.json` | Where to write the JSON report |
+| `--keep` | no | `true` | Retain the disposable root for inspection |
+| `--allow-docker` | no | `false` | Opt in to container-boundary probes |
+| `--allow-local-inference` | no | `false` | Opt in to the bounded local inference capability |
+| `--allow-codex-live` | no | `false` | Request the contained Codex route — **refused in this build** |
+| `--allow-remote-delivery` | no | `false` | Request real delivery — **refused in this build** |
+| `--harness-version V` | no | `0.21.3` | Declared harness version for the profile |
+| `--model NAME` | no | `qwen3.8-27b-local` | Declared model for the profile |
+| `--verbose` | no | `false` | Print every production command as it runs |
+
+The two refusable opt-ins cannot be enabled by any configuration in this build;
+requesting them records the exact Stage 8 blocker instead. A run that completes
+exits **zero** even when it records gaps, because those gaps are the deliverable;
+a nonzero exit means a stage aborted. See
+[the results document](../../research/stage-5/5.7/results.md).
+
 ## Development-only spike runner
 
 `spike` is a bounded Stage 1–3 experiment runner, not a production path. It probes

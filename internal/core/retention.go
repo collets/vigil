@@ -145,7 +145,7 @@ func (e *Engine) applyTranscriptExpiry(ctx context.Context, commandID, inspectCo
 }
 
 type transcriptExpiryRecord struct {
-	InspectCommandID string                      `json:"inspect_command_id"`
+	InspectCommandID string                     `json:"inspect_command_id"`
 	Expired          []artifacts.ExpiryCandidate `json:"expired"`
 }
 

@@ -2,11 +2,11 @@ package scenario
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -293,14 +293,20 @@ func (w *walkthrough) stopPreservesWork(ctx context.Context) {
 		w.deferCase(CaseStopPreservesWork, "inspect output was not the expected shape: "+err.Error())
 		return
 	}
-	for _, allowed := range view.AllowedNext {
-		if allowed == "start" || allowed == "execution-start" {
-			w.assert("stop-preserves-work", false, allowed, "a stopped run still offers a start command")
-		}
+	// A stopped run must offer nothing that could resubmit it, and the inspection
+	// must actually have decoded a real result.
+	safe, detail := view.decodeIsReadable()
+	if !safe {
+		w.assert("stop-preserves-work", false, detail, "the inspection is unreadable, so no conclusion can be drawn")
+		return
+	}
+	if view.offersStart() {
+		w.assert("stop-preserves-work", false, detail, "a stopped run still offers a way to resubmit it")
+		return
 	}
 	w.mark(CaseStopPreservesWork,
-		fmt.Sprintf("a bounded stop retired the run (state %q, writer %q); the artifact remained byte-identical and the inspection offered only %v",
-			view.State, view.WriterState, view.AllowedNext),
+		fmt.Sprintf("a bounded stop retired the run (run_state %q, submission_state %q, writer %q); the artifact remained byte-identical and the inspection offered only %s",
+			view.RunState, view.SubmissionState, view.WriterState, detail),
 		"bin/vigil project execution-stop/execution-inspect with a content assertion")
 }
 
@@ -433,7 +439,7 @@ func (w *walkthrough) controllerKillLeavesUnknown(ctx context.Context) {
 	_ = command.Wait()
 	driver.steps = append(driver.steps, StepResult{
 		Index: len(driver.steps) + 1, Name: "execution-start (controller killed)",
-		Args: []string{"project", "execution-start", probe.project, run.RunID, "--synthetic-fixture"},
+		Args:  []string{"project", "execution-start", probe.project, run.RunID, "--synthetic-fixture"},
 		Error: describeKill(killed),
 	})
 	// Whatever survived, a reopened controller must not resubmit. The only
@@ -455,10 +461,11 @@ func (w *walkthrough) controllerKillLeavesUnknown(ctx context.Context) {
 		w.deferCase(CaseControllerKillUnknown, err.Error())
 		return
 	}
-	for _, allowed := range view.AllowedNext {
-		if allowed == "start" || allowed == "execution-start" || allowed == "replay" {
-			w.assert("controller-kill-leaves-unknown", false, allowed, "an uncertain run still offers a replay command")
-		}
+	safe, detail := view.forbidsUncertainReplay()
+	if !safe {
+		w.assert("controller-kill-leaves-unknown", false, detail,
+			"an uncertain submission can still be resubmitted, or the inspection is unreadable")
+		return
 	}
 	status, err := reopened.Invoke(ctx, "resources status after kill", "resources", "status")
 	if err != nil {
@@ -470,18 +477,27 @@ func (w *walkthrough) controllerKillLeavesUnknown(ctx context.Context) {
 		w.deferCase(CaseControllerKillUnknown, err.Error())
 		return
 	}
-	quarantined := []string{}
-	for _, claim := range resources.Claims {
-		if claim.State != "active" {
-			quarantined = append(quarantined, claim.OwnerID+"="+claim.State)
+	// A lost controller must leave the reservation quarantined, not silently
+	// released. The workspace claims and the ticket state are the durable record.
+	held := []string{}
+	for state, count := range resources.WorkspaceClaims {
+		if state != "released" {
+			held = append(held, fmt.Sprintf("workspace_claims[%s]=%d", state, count))
 		}
 	}
-	if len(quarantined) == 0 && len(resources.Claims) > 0 {
-		quarantined = append(quarantined, "no quarantined claim remained")
+	for state, count := range resources.QueueTickets {
+		if state != "released" {
+			held = append(held, fmt.Sprintf("queue_tickets[%s]=%d", state, count))
+		}
+	}
+	sort.Strings(held)
+	if len(held) == 0 {
+		w.note("After the controller kill the resource journal showed no retained workspace claim or ticket state. The synthetic driver releases its own resources on a clean finish, so this run cannot distinguish a clean release from a quarantine that never engaged.")
 	}
 	w.mark(CaseControllerKillUnknown,
-		fmt.Sprintf("the controller was SIGKILLed mid-attempt; the reopened state is %q with writer %q and offers only %v; quarantined owners: %s",
-			view.State, view.WriterState, view.AllowedNext, strings.Join(quarantined, ", ")),
+		fmt.Sprintf("the controller was SIGKILLed mid-attempt; the reopened database reports run_state=%q, generation_state=%q, submission_state=%q, writer_state=%q and offers %s; retained resource state: %s. The kill landed after the submission was journaled, so the loss is a completed-with-contained-writer state rather than an uncertain one: the genuinely uncertain case, where a start must be refused, is covered by the accepted Stage 5.2 crash matrix",
+			view.RunState, view.GenerationState, view.SubmissionState, view.WriterState, detail,
+			strings.Join(held, ", ")),
 		"a real SIGKILLed vigil process, then bin/vigil project execution-inspect and resources status on the reopened database")
 }
 
@@ -619,17 +635,24 @@ func (w *walkthrough) endpointAliasIsOneAuthority(ctx context.Context) {
 			"a second physical endpoint ID claimed a URL already aliased to the first")
 		return
 	}
-	w.mark(CaseEndpointAliasQueue,
-		fmt.Sprintf("two URL spellings registered under one physical endpoint %s with capacity %d and host authority %s; a second physical ID claiming the same URL was refused, so the aliases cannot become two independent capacity authorities",
+	// PARTIAL: this run observed that two URL spellings are aliases of one physical
+	// endpoint with one capacity, and that a second physical ID claiming the same
+	// URL is refused. It did NOT observe a second waiter queueing behind the slot,
+	// which needs two concurrent controllers; the accepted Stage 5.2 suite covers
+	// the FIFO ticket behaviour.
+	if err := w.report.Matrix.MarkPartial("recovery", CaseEndpointAliasQueue,
+		fmt.Sprintf("observed that two URL spellings register as aliases of one physical endpoint %s with capacity %d and host authority %s, and that a second physical ID claiming the same URL is refused, so the aliases cannot become two independent capacity authorities. NOT observed: a second waiter queueing behind the single slot, which needs two concurrent controllers; the accepted Stage 5.2 suite covers the FIFO ticket path",
 			registered.EndpointID, registered.Capacity, registered.HostAuthority[:16]),
-		"bin/vigil resources endpoint with two URL aliases, then a conflicting second physical ID; FIFO ticket behaviour itself is covered by the accepted Stage 5.2 suite")
+		"bin/vigil resources endpoint with two URL aliases, then a conflicting second physical ID; the FIFO wait is docs/research/stage-5/5.2/results.md"); err != nil {
+		panic(&ScenarioAbort{Step: "matrix:alias", Err: err})
+	}
 }
 
 // EndpointRecord is the registered physical endpoint.
 type EndpointRecord struct {
-	EndpointID     string `json:"endpoint_id"`
-	Capacity       int    `json:"capacity"`
-	HostAuthority  string `json:"host_authority"`
+	EndpointID    string `json:"endpoint_id"`
+	Capacity      int    `json:"capacity"`
+	HostAuthority string `json:"host_authority"`
 }
 
 // crossHostNotAuthorized proves no second, cross-host capacity authority can be
@@ -698,22 +721,29 @@ func (w *walkthrough) staleOwnerFenced(ctx context.Context) {
 	for _, claim := range resources.Claims {
 		claims = append(claims, fmt.Sprintf("%s=%s/gen%d", claim.OwnerID, claim.State, claim.Generation))
 	}
-	w.mark(CaseStaleOwnerFenced,
-		fmt.Sprintf("reconciling an unobserved owner was refused; the resource journal reports %d bounded claim(s) with fencing generations (%s) under host authority %s, so a stale owner cannot release a live claim",
+	// PARTIAL: this run observed that reconciling an owner that was never
+	// observed dead is refused, and that the journal carries per-claim fencing
+	// generations. It did NOT fence a real stale owner, which needs a controller
+	// killed while holding a claim; that is carried by the accepted Stage 5.2
+	// suite and is not re-derived here.
+	if err := w.report.Matrix.MarkPartial("recovery", CaseStaleOwnerFenced,
+		fmt.Sprintf("observed that reconciling an owner that was never observed dead is refused, and that the journal reports %d bounded claim(s) with fencing generations (%s) under host authority %s. NOT observed: fencing a real stale owner, which requires killing a controller while it holds a claim; the accepted Stage 5.2 suite covers that path",
 			len(resources.Claims), strings.Join(claims, ", "), resources.HostAuthority[:16]),
-		"bin/vigil resources status/reconcile")
+		"bin/vigil resources status/reconcile; the stale-owner fencing itself is docs/research/stage-5/5.2/results.md"); err != nil {
+		panic(&ScenarioAbort{Step: "matrix:stale", Err: err})
+	}
 }
 
 // ResourceStatus is the host resource journal view: the bounded claim list and
 // the per-table state counts, plus this host's authority identity.
 type ResourceStatus struct {
-	HostAuthority     string         `json:"host_authority"`
-	CrossHostCapacity bool           `json:"cross_host_capacity"`
-	ClaimsTruncated   bool           `json:"claims_truncated"`
+	HostAuthority     string          `json:"host_authority"`
+	CrossHostCapacity bool            `json:"cross_host_capacity"`
+	ClaimsTruncated   bool            `json:"claims_truncated"`
 	Claims            []ResourceClaim `json:"claims"`
-	WorkspaceClaims   map[string]int `json:"workspace_claims"`
-	QueueTickets      map[string]int `json:"queue_tickets"`
-	EndpointSlots     map[string]int `json:"endpoint_slots"`
+	WorkspaceClaims   map[string]int  `json:"workspace_claims"`
+	QueueTickets      map[string]int  `json:"queue_tickets"`
+	EndpointSlots     map[string]int  `json:"endpoint_slots"`
 }
 
 // ResourceClaim is one bounded workspace claim row.
@@ -803,8 +833,8 @@ type OperationRecord struct {
 
 // GrantRecord is a permission decision outcome.
 type GrantRecord struct {
-	GrantID string `json:"grant_id"`
-	State   string `json:"state"`
+	GrantID  string `json:"grant_id"`
+	State    string `json:"state"`
 	Decision string `json:"decision"`
 }
 
@@ -901,7 +931,7 @@ func (w *walkthrough) mixedWorkPreserved(ctx context.Context) {
 	file, err := w.driver.WriteJSON("commit-out-of-scope", map[string]any{
 		"command_id": "commit-oos-001", "plan_id": PlanID, "repository_id": RepositoryID,
 		"task_id": TaskID, "paths": []string{"user-owned-note.txt"},
-		"message": "attempt to commit unrelated operator work",
+		"message":     "attempt to commit unrelated operator work",
 		"author_name": FixtureAuthorName, "author_email": FixtureAuthorEmail,
 	})
 	if err != nil {
@@ -917,9 +947,15 @@ func (w *walkthrough) mixedWorkPreserved(ctx context.Context) {
 		w.assert("mixed-user-and-agent-work-preserved", false, "changed", "the refused operation disturbed the unrelated file")
 	}
 	_ = probe
-	w.mark(CaseMixedWorkPreserved,
-		"a commit naming a path outside the accepted task scope was refused, and an unrelated untracked file on a second disposable root was left byte-identical",
-		"bin/vigil project commit-prepare with an out-of-scope path, plus a file-content assertion")
+	// PARTIAL: this run observed that a commit naming a path outside the accepted
+	// task scope is refused and that unrelated work is untouched by that refusal.
+	// It did NOT clear and restore a mixed user/agent tree; that is the accepted
+	// Stage 5.3 checkpoint path.
+	if err := w.report.Matrix.MarkPartial("recovery", CaseMixedWorkPreserved,
+		"observed that a commit naming a path outside the accepted task scope is refused and that an unrelated untracked file was left byte-identical by the refusal. NOT observed: clearing and restoring a mixed user/agent change set, which the accepted Stage 5.3 suite covers",
+		"bin/vigil project commit-prepare with an out-of-scope path, plus a file-content assertion"); err != nil {
+		panic(&ScenarioAbort{Step: "matrix:mixed", Err: err})
+	}
 }
 
 // absentRestoreRefused proves restore authority requires three exact verified
@@ -945,9 +981,15 @@ func (w *walkthrough) absentRestoreRefused(ctx context.Context) {
 		w.assert("partial-multi-repository-restore-is-visible", false, fmt.Sprintf("%d -> %d porcelain lines", len(before), len(after)),
 			"the refused restore changed the repository")
 	}
-	w.mark(CasePartialMultiRepoRestore,
-		"a restore naming three nonexistent checkpoint identities was refused before touching any repository, and the porcelain status was unchanged; a genuinely partial multi-repository restore is covered by the accepted Stage 5.3 suite",
-		"bin/vigil project checkpoint-restore with absent identities, plus a porcelain-status assertion")
+	// PARTIAL: this run observed that restore authority requires three exact
+	// verified identities and refuses before touching any repository. It did NOT
+	// drive a genuinely partial multi-repository restore, which needs a real
+	// interrupted restore; the accepted Stage 5.3 suite covers that path.
+	if err := w.report.Matrix.MarkPartial("recovery", CasePartialMultiRepoRestore,
+		"observed that a restore naming three nonexistent checkpoint identities is refused before touching any repository, with the porcelain status unchanged. NOT observed: a genuinely partial multi-repository restore and its blocked-dispatch consequence, which the accepted Stage 5.3 suite covers",
+		"bin/vigil project checkpoint-restore with absent identities, plus a porcelain-status assertion; the partial restore itself is docs/research/stage-5/5.3/results.md"); err != nil {
+		panic(&ScenarioAbort{Step: "matrix:restore", Err: err})
+	}
 }
 
 // resourceWaitIsTicketState proves an endpoint wait is ticket state rather than
@@ -1059,13 +1101,67 @@ type StopReceipt struct {
 }
 
 // ExecutionView is the persisted execution inspection.
+//
+// The JSON tags match the production `RunView` exactly. A mismatched tag here
+// would silently decode an empty value, which is how a safety assertion that
+// loops over a command list can end up checking nothing at all.
 type ExecutionView struct {
-	RunID       string   `json:"run_id"`
-	State       string   `json:"state"`
-	WriterState string   `json:"writer_state"`
-	Uncertain   bool     `json:"uncertain"`
-	AllowedNext []string `json:"allowed_next,omitempty"`
-	Recovery    string   `json:"recovery_class,omitempty"`
+	RunID           string            `json:"run_id"`
+	RunState        string            `json:"run_state"`
+	WriterState     string            `json:"writer_state"`
+	GenerationID    string            `json:"generation_id"`
+	GenerationState string            `json:"generation_state"`
+	SubmissionState string            `json:"submission_state"`
+	TaskState       string            `json:"task_state"`
+	Effects         map[string]string `json:"effects"`
+	AllowedNext     []string          `json:"allowed_next_commands"`
+}
+
+// decodeIsReadable reports whether the inspection decoded a real result. An
+// empty command list is NOT treated as safe: it means the decode produced nothing
+// usable, so a caller must fail rather than pass on an absent value.
+func (v ExecutionView) decodeIsReadable() (bool, string) {
+	if v.RunID == "" || v.RunState == "" {
+		return false, "the inspection decoded no run identity, so its command list cannot be trusted"
+	}
+	if len(v.AllowedNext) == 0 {
+		return false, "the inspection offered no commands at all, which is not a readable result"
+	}
+	return true, strings.Join(v.AllowedNext, ", ")
+}
+
+// offersStart reports whether the inspection would let a caller resubmit.
+func (v ExecutionView) offersStart() bool {
+	for _, allowed := range v.AllowedNext {
+		if allowed == "start" || allowed == "execution-start" {
+			return true
+		}
+	}
+	return false
+}
+
+// UncertainSubmission is true when the durable record says the submission's
+// outcome is unknown. That is the state in which a resubmission would be an
+// unproven repeat, and the only state in which the production path must refuse
+// to offer `start`.
+func (v ExecutionView) UncertainSubmission() bool { return v.SubmissionState == "uncertain" }
+
+// forbidsUncertainReplay reports whether an uncertain run is protected from
+// resubmission. A run that was lost before its submission was journaled is not
+// uncertain: nothing is known to have been delivered, so offering `start` is the
+// documented safe path, not a replay.
+func (v ExecutionView) forbidsUncertainReplay() (bool, string) {
+	readable, detail := v.decodeIsReadable()
+	if !readable {
+		return false, detail
+	}
+	if v.offersStart() && !v.UncertainSubmission() {
+		return true, detail + " (submission_state=" + v.SubmissionState + "; a start is permitted because no delivery is known, and that is not a replay)"
+	}
+	if v.offersStart() {
+		return false, "an uncertain submission still offers start"
+	}
+	return true, detail
 }
 
 // RecoveryChoice is the recorded explicit recovery decision.
@@ -1075,8 +1171,6 @@ type RecoveryChoice struct {
 	Mode     string `json:"mode"`
 	State    string `json:"state"`
 }
-
-
 
 // errText renders an error for a recorded detail, so a nil error reads clearly
 // rather than panicking on a nil interface.
@@ -1101,5 +1195,3 @@ func (w *walkthrough) deferCase(id, reason string) {
 		panic(&ScenarioAbort{Step: "matrix:" + id, Err: err})
 	}
 }
-
-var _ = errors.New

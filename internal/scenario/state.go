@@ -32,16 +32,16 @@ const (
 // operator would normally choose is stated here, so the manifest records the
 // exact policy, budgets and check definition the rehearsal ran under.
 type ProjectConfig struct {
-	ModelPolicy              string        `json:"model_policy"`
-	RequiredChecks           []string      `json:"required_checks"`
-	CheckDefinitions         []interface{} `json:"check_definitions"`
-	TaskLimitMS              int64         `json:"task_limit_ms"`
-	AttemptLimitMS           int64         `json:"attempt_limit_ms"`
-	RepairLimit              int           `json:"repair_limit"`
-	SupervisorProfile        string        `json:"supervisor_profile"`
-	ApprovalMode             string        `json:"approval_mode"`
-	HumanAcceptanceRequired  bool          `json:"human_acceptance_required"`
-	ReviewBlockingSeverity   string        `json:"review_blocking_severity"`
+	ModelPolicy             string        `json:"model_policy"`
+	RequiredChecks          []string      `json:"required_checks"`
+	CheckDefinitions        []interface{} `json:"check_definitions"`
+	TaskLimitMS             int64         `json:"task_limit_ms"`
+	AttemptLimitMS          int64         `json:"attempt_limit_ms"`
+	RepairLimit             int           `json:"repair_limit"`
+	SupervisorProfile       string        `json:"supervisor_profile"`
+	ApprovalMode            string        `json:"approval_mode"`
+	HumanAcceptanceRequired bool          `json:"human_acceptance_required"`
+	ReviewBlockingSeverity  string        `json:"review_blocking_severity"`
 }
 
 // Profile is the scenario's declared harness profile. It records a credential
@@ -71,33 +71,33 @@ type Criterion struct {
 
 // Task is the single scenario task.
 type Task struct {
-	ID             string     `json:"id"`
-	Objective      string     `json:"objective"`
+	ID             string      `json:"id"`
+	Objective      string      `json:"objective"`
 	Criteria       []Criterion `json:"criteria"`
-	Dependencies   []string   `json:"dependencies"`
-	Context        []string   `json:"context"`
-	Scope          []string   `json:"scope"`
-	Checks         []string   `json:"checks"`
-	Questions      []string   `json:"questions"`
-	Implementation string     `json:"implementation_profile"`
-	Reviewer       string     `json:"reviewer_profile"`
-	Difficulty     string     `json:"difficulty"`
-	Rationale      string     `json:"rationale"`
-	ActiveLimitMS  int64      `json:"active_limit_ms"`
-	RepairLimit    int        `json:"repair_limit"`
+	Dependencies   []string    `json:"dependencies"`
+	Context        []string    `json:"context"`
+	Scope          []string    `json:"scope"`
+	Checks         []string    `json:"checks"`
+	Questions      []string    `json:"questions"`
+	Implementation string      `json:"implementation_profile"`
+	Reviewer       string      `json:"reviewer_profile"`
+	Difficulty     string      `json:"difficulty"`
+	Rationale      string      `json:"rationale"`
+	ActiveLimitMS  int64       `json:"active_limit_ms"`
+	RepairLimit    int         `json:"repair_limit"`
 }
 
 // Plan is the single scenario plan.
 type Plan struct {
-	ID                     string     `json:"id"`
-	Title                  string     `json:"title"`
-	Specification          string     `json:"specification"`
-	Approved               bool       `json:"approved"`
-	QualityCriteria        []Criterion `json:"quality_criteria,omitempty"`
-	QualityChecks          []string   `json:"quality_checks,omitempty"`
-	ReviewerProfile        string     `json:"reviewer_profile"`
-	HumanAcceptanceRequired bool      `json:"human_acceptance_required"`
-	Tasks                  []Task     `json:"tasks"`
+	ID                      string      `json:"id"`
+	Title                   string      `json:"title"`
+	Specification           string      `json:"specification"`
+	Approved                bool        `json:"approved"`
+	QualityCriteria         []Criterion `json:"quality_criteria,omitempty"`
+	QualityChecks           []string    `json:"quality_checks,omitempty"`
+	ReviewerProfile         string      `json:"reviewer_profile"`
+	HumanAcceptanceRequired bool        `json:"human_acceptance_required"`
+	Tasks                   []Task      `json:"tasks"`
 }
 
 // ScenarioConfig builds the explicit project configuration for the rehearsal.
@@ -150,9 +150,9 @@ func ScenarioProfile(version, model string) Profile {
 // criterion that no automated action may satisfy.
 func ScenarioPlan(specification string) Plan {
 	return Plan{
-		ID:        PlanID,
-		Title:     "Stage 5.7 autonomous end-to-end scenario",
-		Approved:  true,
+		ID:            PlanID,
+		Title:         "Stage 5.7 autonomous end-to-end scenario",
+		Approved:      true,
 		Specification: specification,
 		QualityCriteria: []Criterion{
 			{ID: ManualCriterionID, Text: "A human functionally verified the resulting artifact in a real repository", Manual: true},
@@ -186,12 +186,12 @@ func ScenarioPlan(specification string) Plan {
 // RepositoryEnrollment is the explicit disposable repository enrollment.
 func RepositoryEnrollment(root string) map[string]any {
 	return map[string]any{
-		"id":               RepositoryID,
-		"plan_id":          PlanID,
-		"root":             root,
-		"base_ref":         "refs/heads/main",
-		"plan_branch":      PlanBranch,
-		"dirty_choice":     "clean",
+		"id":                RepositoryID,
+		"plan_id":           PlanID,
+		"root":              root,
+		"base_ref":          "refs/heads/main",
+		"plan_branch":       PlanBranch,
+		"dirty_choice":      "clean",
 		"nested_boundaries": []any{},
 	}
 }
