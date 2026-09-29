@@ -18,7 +18,7 @@ Use one foreground Go process as the owner of a project database and its executi
 | `internal/harness` | Versioned native protocol and capability observations | App retry, budget or approval authority |
 | `internal/workspace` | Repository map, branches, fingerprints, checkpoints | Broad reset/clean or global stash ownership |
 | `internal/checks` / `review` | Check execution, findings, evidence freshness | Silent baseline waivers or repairs by reviewers |
-| `internal/delivery` | Authorized commits/push/draft request reconciliation | Automatic merging |
+| `internal/core` (delivery commands) | Authorized commits/push/draft request reconciliation | Automatic merging |
 | `internal/artifacts` | Bounded private files, manifests, retention | Secrets or competing task state |
 | `internal/cli`, `internal/tui` | Commands, views, inbox | Mutable workflow state inferred from output |
 

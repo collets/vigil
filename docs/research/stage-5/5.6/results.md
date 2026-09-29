@@ -35,10 +35,10 @@ directory beneath it), asserts the export succeeds there, and still asserts
 that an alias in the *named* parent is refused. Reverting the fix fails that
 test. This is exactly the class of defect the native gate exists to find.
 
-Exact-commit native macOS gates then pass at `b42afe1` and again at the
-current tip `9ef3a98`, run on macOS 26.6.2 arm64 with the pinned Go 1.27.1
-(Homebrew) and Apple Git 2.54.0, in an agent-owned detached worktree under
-`/tmp`:
+Exact-commit native macOS gates then pass at `b42afe1` and again at `9ef3a98`,
+whose code is byte-identical to the current tip, run on macOS 26.6.2 arm64 with
+the pinned Go 1.27.1 (Homebrew) and Apple Git 2.54.0, in an agent-owned detached
+worktree under `/tmp`:
 
 | Gate | Result |
 | --- | --- |
@@ -139,11 +139,15 @@ Also addressed from the same review:
   task still `ready`. A second engine seeds the inverse case (fixture
   acceptance actor, marker-less repository) to prove the two gates —
   acceptance provenance and repository marker — are independent.
-- **P3.2:** the reconciliation closure enforces `RowsAffected == 1` on every
-  state transition it performs, so a lost update is never treated as a
-  successful closure. (The claim itself is retained but is no longer the
-  correctness mechanism, so the review's observation that it was untested is
-  resolved differently: the net-zero closure it protected no longer exists.)
+- **P3.2:** the reconciliation closure transaction asserts
+  `RowsAffected == 1` on the claim, the delivery journal, the attested closure
+  and both `state='observed'` transitions, so a lost update is never treated as
+  a successful closure. `releaseClaim` deliberately does not assert it: a
+  release whose claim is already gone is a legitimate no-op, and forcing the
+  count would turn a concurrent close into a spurious error. (The claim itself
+  is retained but is no longer the correctness mechanism, so the earlier
+  review's observation that it was untested is resolved differently: the
+  net-zero closure it protected no longer exists.)
 - **P1.1 follow-ups (from the third review of the redesign):** the redesign
   itself was confirmed correct — the blocking-`pre-receive` repro now records
   `observed`/`succeeded` — but three defects on the same path were found and
@@ -236,6 +240,30 @@ Also addressed from the same review:
   that state); they are retained deliberately, and are recorded here as unpinned
   rather than claimed as covered.
 
+## Accepted residuals
+
+These are deliberate, disclosed boundaries of the accepted slice, not open
+defects. Each is fail-closed or inert:
+
+- Archive publication holds the project write lock across the repository
+  fingerprint re-verification (git subprocesses plus a worktree walk). The
+  verification is required; a two-phase prepare/compare would avoid holding the
+  single writer for its duration.
+- `.vigil` view files are bounded per plan (64 revisions, 1 MiB each) but are
+  never pruned; the authoritative artifact copy remains the store. The ignore
+  entry is appended to the repository's shared `.git/info/exclude` and is
+  idempotent, but the write is not surfaced in command output.
+- The B3 regression test drives the isolated transport helper rather than the
+  `ExecutePush` call site; the production push path does route through it.
+- Because `.vigil` is always excluded, a user who tracks their own file or
+  directory named `.vigil` has it silently omitted from every acceptance
+  fingerprint. This is the recorded R65/R66 decision and its trade-off.
+- An operation in `reconciled` with neither `closure_kind` nor
+  `claimed_from_state` can be acted on by no command. It is unreachable through
+  the code — every claim records the state it was taken from — and could only
+  arise from a claim held at the instant of the 018→019 upgrade on a
+  pre-release database. It fails closed and remains operator-visible.
+
 - **P3.4:** the dry-run retention receipt is identified by its recorded command
   kind and human actor (via the `command_applied` event), not by the JSON shape
   of its result.
@@ -243,21 +271,8 @@ Also addressed from the same review:
   (`target_ref`, `approved_predecessor`, `approved_tree`/`approved_head`, or
   `project`/`head`/`base`) so a diverged observation is resolvable.
 
-Accepted residual observations, disclosed rather than fixed in this slice:
-
-- **P3.3:** archive publication holds the write lock across the repository
-  fingerprint re-verification (git subprocesses plus a worktree walk). The
-  verification is required, but a two-phase prepare/compare would avoid holding
-  the single writer for its duration.
-- **P4.1:** `.vigil` view files are bounded per plan (64 revisions, 1 MiB each)
-  but are never pruned; the authoritative artifact copy remains the store.
-- **P4.2:** the B3 regression test drives `isolatedRemoteGit` directly rather
-  than through `ExecutePush`; the production push path routes through it
-  (`delivery_push.go`), but the test asserts the helper's isolation, not the
-  call site.
-- **P4.3:** `ensureLocalGitIgnore` appends to the repository's shared
-  `.git/info/exclude`; the append is idempotent and marked, but the write is not
-  surfaced in command output.
+The residual observations from the earlier rounds (P3.3, P4.1, P4.2, P4.3) are
+consolidated into [Accepted residuals](#accepted-residuals) above.
 
 ## First independent review remediation
 
