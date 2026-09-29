@@ -2,13 +2,24 @@
 
 <!-- vigil-tier: evidence -->
 
-Status: implementation in progress on `task/5.6-delivery-finalization`. Seven
-independent antagonist reviews have run. `9777de0`, `ebf7f0f`, `0368227` and
-`7b758f8` were each rejected and remediated on this branch; `d5906ed`,
-`3ec4065` and `fc2f909` received conditional verdicts, all remediated. Exact
-commit native macOS gates pass, having found and fixed one platform defect the
-Linux suite could not. The current tip is awaiting the final independent
-acceptance review, and nothing here is production-delivery qualification.
+Status: **accepted at `b0a085b`, 2026-09-29, for the autonomous scope only.**
+Eight independent antagonist reviews have run. `9777de0`, `ebf7f0f`, `0368227`
+and `7b758f8` were each rejected and remediated on this branch; `d5906ed`,
+`3ec4065` and `fc2f909` received conditional verdicts, all remediated; and the
+eighth returned an **accepted** verdict on the implementation with no P0, P1 or
+P2, with 7/7 fix-reverts caught by revert-sensitive tests. A ninth review of the
+post-acceptance delta confirmed that verdict and found one defect in the
+remediation itself (a heading inserted mid-list recategorised two completed
+remediations as unfixed residuals), which is fixed. Exact-commit native macOS
+gates pass at `f2d740c`, having found and fixed one platform defect the Linux
+suite could not.
+
+**This acceptance does not qualify the product for delivery.** It means the
+paths are implemented, independently reviewed and validated. Nothing here was
+exercised by a human against a real remote or a real hosting provider; the
+delivery, attestation, retention-expiry and narrative-review operations are
+Stage 8's, and no evidence for them exists. Nothing here is
+production-delivery qualification.
 
 The seventh review confirmed the reconciliation invariants hold under adversarial
 probing and found no P0 or P1. Its two blocking items were that the resumed-claim

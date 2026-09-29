@@ -1,11 +1,11 @@
 # Minimal architecture
 
 <!-- vigil-tier: core -->
-<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+<!-- vigil-status: stage=5.6; stage_accepted=true; implementation_commit=b0a085b5551bf58ab8412e649405eef65a91f61d -->
 
 Status: Stage 4 specified on 2026-09-20. The [application core specification](core-spec.md), [draft schemas](../spec/project.sql), and [implementation backlog/requirement map](../plans/stage-5/stage-5-plan.md) are the detailed contracts. [Linux](../research/stage-3/results.md) and [macOS](../research/stage-3.5/results.md) runtime findings constrain strict execution.
 
-Implementation status: the offline core described below is implemented and independently accepted through Stage 5.5 at `84c0275`; Stage 5.6 delivery/finalization is next (see [next steps](../process/next-steps.md)). This document remains the design authority and [next steps](../process/next-steps.md) is the implementation-status authority. **Production** execution, model dispatch and delivery remain qualification-gated, so the production half of this architecture is still a design.
+Implementation status: the offline core described below is implemented and independently accepted through Stage 5.6 at `b0a085b`, for Stage 5.6's autonomous scope; Stage 5.7 is next (see [next steps](../process/next-steps.md)). This document remains the design authority and [next steps](../process/next-steps.md) is the implementation-status authority. **Production** execution, model dispatch and delivery remain qualification-gated, so the production half of this architecture is still a design.
 
 ```mermaid
 flowchart TD

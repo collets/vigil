@@ -1,9 +1,9 @@
 # Next steps and resumption plan
 
 <!-- vigil-tier: process -->
-<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+<!-- vigil-status: stage=5.6; stage_accepted=true; implementation_commit=b0a085b5551bf58ab8412e649405eef65a91f61d -->
 
-Updated: 2026-09-27. Stage 5.3 and Stage 5.4 remain independently accepted offline and are not reopened. Stage 5.5 is independently accepted offline at remediation commit `84c0275`: the narrow follow-up closes 5.5-R1–5.5-R7 and accepts 5.5-R8's explicit run-less-session retirement boundary, while exact-commit native macOS full/race/build/documentation/boundary/cross-build gates pass. Production dispatch, real human approval and native Codex/production model/reviewer qualification remain disabled future gates.
+Updated: 2026-09-29. Stages 5.3, 5.4 and 5.5 remain independently accepted offline and are not reopened. **Stage 5.6 is accepted at `b0a085b`**, for its autonomous scope: the delivery, finalization, archive and retention paths are implemented, independently reviewed across eight antagonist rounds, and validated natively on macOS 26.6.2 arm64. Its acceptance does **not** mean a human has exercised any of those paths against a real remote or a real hosting provider — no such evidence exists, and every human-gated operation is deferred to Stage 8. Production dispatch, real human approval and native Codex/production model/reviewer qualification remain disabled future gates.
 
 Status: Stage 3 Linux experiments and adapter improvements are complete, with explicit unresolved qualification gates. See [Stage 3 results](../research/stage-3/results.md). Both Stage 3 and Stage 4 plans were prepared before implementation. Stage 4 is complete: [core specification](../core/core-spec.md), [validated draft schemas](../spec/project.sql), and [Stage 5 backlog/requirements map](../plans/stage-5/stage-5-plan.md). [Stage 3.5 macOS checks](../research/stage-3.5/results.md) are also complete: basic runtime behavior passed, but both harnesses left writers after abrupt loss and strict production containment remains unsupported.
 
@@ -131,7 +131,7 @@ Deliverable: concrete design decisions and implementation tasks mapped to the ex
 
 ## Stage 5 — Deliver a narrow functional slice
 
-Follow the [expanded execution plan](../plans/stage-5/stage-5-execution.md) and [Stage 5 backlog](../plans/stage-5/stage-5-plan.md), including containment before strict production editing. Stages 5.1–5.5 are independently accepted offline at implementation commit `84c0275`; Stage 5.6 delivery/finalization is in progress and unaccepted, followed by Stage 5.7 end-to-end qualification. Production runtime/model/reviewer qualification remains a separate disabled gate. The original functional order remains:
+Follow the [expanded execution plan](../plans/stage-5/stage-5-execution.md) and [Stage 5 backlog](../plans/stage-5/stage-5-plan.md), including containment before strict production editing. Stages 5.1–5.5 are independently accepted offline, and Stage 5.6 delivery/finalization is independently accepted for its autonomous scope at implementation commit `b0a085b`; Stage 5.7 autonomous qualification is next. Production runtime/model/reviewer qualification remains a separate disabled gate. The original functional order remains:
 
 1. Manual project/profile setup, repository discovery, branch preparation, and one persisted task execution.
 2. Sequential dispatch with approvals, pause/stop/recovery, and shared workspace/local-model coordination.

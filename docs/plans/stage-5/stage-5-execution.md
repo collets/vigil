@@ -1,7 +1,7 @@
 # Stage 5 execution plan
 
 <!-- vigil-tier: plan -->
-<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+<!-- vigil-status: stage=5.6; stage_accepted=true; implementation_commit=b0a085b5551bf58ab8412e649405eef65a91f61d -->
 
 Prepared 2026-09-20 before implementation, from the [core specification](../../core/core-spec.md), [A–J backlog](stage-5-plan.md) and Stage 3/3.5 evidence. This plan defines the order, usable increments and validation; checkboxes represent delivered behavior only.
 

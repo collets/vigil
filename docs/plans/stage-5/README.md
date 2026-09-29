@@ -1,7 +1,7 @@
 # Stage 5.1–5.7 execution plans
 
 <!-- vigil-tier: plan -->
-<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+<!-- vigil-status: stage=5.6; stage_accepted=true; implementation_commit=b0a085b5551bf58ab8412e649405eef65a91f61d -->
 
 Prepared 2026-09-20 against foundation commit `930ed37`. These seven plans organize the **remaining** Stage 5 work; they do not mark it implemented or move unfinished requirements into Stage 6. Recheck the checkout and newer evidence before starting.
 
@@ -23,7 +23,7 @@ Keep all seven. Each has a distinct result and acceptance boundary. The larger s
 
 The numbers express a working order, not permission to bypass a dependency. Build 5.1's boundary/evidence contract first; build 5.2's journal against synthetic workers next; then close their shared real-launch qualification gate. This resolves their integration dependency without pretending either alone proves production safety. Likewise, 5.2 can initially support a clean disposable checkout while 5.3 adds saved-work handling. Keep those paths visibly unavailable until implemented.
 
-Current implementation status: 5.1–5.5 are independently accepted offline. Stage 5.5 checkpoints A–D and review remediation are implemented through `84c0275` (checkpoint A `4dbb444`); narrow follow-up closes 5.5-R1–5.5-R7 and accepts 5.5-R8's authority-neutral boundary. Exact-commit native macOS full/race/build/documentation/boundary/cross-build gates and native Hermes one-tool qualification pass. Production Codex/reviewer qualification and real decisions remain disabled future production gates. Production dispatch remains disabled.
+Current implementation status: 5.1–5.5 are independently accepted offline, and 5.6 is accepted for its autonomous scope at `b0a085b`. Stage 5.5 checkpoints A–D and review remediation are implemented through `84c0275` (checkpoint A `4dbb444`); narrow follow-up closes 5.5-R1–5.5-R7 and accepts 5.5-R8's authority-neutral boundary. Exact-commit native macOS full/race/build/documentation/boundary/cross-build gates and native Hermes one-tool qualification pass. Production Codex/reviewer qualification and real decisions remain disabled future production gates. Production dispatch remains disabled.
 
 Suggested sequence: 5.1 offline work → 5.2 offline work → 5.3 offline recovery → 5.4 → 5.5 → 5.6 → 5.7, then Stage 6 → Stage 7 → Stage 8. Live qualification is no longer a Stage 5 gate: it is Stage 8's, together with every human decision deferred out of 5.6 and 5.7. If a live gate needs the user, continue the next plan's explicitly independent work. Do not mark a live or review gate complete from local implementation evidence.
 
@@ -93,13 +93,17 @@ No immediate answer is required to begin implementation. A plan may be autonomou
   - Independently accepted offline at `cba322b`: 5.4-R2 and 5.4-R11 are closed, and 5.4-R10 with 5.4-R1/5.4-R3/5.4-R4/5.4-R5/5.4-R6/5.4-R7/5.4-R8/5.4-R9 remain closed. Supervisor-owned readiness/cleanup proof, fail-closed supervisor loss, pidfd-bound descendant signals, coordinated cancellation and explicit configuration-resource retirement preserve the earlier fixture-only checks, copied modes, integrity, accounting and acceptance fences. P3 findings F1–F3 are remediated at `99cd6c0` and await independent follow-up. Open separately: the Darwin fork-accounting limitation. Pending completion gates: qualified live review/runtime routes, native macOS validation and real user/manual decisions.
 - [x] 5.5 interactive workflow and planning complete offline.
   - Independently accepted offline at remediation commit `84c0275`: checkpoint A at `4dbb444` implements migration 015, the explicit ranked queue and shared dispatch gate. Migration 016 adds bounded crash-reconcilable planning; fixture-gated proposal/recovery/clarification workflows, native Hermes one-tool isolation and exact-commit native macOS gates pass. 5.5-R1–5.5-R7 are closed and 5.5-R8's remaining explicit-retirement observation is accepted as non-authorizing. Production/live/real-decision gates remain separate and disabled.
-- [ ] 5.6 delivery and finalization complete for its **autonomous** scope.
-  - Acceptance scope narrowed 2026-09-29: implementation, independent review and
-    validation only. Every human-gated operation (real push, real draft, delivery
+- [x] 5.6 delivery and finalization complete for its **autonomous** scope.
+  - **Accepted at `b0a085b`**, narrowed 2026-09-29 to implementation,
+    independent review and validation only. The delivery, finalization, archive
+    and retention paths are implemented, reviewed across eight antagonist rounds,
+    and validated natively on macOS 26.6.2 arm64 including native `make
+    check-race`. Every human-gated operation (real push, real draft, delivery
     attestation, retention expiry, the `delivery-cancel`/`delivery-reconcile`/
     `retention-expire` commands, human narrative review) is deferred to
-    [Stage 8](../stage-8/stage-8.md) and is **not** evidence of a working delivery
-    path until a human has run it.
+    [Stage 8](../stage-8/stage-8.md). This acceptance is **not** evidence that
+    any of those paths works against a real remote or a real hosting provider;
+    that evidence does not exist yet.
 - [ ] 5.7 autonomous end-to-end evidence produced, limitations recorded.
   - **No longer closes Stage 5**, and no longer claims the milestone is
     demonstrated. Its human steps moved to

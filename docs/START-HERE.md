@@ -1,11 +1,12 @@
 # Start here: reading Vigil's documentation
 
 <!-- vigil-tier: entry -->
-<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+<!-- vigil-status: stage=5.6; stage_accepted=true; implementation_commit=b0a085b5551bf58ab8412e649405eef65a91f61d -->
 
 Vigil is a local control panel that runs existing agent harnesses (Codex, Hermes)
 through a Go core with SQLite state. It is **pre-release**: the offline core
-through Stage 5.5 is implemented and independently accepted, and production
+through Stage 5.6 is implemented and independently accepted for its autonomous
+scope, and production
 check, model and reviewer dispatch are deliberately disabled. This page tells you
 which documents to read, and — more importantly — which ones you can skip.
 

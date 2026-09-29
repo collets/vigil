@@ -1,9 +1,9 @@
 # First usable milestone
 
 <!-- vigil-tier: core -->
-<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+<!-- vigil-status: stage=5.6; stage_accepted=true; implementation_commit=b0a085b5551bf58ab8412e649405eef65a91f61d -->
 
-Status: scenario accepted on 2026-09-20. The Go application now persists project planning, permissions, resource coordination and the bounded interactive workflow; the offline core through Stage 5.5 is independently accepted at `84c0275` (see [next steps](../process/next-steps.md)). Stage 5.6 delivery/finalization is implemented and independently accepted for its autonomous scope. **The human steps of this milestone were moved to [Stage 8](../plans/stage-8/stage-8.md) on 2026-09-29**, and Stage 6 (terminal interface parity) now precedes it, since the interface is the primary interface (R11) and is far from ready. Contained Hermes probes passed on Linux and macOS. **The milestone itself has still not been demonstrated**: the acceptance below requires real execution through both harnesses and real recovery/boundary checks, and production dispatch, live reviewer qualification and real user/manual decisions are still open.
+Status: scenario accepted on 2026-09-20. The Go application now persists project planning, permissions, resource coordination and the bounded interactive workflow; the offline core is independently accepted through Stage 5.6 at `b0a085b` (see [next steps](../process/next-steps.md)), for Stage 5.6's autonomous scope. **The human steps of this milestone were moved to [Stage 8](../plans/stage-8/stage-8.md) on 2026-09-29**, and Stage 6 (terminal interface parity) now precedes it, since the interface is the primary interface (R11) and is far from ready. Contained Hermes probes passed on Linux and macOS. **The milestone itself has still not been demonstrated**: the acceptance below requires real execution through both harnesses and real recovery/boundary checks, and production dispatch, live reviewer qualification and real user/manual decisions are still open.
 
 ## Accepted demonstration
 

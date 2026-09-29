@@ -1,7 +1,7 @@
 # Stage 5 implementation backlog and requirement coverage
 
 <!-- vigil-tier: plan -->
-<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+<!-- vigil-status: stage=5.6; stage_accepted=true; implementation_commit=b0a085b5551bf58ab8412e649405eef65a91f61d -->
 
 Stage 4 output, updated after Stage 3.5 on 2026-09-20. Implement [core-spec.md](../../core/core-spec.md) in these increments after reviewing [Linux](../../research/stage-3/results.md) and [macOS](../../research/stage-3.5/results.md) evidence. Both platforms retain explicit containment/recovery gates. This is an implementation backlog, not a completion claim.
 

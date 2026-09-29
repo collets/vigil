@@ -1,7 +1,7 @@
 # Decisions to revisit with the user
 
 <!-- vigil-tier: process -->
-<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+<!-- vigil-status: stage=5.6; stage_accepted=true; implementation_commit=b0a085b5551bf58ab8412e649405eef65a91f61d -->
 
 Updated 2026-09-27 while continuing Stage 5.
 

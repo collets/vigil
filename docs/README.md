@@ -1,14 +1,15 @@
 # Vigil documentation index
 
 <!-- vigil-tier: index -->
-<!-- vigil-status: stage=5.5; stage_accepted=true; implementation_commit=84c0275 -->
+<!-- vigil-status: stage=5.6; stage_accepted=true; implementation_commit=b0a085b5551bf58ab8412e649405eef65a91f61d -->
 
 Vigil is a local control panel that runs existing agent harnesses through a Go core
-with SQLite state. It is pre-release: the offline core through Stage 5.5 is
-implemented and independently accepted at implementation commit `84c0275`, and
-production dispatch is deliberately disabled. Stage 5.6 delivery/finalization is
-implemented and independently accepted **for its autonomous scope**; every
-human-gated operation is deferred to Stage 8. Stages 6 (terminal interface
+with SQLite state. It is pre-release: the offline core is
+implemented and independently accepted through Stage 5.6 at implementation
+commit `b0a085b`, and production dispatch is deliberately disabled. Stage 5.6's
+acceptance covers its **autonomous** scope; every human-gated operation is
+deferred to Stage 8, and no delivery path has been exercised against a real
+remote. Stages 6 (terminal interface
 parity), 7 (documentation website) and 8 (human review) were added by explicit
 user scope revision on 2026-09-29 and are defined as scope, not yet planned.
 
@@ -151,7 +152,7 @@ left as the reviewer saw them, so a quoted path may no longer exist — see
 | [`research/stage-5/5.5/user-decisions.md`](research/stage-5/5.5/user-decisions.md) | Review packet for remaining Stage 5.5 product, live-route and validation choices |
 | [`research/stage-5/5.5/qualification-input.md`](research/stage-5/5.5/qualification-input.md) | Visible credential-free review copy of the immutable Stage 5.5 qualification Markdown input |
 | [`research/stage-5/5.5/qualification-proposal.md`](research/stage-5/5.5/qualification-proposal.md) | Human-readable review copy of exact pending qualification proposal revision 1 |
-| [`research/stage-5/5.6/results.md`](research/stage-5/5.6/results.md) | Stage 5.6 implementation and validation evidence (**in progress**) |
+| [`research/stage-5/5.6/results.md`](research/stage-5/5.6/results.md) | Stage 5.6 implementation, review and validation evidence (**accepted `b0a085b`, autonomous scope only; human gates in Stage 8**) |
 | `research/stage-5/5.2/review-probes/`, `research/stage-5/5.3/review-probes/`, `research/stage-5/5.4/review-probes/` | Retained inert review probes (`.go.txt`) |
 
 Review probes are stored as `.go.txt` so they cannot compile. To run one, copy it
