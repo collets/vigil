@@ -7,8 +7,19 @@ Instructions for any agent working in this repository. Read this before changing
 Vigil is a local control panel that runs existing agent harnesses (Codex, Hermes)
 through a Go core with SQLite state. It is **pre-release**: the offline core through
 Stage 5.5 is implemented and independently accepted at implementation commit
-`84c0275`, and production dispatch is deliberately disabled. Do not enable it, and
-do not start Stage 5.6 without an explicit instruction.
+`84c0275`, and production dispatch is deliberately disabled. Do not enable it.
+
+**Do not start a stage without an explicit instruction naming it.** The stage
+order is Stage 5.7 (autonomous qualification) → Stage 6 (terminal interface
+parity) → Stage 7 (documentation website) → Stage 8 (human review), and
+`docs/START-HERE.md` routes to each. Stages 6–8 were added by explicit user
+scope revision on 2026-09-29; the original roadmap defined Stages 1–5 only. Two
+constraints are easy to get wrong:
+
+- **Stage 6.1 is a gap analysis, not implementation.** Do not build interface
+  code under 6.1; 6.1 measures the gap and plans 6.2 onward.
+- **Stage 8 cannot be completed by an agent.** It is the human stage, and
+  re-running it is not a way to recover from a failure.
 
 ## Start here
 

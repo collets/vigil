@@ -17,13 +17,15 @@ Keep all seven. Each has a distinct result and acceptance boundary. The larger s
 | [5.4 Quality and acceptance](5.4-quality-and-acceptance.md) | Actual checks, fresh review, bounded repairs and human acceptance | B, G | 5.1–5.3 for live execution and safe repair |
 | [5.5 Interactive workflow and planning](5.5-workflow-and-planning.md) | Usable foreground controls and Markdown-to-approved-plan flow | H, I | 5.2–5.4 commands; 5.1 for model-backed planning |
 | [5.6 Delivery and finalization](5.6-delivery-and-finalization.md) | Authorized delivery, factual archive and independent finalization | J | 5.2–5.4 evidence/authority; 5.5 workflow integration |
-| [5.7 End-to-end qualification](5.7-end-to-end-qualification.md) | Demonstrated accepted milestone on supported platforms | A–J integration | 5.1–5.6; real human/model/delivery gates |
+| [5.7 End-to-end qualification](5.7-end-to-end-qualification.md) | Autonomous end-to-end evidence in disposable offline scope | A–J integration | 5.1–5.6 |
+
+**Stages 6–8 are outside this index.** The roadmap defined Stages 1–5 only; the user added 6, 7 and 8 by explicit scope revision on 2026-09-29. Start at [Stage 6 scope](../stage-6/stage-6.md), [Stage 7 scope](../stage-7/stage-7.md) or [Stage 8 scope](../stage-8/stage-8.md). All human-gated work deferred out of 5.6 and 5.7 now belongs to Stage 8.
 
 The numbers express a working order, not permission to bypass a dependency. Build 5.1's boundary/evidence contract first; build 5.2's journal against synthetic workers next; then close their shared real-launch qualification gate. This resolves their integration dependency without pretending either alone proves production safety. Likewise, 5.2 can initially support a clean disposable checkout while 5.3 adds saved-work handling. Keep those paths visibly unavailable until implemented.
 
 Current implementation status: 5.1–5.5 are independently accepted offline. Stage 5.5 checkpoints A–D and review remediation are implemented through `84c0275` (checkpoint A `4dbb444`); narrow follow-up closes 5.5-R1–5.5-R7 and accepts 5.5-R8's authority-neutral boundary. Exact-commit native macOS full/race/build/documentation/boundary/cross-build gates and native Hermes one-tool qualification pass. Production Codex/reviewer qualification and real decisions remain disabled future production gates. Production dispatch remains disabled.
 
-Suggested sequence: 5.1 offline work → 5.2 offline work → 5.3 offline recovery → 5.4 → 5.5 → 5.6 → 5.7, with joint live qualification kept as a separate gate. If a live gate needs the user, continue the next plan's explicitly independent work. Do not mark a live or review gate complete from local implementation evidence.
+Suggested sequence: 5.1 offline work → 5.2 offline work → 5.3 offline recovery → 5.4 → 5.5 → 5.6 → 5.7, then Stage 6 → Stage 7 → Stage 8. Live qualification is no longer a Stage 5 gate: it is Stage 8's, together with every human decision deferred out of 5.6 and 5.7. If a live gate needs the user, continue the next plan's explicitly independent work. Do not mark a live or review gate complete from local implementation evidence.
 
 ## Shared operating contract
 
@@ -91,7 +93,29 @@ No immediate answer is required to begin implementation. A plan may be autonomou
   - Independently accepted offline at `cba322b`: 5.4-R2 and 5.4-R11 are closed, and 5.4-R10 with 5.4-R1/5.4-R3/5.4-R4/5.4-R5/5.4-R6/5.4-R7/5.4-R8/5.4-R9 remain closed. Supervisor-owned readiness/cleanup proof, fail-closed supervisor loss, pidfd-bound descendant signals, coordinated cancellation and explicit configuration-resource retirement preserve the earlier fixture-only checks, copied modes, integrity, accounting and acceptance fences. P3 findings F1–F3 are remediated at `99cd6c0` and await independent follow-up. Open separately: the Darwin fork-accounting limitation. Pending completion gates: qualified live review/runtime routes, native macOS validation and real user/manual decisions.
 - [x] 5.5 interactive workflow and planning complete offline.
   - Independently accepted offline at remediation commit `84c0275`: checkpoint A at `4dbb444` implements migration 015, the explicit ranked queue and shared dispatch gate. Migration 016 adds bounded crash-reconcilable planning; fixture-gated proposal/recovery/clarification workflows, native Hermes one-tool isolation and exact-commit native macOS gates pass. 5.5-R1–5.5-R7 are closed and 5.5-R8's remaining explicit-retirement observation is accepted as non-authorizing. Production/live/real-decision gates remain separate and disabled.
-- [ ] 5.6 delivery and finalization complete.
-- [ ] 5.7 accepted milestone demonstrated, limitations recorded.
+- [ ] 5.6 delivery and finalization complete for its **autonomous** scope.
+  - Acceptance scope narrowed 2026-09-29: implementation, independent review and
+    validation only. Every human-gated operation (real push, real draft, delivery
+    attestation, retention expiry, the `delivery-cancel`/`delivery-reconcile`/
+    `retention-expire` commands, human narrative review) is deferred to
+    [Stage 8](../stage-8/stage-8.md) and is **not** evidence of a working delivery
+    path until a human has run it.
+- [ ] 5.7 autonomous end-to-end evidence produced, limitations recorded.
+  - **No longer closes Stage 5**, and no longer claims the milestone is
+    demonstrated. Its human steps moved to
+    [Stage 8](../stage-8/stage-8.md); a partially completed walkthrough recorded
+    honestly is the acceptable outcome, a walkthrough reported as passed when it
+    did not happen is not.
+- [ ] Stage 6 terminal interface parity and its complete feature list.
+- [ ] Stage 7 user-facing documentation website.
+- [ ] Stage 8 human review of the product, with a bulk finding report.
 
-These are completion gates, not implementation progress percentages. Stage 6 remains inactive until the agreed Stage 5 milestone is satisfied or the user explicitly revises scope.
+These are completion gates, not implementation progress percentages.
+
+**Stage 6 is active by explicit user scope revision (2026-09-29), not by Stage 5
+completing.** The original rule — Stage 6 inactive until the agreed Stage 5
+milestone is satisfied — was superseded by the user, on the grounds that the
+terminal interface is the primary interface (R11) and is far from ready, while
+the deferred work is human work that cannot advance without a human anyway. The
+milestone status is therefore decided in
+[Stage 8](../stage-8/stage-8.md), not by 5.7.

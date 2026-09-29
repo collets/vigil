@@ -6,8 +6,11 @@
 Vigil is a local control panel that runs existing agent harnesses through a Go core
 with SQLite state. It is pre-release: the offline core through Stage 5.5 is
 implemented and independently accepted at implementation commit `84c0275`, and
-production dispatch is deliberately disabled. Stage 5.6 delivery/finalization
-implementation is in progress and has not been independently accepted.
+production dispatch is deliberately disabled. Stage 5.6 delivery/finalization is
+implemented and independently accepted **for its autonomous scope**; every
+human-gated operation is deferred to Stage 8. Stages 6 (terminal interface
+parity), 7 (documentation website) and 8 (human review) were added by explicit
+user scope revision on 2026-09-29 and are defined as scope, not yet planned.
 
 This index states what each document is authoritative for. For the *reading
 order* — what to read now and what you can skip — start at
@@ -74,12 +77,15 @@ should do*, not for what is implemented. Implementation status lives in
 | [`plans/stage-5/5.3-recovery-and-controls.md`](plans/stage-5/5.3-recovery-and-controls.md) | Stage 5.3 recovery, pause/stop and budgets |
 | [`plans/stage-5/5.4-quality-and-acceptance.md`](plans/stage-5/5.4-quality-and-acceptance.md) | Stage 5.4 checks, review, repair and acceptance |
 | [`plans/stage-5/5.5-workflow-and-planning.md`](plans/stage-5/5.5-workflow-and-planning.md) | Stage 5.5 workflow and planning (**independently accepted offline**) |
-| [`plans/stage-5/5.6-delivery-and-finalization.md`](plans/stage-5/5.6-delivery-and-finalization.md) | Stage 5.6 delivery and finalization (**implementation in progress; not accepted**) |
-| [`plans/stage-5/5.7-end-to-end-qualification.md`](plans/stage-5/5.7-end-to-end-qualification.md) | Stage 5.7 end-to-end qualification (**not started**) |
+| [`plans/stage-5/5.6-delivery-and-finalization.md`](plans/stage-5/5.6-delivery-and-finalization.md) | Stage 5.6 delivery and finalization (**implemented; autonomous scope only; human gates deferred to Stage 8**) |
+| [`plans/stage-5/5.7-end-to-end-qualification.md`](plans/stage-5/5.7-end-to-end-qualification.md) | Stage 5.7 autonomous end-to-end qualification (**not started**; human steps moved to Stage 8) |
 | [`plans/stage-5/stage-5-plan.md`](plans/stage-5/stage-5-plan.md) | Stage 5 backlog and R01–R71 stage mapping |
 | [`plans/stage-5/stage-5-execution.md`](plans/stage-5/stage-5-execution.md) | Stage 5 implementation order and checkpoints |
 | [`plans/stage-5/stage-5-boundary.md`](plans/stage-5/stage-5-boundary.md) | Execution boundary and qualification contract |
 | [`plans/stage-5/stage-5-cli.md`](plans/stage-5/stage-5-cli.md) | **CLI reference.** Every command, flag and command receipt |
+| [`plans/stage-6/stage-6.md`](plans/stage-6/stage-6.md) | **Stage 6 scope:** terminal interface parity and completeness, and its complete feature list (user scope revision 2026-09-29; 6.1 is the gap analysis) |
+| [`plans/stage-7/stage-7.md`](plans/stage-7/stage-7.md) | **Stage 7 scope:** user-facing documentation website for the terminal interface (7.1 decides the information architecture and generator) |
+| [`plans/stage-8/stage-8.md`](plans/stage-8/stage-8.md) | **Stage 8 scope:** the human review stage — the walkthrough guide, the bulk finding report format, and every human-gated step deferred out of 5.6/5.7 |
 
 ## History: superseded, kept for provenance
 

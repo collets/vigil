@@ -74,16 +74,30 @@ the plans, and they are what most questions actually turn on.
 
 ## 4. Plans: start from the slice you are working on
 
-Start at [`plans/stage-5/README.md`](plans/stage-5/README.md). It indexes
-Stage 5.1–5.7, their order, their dependencies, their user gates and their
-completion criteria. The table below routes by task; it is the shortest useful
-path, not a limit on what you may read.
+**Start Stage 5.7** → [`plans/stage-5/5.7-end-to-end-qualification.md`](plans/stage-5/5.7-end-to-end-qualification.md), autonomous only.
+**Start Stage 6 (or 6.1)** → [`plans/stage-6/stage-6.md`](plans/stage-6/stage-6.md); 6.1 is its parity gap analysis and owns planning 6.2 onward.
+**Start Stage 7 (or 7.1)** → [`plans/stage-7/stage-7.md`](plans/stage-7/stage-7.md); 7.1 owns the information architecture and the generator decision.
+**Start Stage 8 (or 8.1)** → [`plans/stage-8/stage-8.md`](plans/stage-8/stage-8.md); this is the human stage, and 8.1 designs the walkthrough and the finding report.
+
+The roadmap originally defined Stages 1–5 only. **Stages 6, 7 and 8 were added by
+explicit user scope revision on 2026-09-29**, not earned by a completed stage.
+Their documents are *scope* descriptions: outcome, boundaries and deliverable,
+with the detailed sub-stage plans delegated to their `.1` sub-stage. Read the
+scope document before the plan for whichever sub-stage you are running.
+
+For Stage 5, start at [`plans/stage-5/README.md`](plans/stage-5/README.md). It
+indexes Stage 5.1–5.7, their order, their dependencies, their user gates and
+their completion criteria. The table below routes by task; it is the shortest
+useful path, not a limit on what you may read.
 
 | Your task | Start with |
 | --- | --- |
 | Any Stage 5 work | [`plans/stage-5/README.md`](plans/stage-5/README.md), then the slice you are changing |
-| Stage 5.6 delivery and finalization (**not started**) | [`5.6-delivery-and-finalization.md`](plans/stage-5/5.6-delivery-and-finalization.md) |
-| Stage 5.7 end-to-end qualification (**not started**) | [`5.7-end-to-end-qualification.md`](plans/stage-5/5.7-end-to-end-qualification.md) |
+| Stage 5.6 delivery and finalization (**implemented; acceptance scope narrowed to autonomous**) | [`5.6-delivery-and-finalization.md`](plans/stage-5/5.6-delivery-and-finalization.md) |
+| Stage 5.7 autonomous qualification (**next**; not started) | [`5.7-end-to-end-qualification.md`](plans/stage-5/5.7-end-to-end-qualification.md) |
+| Stage 6 terminal interface parity (**not started**) | [`stage-6.md`](plans/stage-6/stage-6.md), then 6.1 |
+| Stage 7 documentation website (**not started**) | [`stage-7.md`](plans/stage-7/stage-7.md), then 7.1 |
+| Stage 8 human review (**not started; needs a human**) | [`stage-8.md`](plans/stage-8/stage-8.md), then 8.1 |
 | Understanding why a Stage 5.1–5.5 safeguard exists | The accepted slice documents in [`plans/stage-5/`](plans/stage-5/), and the review record in [`research/stage-5/`](research/stage-5/) |
 | Which requirements belong to which slice | [`plans/stage-5/stage-5-plan.md`](plans/stage-5/stage-5-plan.md) |
 | Implementation order, prerequisites, failure tests | [`plans/stage-5/stage-5-execution.md`](plans/stage-5/stage-5-execution.md) |
@@ -91,8 +105,10 @@ path, not a limit on what you may read.
 | Container boundary, guardian, worker or relay | [`plans/stage-5/stage-5-boundary.md`](plans/stage-5/stage-5-boundary.md) |
 | Earlier stages (1–4) | Superseded; see [`history/`](history/). The accepted baseline lives in `core/`. |
 
-Do not start Stage 5.6 without an explicit instruction, and never enable
-production dispatch: those are project rules, not defaults you may infer.
+Do not start a stage without an explicit instruction naming it, and never
+enable production dispatch: those are project rules, not defaults you may infer.
+Stage 8 in particular cannot be completed by an agent alone, and Stage 6.1–6.y
+must not be started before 6.1's gap analysis exists.
 
 ## 5. Evidence and history, on demand
 
