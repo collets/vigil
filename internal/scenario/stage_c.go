@@ -494,16 +494,43 @@ func (w *walkthrough) controllerKillLeavesUnknown(ctx context.Context) {
 	if len(held) == 0 {
 		w.note("After the controller kill the resource journal showed no retained workspace claim or ticket state. The synthetic driver releases its own resources on a clean finish, so this run cannot distinguish a clean release from a quarantine that never engaged.")
 	}
+	// The detail is written from the values actually observed on the reopened
+	// database. Where the kill landed is a race against the synthetic driver's own
+	// speed, so it is reported as observed rather than asserted.
+	landing := controllerKillLanding(view)
 	w.mark(CaseControllerKillUnknown,
-		fmt.Sprintf("the controller was SIGKILLed mid-attempt; the reopened database reports run_state=%q, generation_state=%q, submission_state=%q, writer_state=%q and offers %s; retained resource state: %s. The kill landed after the submission was journaled, so the loss is a completed-with-contained-writer state rather than an uncertain one: the genuinely uncertain case, where a start must be refused, is covered by the accepted Stage 5.2 crash matrix",
-			view.RunState, view.GenerationState, view.SubmissionState, view.WriterState, detail,
+		fmt.Sprintf("a controller was SIGKILLed %s; the reopened database reports run_state=%q, generation_state=%q, submission_state=%q, writer_state=%q and offers %s; retained resource state: %s",
+			landing, view.RunState, view.GenerationState, view.SubmissionState, view.WriterState, detail,
 			strings.Join(held, ", ")),
 		"a real SIGKILLed vigil process, then bin/vigil project execution-inspect and resources status on the reopened database")
 }
 
+// controllerKillLanding describes, from the observed durable state, where the
+// loss actually occurred.
+//
+// Where the kill lands is a race against the synthetic driver's speed, so this
+// never asserts a boundary it did not observe. A run that was still prepared with
+// no submission attempted lost its controller *before* any effect, and offering
+// `start` afterwards is the documented safe path rather than a replay. The
+// genuinely uncertain case — a submission whose outcome is unknown, where a
+// resubmission would be an unproven repeat — is carried by the accepted Stage 5.2
+// crash matrix and is not claimed here.
+func controllerKillLanding(view ExecutionView) string {
+	switch {
+	case view.UncertainSubmission():
+		return "while a submission was outstanding, so the outcome is unknown and no start may be offered"
+	case view.SubmissionState == "delivered":
+		return "after the submission was journaled as delivered, so the outcome is known and no start is offered"
+	case view.SubmissionState == "proven_not_delivered":
+		return "after the submission was proven not delivered"
+	default:
+		return fmt.Sprintf("before any submission was attempted (submission_state=%q), so no effect occurred and a start remains the documented safe path", view.SubmissionState)
+	}
+}
+
 func describeKill(killed error) string {
 	if killed == nil {
-		return "controller killed after its submission was journaled"
+		return "controller process killed with SIGKILL; where it landed is reported from the reopened durable state"
 	}
 	return "controller kill failed: " + killed.Error()
 }

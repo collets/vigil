@@ -123,11 +123,17 @@ review evidence afterwards rather than reusing the prior result.
 
 ## Requirements
 
-All R01–R71 are classified: 49 `automated`, 22 `pending_stage_8`. Every carried
-citation is checked — `sourceMentionsRequirement` verifies that the named record
-actually mentions the requirement, and an unsupported citation is demoted to a
-gate with the reason recorded. That check is what demoted R09, whose proposed
-source never mentioned it.
+All R01–R71 are classified. Every carried citation is **resolved** before use: the
+named record must be readable in this checkout, and an unreadable or absent
+record is demoted to a gate with the reason recorded. The check deliberately does
+*not* require the record's text to contain the requirement identifier — the
+predecessor records are narrative evidence documents keyed by slice-local finding
+IDs, so requiring that would reject substantively valid citations and replace one
+false claim with another.
+
+R09 is a gate on its own merits: Jev was considered as an optional aid to
+model/task selection and no integration or evidence of benefit was ever recorded,
+so nothing supports it. Its originally proposed citation did not cover it either.
 
 ## Capability gates
 

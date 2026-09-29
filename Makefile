@@ -50,14 +50,18 @@ build-scenario:
 	CGO_ENABLED=0 $(GO) build -o bin/vigil ./cmd/vigil
 
 # The disposable root is created outside any checkout, and the scenario binary
-# refuses a root that already holds content. `rm -rf` is therefore applied only
-# after checking the path is the documented disposable location, so an overridden
-# SCENARIO_ROOT can never make this target delete something else.
+# refuses a root that already holds content. Before any `rm -rf`, the root is
+# resolved to a physical path and required to be the exact documented disposable
+# directory. A glob or a `..` suffix cannot satisfy this: the check compares the
+# resolved path, so `/tmp/vigil-stage-5.7-scenario/../../etc` is rejected.
 define scenario_root_guard
-	case "$(1)" in \
-		/tmp/vigil-stage-5.7-scenario|/tmp/vigil-stage-5.7-scenario/*) ;; \
-		*) echo "refusing to touch SCENARIO_ROOT=$(1): it is not the disposable /tmp location" >&2; exit 1 ;; \
-	esac
+	root='$(1)'; \
+	case "$$root" in *..*) echo "refusing to touch SCENARIO_ROOT=$$root: it contains a traversal component" >&2; exit 1 ;; esac; \
+	resolved=`cd "$$root" 2>/dev/null && pwd -P || echo "$$root"`; \
+	if [ "$$resolved" != "/tmp/vigil-stage-5.7-scenario" ]; then \
+		echo "refusing to touch SCENARIO_ROOT=$$root: it resolves to '$$resolved', not the documented disposable /tmp/vigil-stage-5.7-scenario" >&2; \
+		exit 1; \
+	fi
 endef
 
 scenario: build-scenario
