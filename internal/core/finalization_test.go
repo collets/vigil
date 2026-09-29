@@ -27,7 +27,31 @@ func seedAcceptedPlan(t *testing.T, e *Engine) {
 	seedAcceptedPlanWithChange(t, e, false)
 }
 
+// seedRealAcceptedPlan is seedAcceptedPlanWithChange without the
+// disposable-fixture marker and with a `core` acceptance actor, so it
+// describes a real, non-fixture plan. It is the fixture used to prove that no
+// live model turn can complete a real plan.
+func seedRealAcceptedPlan(t *testing.T, e *Engine) {
+	t.Helper()
+	seedAcceptedPlanWithChangeAndMarker(t, e, false, false, "core")
+}
+
+// seedMarkerlessFixtureAcceptedPlan has a `fixture_core` acceptance actor but a
+// repository without the disposable-fixture marker, so the repository gate can
+// be exercised independently of the acceptance-provenance gate.
+func seedMarkerlessFixtureAcceptedPlan(t *testing.T, e *Engine) {
+	t.Helper()
+	seedAcceptedPlanWithChangeAndMarker(t, e, false, false, "fixture_core")
+}
+
 func seedAcceptedPlanWithChange(t *testing.T, e *Engine, dirty bool, remotePath ...string) {
+	t.Helper()
+	seedAcceptedPlanWithChangeAndMarker(t, e, dirty, true, "fixture_core", remotePath...)
+}
+
+// seedAcceptedPlanWithChangeAndMarker builds the seeded plan, optionally
+// carrying the disposable-fixture marker and using a chosen acceptance actor.
+func seedAcceptedPlanWithChangeAndMarker(t *testing.T, e *Engine, dirty, fixture bool, actor string, remotePath ...string) {
 	t.Helper()
 	ctx := context.Background()
 	var root string
@@ -35,12 +59,14 @@ func seedAcceptedPlanWithChange(t *testing.T, e *Engine, dirty bool, remotePath 
 		t.Fatal(err)
 	}
 	initRepository(t, root)
-	if err := os.WriteFile(filepath.Join(root, ".vigil-disposable-fixture"), []byte("fixture\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"-C", root, "add", ".vigil-disposable-fixture"}, {"-C", root, "-c", "user.name=Fixture", "-c", "user.email=fixture@invalid", "commit", "-qm", "fixture marker"}} {
-		if b, err := exec.Command("git", args...).CombinedOutput(); err != nil {
-			t.Fatalf("fixture Git: %v %s", err, b)
+	if fixture {
+		if err := os.WriteFile(filepath.Join(root, ".vigil-disposable-fixture"), []byte("fixture\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		for _, args := range [][]string{{"-C", root, "add", ".vigil-disposable-fixture"}, {"-C", root, "-c", "user.name=Fixture", "-c", "user.email=fixture@invalid", "commit", "-qm", "fixture marker"}} {
+			if b, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+				t.Fatalf("fixture Git: %v %s", err, b)
+			}
 		}
 	}
 	if len(remotePath) != 0 {
@@ -107,7 +133,7 @@ func seedAcceptedPlanWithChange(t *testing.T, e *Engine, dirty bool, remotePath 
 			t.Fatal(err)
 		}
 		_, err = e.DB.SQL.ExecContext(ctx, `INSERT INTO quality_acceptances_v2(id,scope_id,target_kind,plan_id,task_id,evidence_manifest_id,evidence_manifest_digest,actor,accepted_at)
-			VALUES(?,?,?,'plan',?,?,?,'fixture_core',?)`, "accept-"+id, scopeID, targetKind, taskID, artifact.ID, artifact.Digest, store.Now())
+			VALUES(?,?,?,'plan',?,?,?,?,?)`, "accept-"+id, scopeID, targetKind, taskID, artifact.ID, artifact.Digest, actor, store.Now())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1177,9 +1203,10 @@ func TestReconcileBlocksAnEffectThatRacesTheObservation(t *testing.T) {
 	if _, err := e.ReconcileDelivery(ctx, "reconcile-after-observed", push.OperationID); err == nil {
 		t.Fatal("an observed operation was reconciled again")
 	}
-	// A claimed but unclosed operation is not executable: this is what makes
-	// the net-zero closure safe against a racing effect. Re-uncertainize the
-	// journal and claim it, exactly as the reconcile claim does.
+	// A claimed operation with a still-pending journal is not executable: no
+	// new effect can start while reconciliation owns the decision. This is a
+	// claim without a committed closure, so it is exactly what reconcile writes
+	// before observing.
 	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE deliveries SET state='pending' WHERE operation_id=?", push.OperationID); err != nil {
 		t.Fatal(err)
 	}
@@ -1292,6 +1319,12 @@ func TestReconcileNeverProvesNonOccurrenceAndAttestationIsExplicit(t *testing.T)
 		!slices.Contains(status.ApprovedTargets, "approved_predecessor=<absent>") {
 		t.Fatalf("approved operands: %#v %v", status.ApprovedTargets, err)
 	}
+	// delivery-status must carry the attestation provenance, so a later reader
+	// can tell a human assertion from a system-proven outcome.
+	if status, err := e.DeliveryStatus(ctx, prepared.OperationID); err != nil ||
+		status.Attestation != "verified the plan ref is still at the approved predecessor" {
+		t.Fatalf("delivery-status lost the attestation provenance: %#v %v", status.Attestation, err)
+	}
 	// The receipt records that a human attested, not that the system proved it.
 	var actor, raw string
 	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT actor,result_json FROM command_receipts WHERE id='attest-commit'").Scan(&actor, &raw); err != nil || actor != "human" {
@@ -1303,6 +1336,195 @@ func TestReconcileNeverProvesNonOccurrenceAndAttestationIsExplicit(t *testing.T)
 	// A completed attestation cannot be repeated.
 	if _, err := e.CloseUnobservedDelivery(ctx, "attest-again", prepared.OperationID, "second claim"); err == nil {
 		t.Fatal("an attested operation was closed again")
+	}
+}
+
+func TestRealPlanCannotReachACompletedNarrativeThroughTheLivePath(t *testing.T) {
+	_, e, _ := setup(t)
+	// A real plan: no disposable-fixture marker and a `core` acceptance actor.
+	seedRealAcceptedPlan(t, e)
+	ctx := context.Background()
+	archive, err := e.BuildFactualArchive(ctx, "real-plan-archive", "plan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The fixture narrative path refuses it even with the fixture actor.
+	if _, err := e.RecordFixtureNarrative(ctx, NarrativeResult{CommandID: "real-narrative", PlanID: "plan", ManifestRevision: archive.Revision,
+		ManifestDigest: archive.ManifestDigest, Text: "should be refused", CitedIDs: []string{"accept-plan", "accept-first", "accept-second"},
+		Actor: "fixture"}); err == nil {
+		t.Fatal("a real plan completed through the fixture narrative path")
+	}
+	// The live run path is refused, and no provider turn is ever dispatched.
+	provider := &fixtureFinalizationProvider{output: []byte(`{"text":"should be refused","cited_ids":["accept-plan","accept-first","accept-second"]}`), idle: true}
+	if _, err := e.RunFinalization(ctx, FinalizationRunRequest{CommandID: "real-finalization", PlanID: "plan", ManifestRevision: archive.Revision,
+		ManifestDigest: archive.ManifestDigest, ProfileID: "local", ProfileRevision: 1, ActiveLimit: time.Second}, provider); err == nil {
+		t.Fatal("a live model turn completed a real plan")
+	}
+	if provider.calls != 0 {
+		t.Fatalf("a provider was dispatched for a real plan: %d calls", provider.calls)
+	}
+	// The plan is still awaiting finalization and the task is still ready.
+	var planState, taskState string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM plans WHERE id='plan'").Scan(&planState); err != nil || planState != "finalization_pending" {
+		t.Fatalf("real plan state %q: %v", planState, err)
+	}
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM tasks WHERE id=?", archive.TaskID).Scan(&taskState); err != nil || taskState != "ready" {
+		t.Fatalf("finalization task state %q: %v", taskState, err)
+	}
+	// A fixture-actor acceptance over a repository without the marker is still
+	// refused, so the two gates are independent. Acceptances are immutable, so
+	// this case gets its own engine.
+	_, markerless, _ := setup(t)
+	seedMarkerlessFixtureAcceptedPlan(t, markerless)
+	markerlessArchive, err := markerless.BuildFactualArchive(ctx, "markerless-archive", "plan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := markerless.RecordFixtureNarrative(ctx, NarrativeResult{CommandID: "markerless-narrative", PlanID: "plan", ManifestRevision: markerlessArchive.Revision,
+		ManifestDigest: markerlessArchive.ManifestDigest, Text: "should be refused", CitedIDs: []string{"accept-plan", "accept-first", "accept-second"},
+		Actor: "fixture"}); err == nil {
+		t.Fatal("a repository without the disposable-fixture marker was completed")
+	}
+	if err := markerless.DB.SQL.QueryRowContext(ctx, "SELECT state FROM plans WHERE id='plan'").Scan(&planState); err != nil || planState != "finalization_pending" {
+		t.Fatalf("plan completed despite a missing fixture marker: %q %v", planState, err)
+	}
+}
+
+func TestReconcileNeverReopensAnAttestedClosure(t *testing.T) {
+	_, e, p := setup(t)
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	if b, err := exec.Command("git", "init", "--bare", "-q", remote).CombinedOutput(); err != nil {
+		t.Fatalf("bare fixture: %v %s", err, b)
+	}
+	seedAcceptedPlanWithChange(t, e, true, remote)
+	ctx := context.Background()
+	record, err := e.Repository(ctx, "fixture-repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := exec.Command("git", "-C", p.Root, "push", "-q", "origin", record.BaseOID+":refs/heads/main").CombinedOutput(); err != nil {
+		t.Fatalf("seed remote base: %v %s", err, b)
+	}
+	commit, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "prepare-closed-push", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Closed fixture", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: commit.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	committed, err := e.ExecuteCommit(ctx, commit.OperationID, grant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	push, err := e.PreparePush(ctx, PushRequest{CommandID: "prepare-closed-remote", PlanID: "plan", RepositoryID: "fixture-repo", RemoteName: "origin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushGrant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: push.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	start, err := e.deliveryEnvelope(ctx, store.Digest([]byte("delivery.push.start\x00"+push.OperationID)), "operation.start", map[string]string{"operation_id": push.OperationID, "grant_id": pushGrant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(ctx, Core, start); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, `INSERT INTO deliveries(id,plan_id,repository_id,operation_id,kind,state,remote_identity,head_oid,base_ref)
+		VALUES(?,?,?,?, 'push','uncertain',?,?,?)`, pushDeliveryID(push.OperationID), "plan", "fixture-repo", push.OperationID, push.Intent.RemoteIdentity, push.Intent.HeadOID, push.Intent.RemoteRef); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE operations SET state='uncertain' WHERE id=?", push.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	// The operator attests the push never landed. The destination is absent,
+	// which is the approved predecessor, so a naive reconciler would
+	// re-attempt the push on an operation already closed.
+	closed, err := e.CloseUnobservedDelivery(ctx, "attest-closed-push", push.OperationID, "verified the destination branch does not exist on the remote")
+	if err != nil || closed.State != "reconciled" {
+		t.Fatalf("attestation: %#v %v", closed, err)
+	}
+	// Reconciliation must refuse: reopening a committed closure would perform
+	// an irreversible external effect on a decided operation.
+	if _, err := e.ReconcileDelivery(ctx, "reconcile-after-attest", push.OperationID); err == nil {
+		t.Fatal("reconciliation reopened a human-attested closure")
+	}
+	if out, err := exec.Command("git", "--git-dir", remote, "rev-parse", "refs/heads/"+record.PlanBranch).Output(); err == nil {
+		t.Fatalf("reconcile pushed onto an attested-closed operation: %s", out)
+	}
+	// The attestation itself is durable and honestly labelled.
+	status, err := e.DeliveryStatus(ctx, push.OperationID)
+	if err != nil || status.State != "reconciled" || status.DeliveryState != "failed" ||
+		status.Attestation != "verified the destination branch does not exist on the remote" {
+		t.Fatalf("closed status: %#v %v", status, err)
+	}
+	// The plan ref is untouched by any of this.
+	if got, err := deliveryGit(ctx, p.Root, nil, nil, "rev-parse", "--verify", "--end-of-options", "refs/heads/"+record.PlanBranch+"^{commit}"); err != nil || got != committed.CommitOID {
+		t.Fatalf("local plan ref moved: %s %v", got, err)
+	}
+}
+
+func TestPushReconciliationObservesAHeadLandedDuringReconciliation(t *testing.T) {
+	_, e, p := setup(t)
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	if b, err := exec.Command("git", "init", "--bare", "-q", remote).CombinedOutput(); err != nil {
+		t.Fatalf("bare fixture: %v %s", err, b)
+	}
+	seedAcceptedPlanWithChange(t, e, true, remote)
+	ctx := context.Background()
+	record, err := e.Repository(ctx, "fixture-repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := exec.Command("git", "-C", p.Root, "push", "-q", "origin", record.BaseOID+":refs/heads/main").CombinedOutput(); err != nil {
+		t.Fatalf("seed remote base: %v %s", err, b)
+	}
+	commit, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "prepare-landing-push", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Landing fixture", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: commit.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	committed, err := e.ExecuteCommit(ctx, commit.OperationID, grant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	push, err := e.PreparePush(ctx, PushRequest{CommandID: "prepare-landing-remote", PlanID: "plan", RepositoryID: "fixture-repo", RemoteName: "origin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushGrant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: push.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	start, err := e.deliveryEnvelope(ctx, store.Digest([]byte("delivery.push.start\x00"+push.OperationID)), "operation.start", map[string]string{"operation_id": push.OperationID, "grant_id": pushGrant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(ctx, Core, start); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, `INSERT INTO deliveries(id,plan_id,repository_id,operation_id,kind,state,remote_identity,head_oid,base_ref)
+		VALUES(?,?,?,?, 'push','uncertain',?,?,?)`, pushDeliveryID(push.OperationID), "plan", "fixture-repo", push.OperationID, push.Intent.RemoteIdentity, push.Intent.HeadOID, push.Intent.RemoteRef); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE operations SET state='uncertain' WHERE id=?", push.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	// The push lands between the reconciler's first observation and its
+	// pre-push re-observation. The reconciler must recognise the approved head
+	// as proof of the effect rather than telling the operator to attest.
+	intent, _, err := e.loadPushIntent(ctx, push.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := exec.Command("git", "-C", p.Root, "push", "-q", "origin", committed.CommitOID+":"+intent.RemoteRef).CombinedOutput(); err != nil {
+		t.Fatalf("concurrent landing: %v %s", err, b)
+	}
+	status, err := e.ReconcileDelivery(ctx, "reconcile-concurrent-landing", push.OperationID)
+	if err != nil || status.State != "observed" || status.DeliveryState != "succeeded" {
+		t.Fatalf("concurrently landed push was not observed: %#v %v", status, err)
+	}
+	var state, deliveryState string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM operations WHERE id=?", push.OperationID).Scan(&state); err != nil || state != "observed" {
+		t.Fatalf("durable operation state %q: %v", state, err)
+	}
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM deliveries WHERE operation_id=?", push.OperationID).Scan(&deliveryState); err != nil || deliveryState != "succeeded" {
+		t.Fatalf("durable delivery state %q: %v", deliveryState, err)
 	}
 }
 

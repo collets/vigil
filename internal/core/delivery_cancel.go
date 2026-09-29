@@ -24,10 +24,17 @@ type DeliveryStatus struct {
 	// resolve a diverged observation: the ref or destination the operation was
 	// approved against, and the object it would have produced.
 	ApprovedTargets []string `json:"approved_targets,omitempty"`
-	// Attestation is set only by CloseUnobservedDelivery. It is a human
-	// decision of record, never a system proof that the effect did not occur.
+	// Attestation is the human decision of record for a closed-unobserved
+	// delivery, never a system proof that the effect did not occur. It is read
+	// from the attestation receipt, so a later reader of delivery-status can
+	// always distinguish "the system proved this" from "a person asserted this".
 	Attestation string `json:"attestation,omitempty"`
 }
+
+// attestedOperationCommand is the receipt kind recorded by
+// CloseUnobservedDelivery; its presence is what marks a reconciled delivery as
+// human-attested rather than system-observed.
+const attestedOperationCommand = "delivery.close_unobserved"
 
 func (e *Engine) DeliveryStatus(ctx context.Context, operationID string) (DeliveryStatus, error) {
 	result := DeliveryStatus{OperationID: operationID}
@@ -57,7 +64,37 @@ func (e *Engine) DeliveryStatus(ctx context.Context, operationID string) (Delive
 			result.ApprovedTargets = []string{"project=" + intent.Project, "head=" + intent.HeadBranch + "@" + intent.HeadOID, "base=" + intent.BaseBranch}
 		}
 	}
+	// A reconciled delivery with no observed effect was closed by a human
+	// attestation. Surface that provenance from the attestation receipt so the
+	// status never reads as a system-proven outcome.
+	if result.State == "reconciled" && result.DeliveryState == "failed" {
+		result.Attestation = e.findDeliveryAttestation(ctx, operationID)
+		if result.Attestation == "" {
+			result.Attestation = "closed without a recorded human attestation"
+		}
+	}
 	return result, nil
+}
+
+// findDeliveryAttestation reads back the attestation a human recorded for this
+// operation, so delivery-status carries the same provenance the command did.
+func (e *Engine) findDeliveryAttestation(ctx context.Context, operationID string) string {
+	var raw string
+	if err := e.DB.SQL.QueryRowContext(ctx, `SELECT c.result_json FROM command_receipts c
+		JOIN events e ON e.command_id=c.id
+		WHERE c.actor='human' AND json_extract(e.payload_json,'$.command_kind')=?
+		AND json_extract(c.result_json,'$.operation_id')=?
+		ORDER BY c.committed_at DESC LIMIT 1`, attestedOperationCommand, operationID).Scan(&raw); err != nil {
+		return ""
+	}
+	var status struct {
+		OperationID string `json:"operation_id"`
+		Attestation string `json:"attestation"`
+	}
+	if err := json.Unmarshal([]byte(raw), &status); err != nil || status.OperationID != operationID {
+		return ""
+	}
+	return status.Attestation
 }
 
 // Cancelling a prepared operation cannot discard an external effect: no grant
@@ -121,10 +158,22 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT kind,state FROM operations WHERE id=? AND kind IN ('commit','push','draft_request')", operationID).Scan(&kind, &state); err != nil {
 		return DeliveryStatus{}, errors.New("delivery operation not found")
 	}
-	// A prior claim without a committed closure (an interrupted or blocked
-	// reconciliation) is resumable: the claim is the only thing standing
-	// between the observation and a concurrent effect.
+	// A claim is resumable ONLY when no closure was committed for it. A claim
+	// is written as operations.state='reconciled', and so is a terminal
+	// human-attested closure, which additionally moves the delivery journal to
+	// a terminal state. Resuming a closed operation would re-attempt an
+	// external effect on an operation the operator already decided was closed,
+	// so the journal is what distinguishes an interrupted claim from a
+	// finished one.
 	claimed := state == "reconciled"
+	if claimed {
+		var deliveryState string
+		if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM deliveries WHERE operation_id=?", operationID).Scan(&deliveryState); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return DeliveryStatus{}, err
+		} else if err == nil && (deliveryState == "succeeded" || deliveryState == "failed") {
+			return DeliveryStatus{}, errors.New("delivery operation is already closed; a committed closure is never reopened by reconciliation")
+		}
+	}
 	if !claimed && state != "executing" && state != "uncertain" {
 		return DeliveryStatus{}, errors.New("only an executing or uncertain delivery can be reconciled; prepared deliveries are cancelled instead")
 	}
@@ -177,6 +226,22 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 			if !hasRow {
 				return nil, errors.New("observed reconciliation requires the delivery journal")
 			}
+			// A concurrent executor may already have observed the same effect
+			// and recorded it. Report that durable truth instead of failing
+			// after a successful effect, so a reported success always matches
+			// the recorded state.
+			if deliveryState == "succeeded" {
+				closed := observation
+				closed.OperationID, closed.State, closed.DeliveryState = operationID, "observed", "succeeded"
+				if err := tx.QueryRowContext(ctx, "SELECT id,coalesce(external_id,''),coalesce(url,'') FROM deliveries WHERE operation_id=?", operationID).
+					Scan(&closed.DeliveryID, &closed.ExternalID, &closed.URL); err != nil {
+					return nil, err
+				}
+				if _, err := tx.ExecContext(ctx, "UPDATE operations SET state='observed' WHERE id=? AND state='reconciled'", operationID); err != nil {
+					return nil, err
+				}
+				return closed, nil
+			}
 			updated, err := tx.ExecContext(ctx, "UPDATE deliveries SET state='succeeded',external_id=?,url=? WHERE operation_id=? AND state IN ('pending','uncertain')",
 				observation.ExternalID, observation.URL, operationID)
 			if err != nil {
@@ -192,15 +257,8 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 			closed.OperationID, closed.State, closed.DeliveryState = operationID, "observed", "succeeded"
 			return closed, nil
 		}
-		if hasRow {
-			updated, err := tx.ExecContext(ctx, "UPDATE deliveries SET state='failed' WHERE operation_id=? AND state IN ('pending','uncertain')", operationID)
-			if err != nil {
-				return nil, err
-			}
-			if count, err := updated.RowsAffected(); err != nil || count != 1 {
-				return nil, errors.New("delivery journal changed before reconciliation closure")
-			}
-		}
+		// No automatic closure can assert non-occurrence: only the explicit
+		// human attestation path may record that an effect did not happen.
 		return nil, errors.New("reconciliation closed automatically without proof the effect occurred; use delivery-close-unobserved to attest")
 	})
 	if err != nil {
@@ -383,7 +441,15 @@ func (e *Engine) retryUnobservedPush(ctx context.Context, operationID string, in
 		return DeliveryStatus{}, "", err
 	}
 	if fresh != intent.ExpectedRemoteOID {
-		return DeliveryStatus{}, "", fmt.Errorf("remote ref changed to %s during reconciliation; resolve the destination yourself or attest the outcome", approvedRef(fresh))
+		// The destination advanced during this reconciliation. That is far more
+		// likely the original push landing than a third party, so re-run
+		// delivery-reconcile rather than attesting: attesting here is what
+		// produced a false "no effect" record when the head was already there.
+		if fresh == intent.HeadOID {
+			return DeliveryStatus{Kind: "push", DeliveryID: pushDeliveryID(operationID), Observation: fresh}, "observed", nil
+		}
+		return DeliveryStatus{}, "", fmt.Errorf("remote ref changed to %s during reconciliation; it is neither the approved predecessor nor the approved head %s, so resolve the destination yourself before re-running reconcile",
+			approvedRef(fresh), intent.HeadOID)
 	}
 	_, pushErr := isolatedRemoteGit(ctx, record, env, true, "-c", "push.default=nothing", "push", "--porcelain", "--no-verify", "--no-follow-tags",
 		"--recurse-submodules=no", intent.RemoteURL, intent.HeadOID+":"+intent.RemoteRef)

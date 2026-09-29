@@ -72,18 +72,46 @@ them:
   matches durable state" property hold for `archive-build`, `archive-narrative`
   and the draft-success path.
 
+Also addressed from the same review:
+
+- **P3.1 (B1 had no test at all):** the blocker that started this review cycle
+  — a real plan being completed by a live model turn — had no regression test,
+  so it could silently return. A new test seeds a genuinely real plan (no
+  disposable-fixture marker, `core` acceptance actor) and asserts that both the
+  fixture narrative path and the live run path refuse it, that no provider turn
+  is ever dispatched, and that the plan stays `finalization_pending` with its
+  task still `ready`. A second engine seeds the inverse case (fixture
+  acceptance actor, marker-less repository) to prove the two gates —
+  acceptance provenance and repository marker — are independent.
 - **P3.2:** the reconciliation closure enforces `RowsAffected == 1` on every
   state transition it performs, so a lost update is never treated as a
   successful closure. (The claim itself is retained but is no longer the
   correctness mechanism, so the review's observation that it was untested is
   resolved differently: the net-zero closure it protected no longer exists.)
+- **P1.1 follow-ups (from the third review of the redesign):** the redesign
+  itself was confirmed correct — the blocking-`pre-receive` repro now records
+  `observed`/`succeeded` — but three defects on the same path were found and
+  fixed:
+  - A committed human attestation and an interrupted reconciliation claim both
+    read as `operations.state='reconciled'`, so `delivery-reconcile` could
+    re-enter an already-closed operation and re-attempt a push on it, leaving
+    the attestation false. Resumability is now gated on the delivery journal not
+    being terminal, so a committed closure is never reopened.
+  - When the destination advanced to the approved head *between* the
+    reconciler's first observation and its pre-push re-observation, the error
+    told the operator to attest — producing exactly the false "no effect" record
+    the change exists to prevent. The approved head is now recognised as proof
+    of the effect, and the message directs the operator to re-run reconcile
+    rather than attest.
+  - The attestation was recorded only in one command receipt, so
+    `delivery-status` showed a `reconciled`/`failed` operation with no
+    provenance. `DeliveryStatus` now reads the attestation back, and says so
+    explicitly when a closure has none.
 
-Also addressed from the same review:
-
-- **P3.1:** the dead `core` narrative-actor branch is removed. `recordNarrative`
-  accepts only the `fixture` actor, requires the fixture archive unconditionally
-  and requires `fixture_core` plan-acceptance provenance, so the code now matches
-  the documented invariant that the narrative actor is always `fixture`.
+  Regression tests cover each: a reconcile attempt on an attested closure is
+  refused and the remote stays untouched; a head landing mid-reconciliation is
+  observed rather than attested; and the attestation provenance survives in
+  `delivery-status`.
 - **P3.4:** the dry-run retention receipt is identified by its recorded command
   kind and human actor (via the `command_applied` event), not by the JSON shape
   of its result.
@@ -230,7 +258,9 @@ uses a single explicit `OID:ref` refspec without force, tags, hooks or
 submodules; a post-push exact remote observation determines success. The fake
 bare-remote tests verify only the plan ref appeared, approval replay, and
 remote-URL changes blocked before grant consumption. An uncertain push is
-reconciliation-only, with no automatic second push.
+reconciliation-only: the executor never re-pushes on its own, and only
+`delivery-reconcile` may re-attempt the identical non-force `OID:ref` push when
+the destination still holds the approved predecessor.
 
 GitHub PR and GitLab MR draft adapters now share a bounded hosting interface.
 They use official endpoints for real operations, credential-free loopback

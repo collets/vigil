@@ -742,16 +742,21 @@ retried, and reconciliation never moves a local ref or POSTs a draft.
 
 Anything else — a plan ref or remote ref moved by a third party, or a hosting
 listing without the exact draft — is reported with the approved operands above
-and left open, because absence is not proof of non-delivery. Reconciliation
-claims the operation while it works so no new executor starts an effect
-mid-decision, and releases the claim when blocked.
+and left open, because absence is not proof of non-delivery. If the
+destination holds the approved head when reconcile re-checks it, that *is*
+proof the push landed and the operation closes as observed, so re-run
+`delivery-reconcile` rather than attesting. Reconciliation claims the operation
+while it works so no new executor starts an effect mid-decision, and releases
+the claim when blocked; a committed closure is never reopened, so an attested
+operation cannot later be pushed to.
 
 `delivery-close-unobserved` is the explicit **human-attested** exit for an
 operation the operator has verified externally did not take effect. The
-required `--attest` text is recorded in a human receipt and echoed in the
-result, so a later reader can always distinguish "the system proved this" from
-"a person asserted this". The operation becomes `reconciled` with a failed
-delivery, unblocking retention.
+required `--attest` text is recorded in a human receipt, echoed in the result,
+and read back by `delivery-status`, so a later reader can always distinguish
+"the system proved this" from "a person asserted this". The operation becomes
+`reconciled` with a failed delivery, unblocking retention, and that closure is
+final — `delivery-reconcile` will not reopen it.
 
 ```sh
 ./bin/vigil --state-dir STATE project delivery-close-unobserved PROJECT_ID OPERATION_ID \
