@@ -59,7 +59,7 @@ func requirementCoverage() []MatrixEntry {
 		"R36": "a rejected approval left the operation without a consumable grant",
 		"R37": "the ranked queue was authoritative and advancement was explicit",
 		"R40": "a restore naming three nonexistent identities was refused before touching any repository",
-		"R41": "delivery ended at the draft-request stage and no merge command, endpoint or command exists anywhere in the product command surface; nothing in the observed walkthrough could merge anything",
+		"R41": "no merge command, endpoint or transport exists anywhere in the product command surface, so automated delivery cannot end in an automatic merge. NOT observed: the run's own delivery stopped at the draft-request stage because 5.7-F1 blocked commit and push, so the merge/pull-request creation boundary itself was not exercised",
 		"R42": "an explicitly declared harness/model profile with a credential reference and no credential value was persisted and read back through the production commands; guided onboarding is out of scope",
 		"R44": "the operator's index, worktree and HEAD were unchanged across the whole delivery rehearsal",
 		"R45": "task-level evidence was read back through the production inspection commands",
@@ -134,7 +134,11 @@ func requirementCoverage() []MatrixEntry {
 				break
 			}
 			entry.Evidence = EvidenceReused
-			entry.Detail = "the accepted predecessor slice holds this evidence; it was carried forward with its source record and not re-derived by this run. The citation names the record covering it, not a line within it"
+			entry.Detail = fmt.Sprintf(
+				"the accepted predecessor slice holds this evidence and it was carried forward with its source record, not re-derived by this run. "+
+					"The citation was checked for resolvability only: %s is readable in this checkout, but this run did NOT verify that the record's "+
+					"content covers this requirement, because those records are narrative documents keyed by slice-local finding IDs rather than by "+
+					"requirement identifiers", reused[id])
 			entry.Source = reused[id]
 		default:
 			entry.Evidence = EvidencePendingStage8

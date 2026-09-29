@@ -509,22 +509,35 @@ func (w *walkthrough) controllerKillLeavesUnknown(ctx context.Context) {
 // loss actually occurred.
 //
 // Where the kill lands is a race against the synthetic driver's speed, so this
-// never asserts a boundary it did not observe. A run that was still prepared with
-// no submission attempted lost its controller *before* any effect, and offering
-// `start` afterwards is the documented safe path rather than a replay. The
-// genuinely uncertain case — a submission whose outcome is unknown, where a
-// resubmission would be an unproven repeat — is carried by the accepted Stage 5.2
-// crash matrix and is not claimed here.
+// reports only what the durable state establishes and never claims a boundary it
+// did not observe. In particular `writing` is the in-flight state — the run
+// journaled that it was about to submit and had not yet recorded an outcome — so
+// the prompt may already have been submitted. Production treats it as
+// unresolved, and this description says exactly that rather than calling it
+// "no effect".
+//
+// The genuinely uncertain state, where a resubmission would be an unproven
+// repeat, is carried by the accepted Stage 5.2 crash matrix and is not claimed
+// here.
 func controllerKillLanding(view ExecutionView) string {
-	switch {
-	case view.UncertainSubmission():
-		return "while a submission was outstanding, so the outcome is unknown and no start may be offered"
-	case view.SubmissionState == "delivered":
-		return "after the submission was journaled as delivered, so the outcome is known and no start is offered"
-	case view.SubmissionState == "proven_not_delivered":
-		return "after the submission was proven not delivered"
+	switch view.SubmissionState {
+	case "uncertain":
+		return "while a submission's outcome was already recorded as unknown"
+	case "delivered":
+		return "after the submission was journaled as delivered, so its outcome is known"
+	case "proven_not_delivered":
+		return "after the submission was journaled as proven not delivered, so no prompt was sent"
+	case "not_attempted":
+		return "before any submission was attempted, so no prompt was sent"
+	case "writing":
+		return fmt.Sprintf(
+			"while the submission was in flight: the run had journaled that it was about to submit "+
+				"and had recorded no outcome, so the prompt may already have been delivered. The writer state is %q, "+
+				"which production treats as unresolved and refuses to replay; the held resource state below confirms "+
+				"effects did occur. The uncertain-outcome branch, where a resubmission is an unproven repeat, is "+
+				"carried by the accepted Stage 5.2 crash matrix and is not claimed here", view.WriterState)
 	default:
-		return fmt.Sprintf("before any submission was attempted (submission_state=%q), so no effect occurred and a start remains the documented safe path", view.SubmissionState)
+		return fmt.Sprintf("at an unrecognised submission state %q, which this harness does not interpret", view.SubmissionState)
 	}
 }
 
@@ -1173,22 +1186,37 @@ func (v ExecutionView) offersStart() bool {
 // to offer `start`.
 func (v ExecutionView) UncertainSubmission() bool { return v.SubmissionState == "uncertain" }
 
-// forbidsUncertainReplay reports whether an uncertain run is protected from
-// resubmission. A run that was lost before its submission was journaled is not
-// uncertain: nothing is known to have been delivered, so offering `start` is the
-// documented safe path, not a replay.
+// SubmissionUnresolved reports whether the durable record leaves the submission's
+// outcome open.
+//
+// Both `uncertain` (recorded as unknown) and `writing` (journaled as about to
+// submit, with no recorded outcome) are unresolved. Production itself refuses to
+// replay either — a `writing` generation is treated as an unresolved submission
+// that cannot be replayed — so a lost controller in either state must not be
+// able to resubmit.
+func (v ExecutionView) SubmissionUnresolved() bool {
+	return v.SubmissionState == "uncertain" || v.SubmissionState == "writing"
+}
+
+// forbidsUncertainReplay reports whether a run whose submission is unresolved is
+// protected from resubmission.
+//
+// A run lost *before* its submission was journaled is not unresolved: nothing is
+// known to have been delivered, so offering `start` is the documented safe path
+// rather than a replay. The reason is reported from the observed state, so the
+// detail beside it can never contradict it.
 func (v ExecutionView) forbidsUncertainReplay() (bool, string) {
 	readable, detail := v.decodeIsReadable()
 	if !readable {
 		return false, detail
 	}
-	if v.offersStart() && !v.UncertainSubmission() {
-		return true, detail + " (submission_state=" + v.SubmissionState + "; a start is permitted because no delivery is known, and that is not a replay)"
+	if !v.SubmissionUnresolved() {
+		return true, fmt.Sprintf("%s (submission_state=%q, which resolves the outcome, so a start is not a replay)", detail, v.SubmissionState)
 	}
 	if v.offersStart() {
-		return false, "an uncertain submission still offers start"
+		return false, fmt.Sprintf("submission_state=%q leaves the outcome unresolved, yet the inspection still offers start; commands offered: %s", v.SubmissionState, detail)
 	}
-	return true, detail
+	return true, fmt.Sprintf("%s (submission_state=%q, which leaves the outcome unresolved, so no start is offered)", detail, v.SubmissionState)
 }
 
 // RecoveryChoice is the recorded explicit recovery decision.

@@ -166,10 +166,21 @@ func (m *Matrix) Mark(section, id, evidence, detail, source string) error {
 	return m.mark(section, id, evidence, detail, source, true)
 }
 
-// MarkPartial records a partially observed row. It is Mark with the narrower
-// observation named in the detail.
+// Partial is a row this run only partially observed: the narrower observation
+// did happen through the production path, but the full property named by the row
+// did not.
+//
+// It is deliberately a distinct class rather than a flavour of `automated`. A
+// report that cannot distinguish a fully observed case from a partially observed
+// one cannot be trusted to have earned its pass, and the gap list is built from
+// this class.
+const Partial = "partial"
+
+// MarkPartial records a partially observed row. It is a separate class, not an
+// alias, so the report and the gap list can tell it apart from a full
+// observation.
 func (m *Matrix) MarkPartial(section, id, detail, source string) error {
-	return m.Mark(section, id, EvidenceAutomated, detail, source)
+	return m.mark(section, id, Partial, detail, source, true)
 }
 
 func (m *Matrix) mark(section, id, evidence, detail, source string, pending bool) error {
@@ -252,14 +263,20 @@ func (m *Matrix) RequireComplete() error {
 		}
 		for _, row := range group.rows {
 			switch row.Evidence {
-			case EvidenceAutomated, EvidenceReused, EvidencePendingStage8, EvidenceUnmet:
+			case EvidenceAutomated, EvidenceReused, Partial, EvidencePendingStage8, EvidenceUnmet:
 			default:
 				return fmt.Errorf("matrix row %q has an undecided evidence class %q", row.ID, row.Evidence)
 			}
 			if (row.Evidence == EvidencePendingStage8 || row.Evidence == EvidenceUnmet) && strings.TrimSpace(row.Blocker) == "" {
 				return fmt.Errorf("matrix row %q is %q but records no exact blocker", row.ID, row.Evidence)
 			}
-			if (row.Evidence == EvidenceAutomated || row.Evidence == EvidenceReused) && strings.TrimSpace(row.Detail) == "" {
+			// A partial row must say what was not observed. A partial claim with
+			// no scope statement is indistinguishable from a full one, which is
+			// exactly the confusion this class exists to prevent.
+			if row.Evidence == Partial && !strings.Contains(strings.ToUpper(row.Detail), "NOT OBSERVED") {
+				return fmt.Errorf("matrix row %q is marked partial without stating what was not observed", row.ID)
+			}
+			if (row.Evidence == EvidenceAutomated || row.Evidence == EvidenceReused || row.Evidence == Partial) && strings.TrimSpace(row.Detail) == "" {
 				return fmt.Errorf("matrix row %q claims %q evidence with no detail", row.ID, row.Evidence)
 			}
 		}
@@ -279,8 +296,9 @@ func (m *Matrix) Counts(section string) map[string]int {
 	return counts
 }
 
-// Gap reports every row that is not demonstrated, so the report can never
-// quietly omit one. An undecided row is labelled as such rather than as a pass.
+// Gap reports every row that is not fully demonstrated, so the report can never
+// quietly omit one. A partial row is a gap: the full property was not shown. An
+// undecided row is labelled as such rather than as a pass.
 func (m *Matrix) Gap() []string {
 	gaps := []string{}
 	for _, row := range append(append([]MatrixEntry{}, m.Milestone...), m.Recovery...) {
@@ -288,6 +306,8 @@ func (m *Matrix) Gap() []string {
 		case EvidenceAutomated, EvidenceReused:
 		case "":
 			gaps = append(gaps, row.ID+": undecided")
+		case Partial:
+			gaps = append(gaps, row.ID+": partial")
 		default:
 			gaps = append(gaps, row.ID+": "+row.Evidence)
 		}

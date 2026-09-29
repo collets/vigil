@@ -276,6 +276,105 @@ func TestRequirementCoverageIsTotalAndClassified(t *testing.T) {
 	}
 }
 
+func TestControllerKillLandingReportsOnlyObservedState(t *testing.T) {
+	// Every branch must describe the state it was given, and none may assert an
+	// effect the state does not establish. `writing` is the case that matters: the
+	// run journaled that it was about to submit, so a prompt may already have been
+	// delivered and the description must not call it "no effect".
+	tests := []struct {
+		submission string
+		writer     string
+		mustSay    []string
+		mustNotSay []string
+	}{
+		{submission: "uncertain", mustSay: []string{"unknown"}, mustNotSay: []string{"no effect"}},
+		{submission: "delivered", mustSay: []string{"delivered"}},
+		{submission: "proven_not_delivered", mustSay: []string{"not delivered", "no prompt was sent"}},
+		{submission: "not_attempted", mustSay: []string{"no prompt was sent"}, mustNotSay: []string{"in flight"}},
+		{submission: "writing", writer: "unconfirmed", mustSay: []string{"in flight", "may already have been delivered", "unresolved", "not claimed here"}, mustNotSay: []string{"no effect occurred"}},
+		{submission: "something-else", mustSay: []string{"unrecognised"}},
+	}
+	for _, test := range tests {
+		view := ExecutionView{SubmissionState: test.submission, WriterState: test.writer}
+		got := controllerKillLanding(view)
+		for _, want := range test.mustSay {
+			if !strings.Contains(got, want) {
+				t.Errorf("submission_state=%q: landing %q does not mention %q", test.submission, got, want)
+			}
+		}
+		for _, unwanted := range test.mustNotSay {
+			if strings.Contains(got, unwanted) {
+				t.Errorf("submission_state=%q: landing %q must not claim %q", test.submission, got, unwanted)
+			}
+		}
+	}
+}
+
+func TestUnresolvedSubmissionMustNotOfferStart(t *testing.T) {
+	base := ExecutionView{RunID: "run", RunState: "starting", AllowedNext: []string{"inspect", "start"}}
+	// Both unresolved states must fail when a start is offered.
+	for _, submission := range []string{"uncertain", "writing"} {
+		view := base
+		view.SubmissionState = submission
+		if safe, detail := view.forbidsUncertainReplay(); safe {
+			t.Errorf("submission_state=%q offered start but was accepted as safe: %s", submission, detail)
+		}
+	}
+	// A run with no start offered is safe regardless of state.
+	for _, submission := range []string{"uncertain", "writing", "delivered", "not_attempted", "proven_not_delivered"} {
+		view := ExecutionView{RunID: "run", RunState: "completed", SubmissionState: submission, AllowedNext: []string{"inspect"}}
+		if safe, detail := view.forbidsUncertainReplay(); !safe {
+			t.Errorf("submission_state=%q with no start offered was refused: %s", submission, detail)
+		}
+	}
+	// An unreadable inspection is never safe.
+	for _, view := range []ExecutionView{
+		{},
+		{RunID: "run", RunState: "starting"},
+		{RunID: "run", RunState: "starting", SubmissionState: "writing"},
+	} {
+		if safe, _ := view.forbidsUncertainReplay(); safe {
+			t.Errorf("an unreadable inspection was treated as safe: %+v", view)
+		}
+	}
+	// A resolved state may legitimately be offered a start; the reason must be
+	// reported from the state, not assumed.
+	resolved := ExecutionView{RunID: "run", RunState: "prepared", SubmissionState: "not_attempted", AllowedNext: []string{"inspect", "start"}}
+	safe, detail := resolved.forbidsUncertainReplay()
+	if !safe {
+		t.Fatalf("a pre-submission run offering start was refused: %s", detail)
+	}
+	if !strings.Contains(detail, "not_attempted") {
+		t.Fatalf("the safety reason does not cite the observed submission state: %s", detail)
+	}
+}
+
+func TestPartialIsADistinctClassRequiringScope(t *testing.T) {
+	matrix := NewMatrix()
+	// A partial row without a scope statement is refused: it would be
+	// indistinguishable from a full observation in the report.
+	if err := matrix.MarkPartial("recovery", CaseStaleOwnerFenced, "observed something", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := matrix.RequireComplete(); err == nil {
+		t.Fatal("a partial row with no scope statement was accepted")
+	}
+	if err := matrix.MarkPartial("recovery", CaseStaleOwnerFenced, "observed the refusal. NOT observed: fencing a real stale owner", ""); err != nil {
+		t.Fatal(err)
+	}
+	// A partial row is a gap, not a pass.
+	gaps := matrix.Gap()
+	found := false
+	for _, gap := range gaps {
+		if gap == CaseStaleOwnerFenced+": partial" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("a partial row is absent from the gap list: %v", gaps)
+	}
+}
+
 func TestFakeHostingBindsLoopbackAndClosesCleanly(t *testing.T) {
 	hosting, err := NewFakeHosting("github", "owner/repository", "main")
 	if err != nil {

@@ -32,6 +32,13 @@ deliberate: the gaps it records are the deliverable, not a failure of the tool.
 A nonzero exit means a stage *aborted*, which is a different and louder outcome,
 and the report says `aborted: true` in that case.
 
+`make scenario-guard-check` exercises the `SCENARIO_ROOT` guard against a battery
+of paths that must all be refused — a sibling directory, a `..` traversal, a
+nested subdirectory, a symlink, a trailing slash, `/etc`, a relative path and an
+empty value — using a sentinel directory it creates and removes itself. Every
+scenario target refuses a root that does not resolve to the documented
+`/tmp/vigil-stage-5.7-scenario`.
+
 `make scenario` writes `report.json` into its disposable root and prints the
 milestone, recovery and requirement tables. `make scenario-clean` removes that
 root; the runner itself never removes anything it did not create, and refuses a
@@ -80,9 +87,14 @@ for a repository the application itself prepared.
 
 ## Boundary and recovery cases
 
-Twenty cases, all decided: fifteen automated, two carried from accepted
-predecessor records, three `unmet` under 5.7-F1. Four of the fifteen are marked
-**partial** and name in their detail exactly what was and was not observed:
+Twenty cases, all decided: eleven fully automated, two carried from accepted
+predecessor records, three `unmet` under 5.7-F1, and four **partial**.
+
+A partial row is its own class, not a flavour of automated. It records that a
+narrower observation happened through the production path while the full property
+named by the case did not, and it is listed in the gap list, because a
+partially observed case is a gap. `RequireComplete` refuses a partial row that
+does not state what was not observed. The four are:
 
 | Case | Observed here | Not observed here |
 | --- | --- | --- |
@@ -91,7 +103,19 @@ predecessor records, three `unmet` under 5.7-F1. Four of the fifteen are marked
 | `mixed-user-and-agent-work-preserved` | a commit naming an out-of-scope path is refused and unrelated work is byte-identical afterwards | clearing and restoring a mixed user/agent change set |
 | `partial-multi-repository-restore-is-visible` | a restore naming three nonexistent identities is refused before touching any repository | a genuinely partial multi-repository restore |
 
-The remaining eleven were observed in full, including: pause refusing five
+The remaining eleven were observed in full. `controller-kill-leaves-unknown-outcome`
+is among them, and its detail is written from the observed durable state rather
+than from an assumed landing: on this run the loss landed with
+`submission_state=not_attempted` and `run_state=prepared`, so the report says
+exactly that. Where a kill lands is a race against the synthetic driver's speed,
+so the description is derived from the values each run observes and never claims a
+boundary it did not see — including the `writing` state, which it describes as
+in-flight and possibly already delivered rather than as "no effect". The
+uncertain-outcome branch, where a resubmission is an unproven repeat and must be
+refused, is carried by the accepted Stage 5.2 crash matrix and is not claimed
+here.
+
+Also observed in full: pause refusing five
 distinct dispatch commands and `continue` restoring them; a bounded stop
 preserving the artifact byte-identical; an exact resume refused with missing
 native history and a fresh-context choice producing a distinct attempt; a real
@@ -123,13 +147,17 @@ review evidence afterwards rather than reusing the prior result.
 
 ## Requirements
 
-All R01–R71 are classified. Every carried citation is **resolved** before use: the
-named record must be readable in this checkout, and an unreadable or absent
-record is demoted to a gate with the reason recorded. The check deliberately does
-*not* require the record's text to contain the requirement identifier — the
-predecessor records are narrative evidence documents keyed by slice-local finding
-IDs, so requiring that would reject substantively valid citations and replace one
-false claim with another.
+All R01–R71 are classified: 49 `automated`, 14 carried forward, 8 gates.
+
+**The citation check verifies resolvability only.** Each carried citation is
+confirmed to name a record that is readable in this checkout; an absent record
+would be demoted to a gate. It does *not* verify that the record's content covers
+the requirement, because those records are narrative documents keyed by
+slice-local finding IDs rather than by requirement identifiers. An earlier
+revision required the identifier to appear in the text, which rejected all 14
+substantively valid citations behind a false blocker — a second false claim in
+place of the first. The limitation is stated here rather than left implicit, and
+an independent reviewer spot-checked the citations substantively instead.
 
 R09 is a gate on its own merits: Jev was considered as an optional aid to
 model/task selection and no integration or evidence of benefit was ever recorded,
@@ -159,7 +187,8 @@ recorded as pending work.
 - Any real harness turn. Zero model turns ran; every execution used the labelled
   synthetic fixture driver.
 - Native macOS validation and the cross-build matrix.
-- `make check-race` across the whole tree, and `scenario-clean`/`--keep=false`.
+- `scenario-clean` and the `--keep=false` removal path, though the guard both share
+  is exercised by `make scenario-guard-check`.
 - The Docker opt-in, which this environment did not exercise.
 
 ## Pending Stage 8 inputs

@@ -43,6 +43,11 @@ cross-build:
 # removes its own disposable tree, and it refuses any root inside a repository so
 # it can never touch an operator's working copy.
 SCENARIO_ROOT ?= /tmp/vigil-stage-5.7-scenario
+# Exported so the guard and the recipes read one environment variable. The guard
+# uses `$$SCENARIO_ROOT` rather than a make substitution precisely so a value
+# containing a quote or a shell metacharacter cannot be interpolated into the
+# recipe text and executed before the guard has checked anything.
+export SCENARIO_ROOT
 SCENARIO_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null)
 
 build-scenario:
@@ -50,14 +55,19 @@ build-scenario:
 	CGO_ENABLED=0 $(GO) build -o bin/vigil ./cmd/vigil
 
 # The disposable root is created outside any checkout, and the scenario binary
-# refuses a root that already holds content. Before any `rm -rf`, the root is
-# resolved to a physical path and required to be the exact documented disposable
-# directory. A glob or a `..` suffix cannot satisfy this: the check compares the
-# resolved path, so `/tmp/vigil-stage-5.7-scenario/../../etc` is rejected.
+# refuses a root that already holds content. Before any `rm -rf`, the root must
+# resolve to the exact documented disposable directory.
+#
+# The value is passed through the environment rather than interpolated into the
+# recipe text, so a `'` in SCENARIO_ROOT cannot break out of the guard and run
+# before any check happens. The root is then also confined with `realpath` and
+# shell-quoted at every use.
 define scenario_root_guard
-	root='$(1)'; \
-	case "$$root" in *..*) echo "refusing to touch SCENARIO_ROOT=$$root: it contains a traversal component" >&2; exit 1 ;; esac; \
-	resolved=`cd "$$root" 2>/dev/null && pwd -P || echo "$$root"`; \
+	@root="$$SCENARIO_ROOT"; \
+	case "$$root" in *..*) \
+		echo "refusing to touch SCENARIO_ROOT=$$root: it contains a traversal component" >&2; exit 1 ;; \
+	esac; \
+	resolved=$$(cd "$$root" 2>/dev/null && pwd -P || realpath -m "$$root"); \
 	if [ "$$resolved" != "/tmp/vigil-stage-5.7-scenario" ]; then \
 		echo "refusing to touch SCENARIO_ROOT=$$root: it resolves to '$$resolved', not the documented disposable /tmp/vigil-stage-5.7-scenario" >&2; \
 		exit 1; \
@@ -65,10 +75,10 @@ define scenario_root_guard
 endef
 
 scenario: build-scenario
-	@$(call scenario_root_guard,$(SCENARIO_ROOT))
-	@rm -rf $(SCENARIO_ROOT)
-	@mkdir -p $(SCENARIO_ROOT)
-	./bin/vigil-scenario --binary bin/vigil --root $(SCENARIO_ROOT) \
+	@$(call scenario_root_guard)
+	@rm -rf -- "$$SCENARIO_ROOT"
+	@mkdir -p -- "$$SCENARIO_ROOT"
+	./bin/vigil-scenario --binary bin/vigil --root "$$SCENARIO_ROOT" \
 		--source-commit $(SCENARIO_COMMIT) --verbose
 
 # The same offline walkthrough, with the bounded local-inference capability
@@ -79,13 +89,42 @@ scenario: build-scenario
 # recorded pending item. It never falls back to a metered endpoint and never
 # enables production dispatch.
 scenario-live: build-scenario
-	@$(call scenario_root_guard,$(SCENARIO_ROOT))
-	@mkdir -p $(SCENARIO_ROOT)
-	./bin/vigil-scenario --binary bin/vigil --root $(SCENARIO_ROOT) \
+	@$(call scenario_root_guard)
+	@mkdir -p -- "$$SCENARIO_ROOT"
+	./bin/vigil-scenario --binary bin/vigil --root "$$SCENARIO_ROOT" \
 		--source-commit $(SCENARIO_COMMIT) --allow-local-inference --verbose
 
 # Removes only the agent-owned disposable scenario root, and only under the same
-# guard as the run itself.
+# guard as the run itself. The guard is also exercised automatically by
+# `make scenario-guard-check`.
 scenario-clean:
-	@$(call scenario_root_guard,$(SCENARIO_ROOT))
-	rm -rf $(SCENARIO_ROOT)
+	@$(call scenario_root_guard)
+	rm -rf -- "$$SCENARIO_ROOT"
+
+# Exercises the scenario-root guard against a battery of paths that must all be
+# refused, and against the one path that must be allowed. It creates only its own
+# sentinel directory under /tmp and removes it. This is what keeps the guard from
+# silently regressing into something that removes the wrong tree.
+scenario-guard-check:
+	@status=0; \
+	probe() { \
+		if $(MAKE) --no-print-directory scenario-clean SCENARIO_ROOT="$$1" >/dev/null 2>&1; then \
+			echo "FAIL: guard allowed SCENARIO_ROOT=$$1"; status=1; \
+		else \
+			echo "ok: refused SCENARIO_ROOT=$$1"; \
+		fi; \
+	}; \
+	sentinel=/tmp/vigil-scenario-guard-sentinel; \
+	rm -rf "$$sentinel"; mkdir -p "$$sentinel"; touch "$$sentinel/sentinel"; \
+	ln -sfn "$$sentinel" /tmp/vigil-scenario-guard-link; \
+	probe /tmp/vigil-scenario-guard-sentinel; \
+	probe /tmp/vigil-scenario-guard-sentinel/../vigil-scenario-guard-sentinel; \
+	probe /tmp/vigil-scenario-guard-sentinel/nested; \
+	probe /tmp/vigil-scenario-guard-link; \
+	probe /tmp/vigil-scenario-guard-sentinel/; \
+	probe /etc; \
+	probe relative/path; \
+	probe ""; \
+	rm -rf "$$sentinel" /tmp/vigil-scenario-guard-link; \
+	if [ -e "$$sentinel" ]; then echo "FAIL: the guard removed the sentinel"; status=1; else echo "ok: sentinel survived"; fi; \
+	exit $$status
