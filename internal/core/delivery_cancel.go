@@ -71,7 +71,10 @@ func (e *Engine) DeliveryStatus(ctx context.Context, operationID string) (Delive
 	// operation may legitimately have no journal row.
 	if result.State == "reconciled" {
 		var closureKind sql.NullString
-		if err := e.DB.SQL.QueryRowContext(ctx, "SELECT closure_kind FROM operations WHERE id=?", operationID).Scan(&closureKind); err == nil && closureKind.Valid {
+		if err := e.DB.SQL.QueryRowContext(ctx, "SELECT closure_kind FROM operations WHERE id=?", operationID).Scan(&closureKind); err != nil {
+			return result, err
+		}
+		if closureKind.Valid {
 			result.Attestation = e.findDeliveryAttestation(ctx, operationID)
 			if result.Attestation == "" {
 				result.Attestation = "closed by human attestation"
@@ -79,6 +82,16 @@ func (e *Engine) DeliveryStatus(ctx context.Context, operationID string) (Delive
 		}
 	}
 	return result, nil
+}
+
+// releaseClaim returns a claimed operation to the state it was found in. The
+// closure marker is never cleared, so a release can never turn an attested
+// closure back into a resumable operation.
+func (e *Engine) releaseClaim(ctx context.Context, operationID, priorState string) error {
+	return e.DB.Write(ctx, func(tx *store.Tx) error {
+		_, err := tx.ExecContext(ctx, "UPDATE operations SET state=? WHERE id=? AND state='reconciled' AND closure_kind IS NULL", priorState, operationID)
+		return err
+	})
 }
 
 // findDeliveryAttestation reads back the attestation a human recorded for this
@@ -171,6 +184,12 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 	// operation would re-attempt its external effect and falsify the
 	// attestation.
 	claimed := state == "reconciled"
+	// priorState is the state the operation is restored to if this
+	// reconciliation cannot decide. 'executing' is the resumable effect state
+	// and 'uncertain' is observation-only, so a claim must never silently
+	// downgrade an executing push: the operator's ability to re-execute it is
+	// exactly as it was found.
+	priorState := state
 	if claimed {
 		var closureKind sql.NullString
 		if err := e.DB.SQL.QueryRowContext(ctx, "SELECT closure_kind FROM operations WHERE id=?", operationID).Scan(&closureKind); err != nil {
@@ -179,6 +198,11 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 		if closureKind.Valid {
 			return DeliveryStatus{}, errors.New("delivery operation is closed by human attestation; a committed closure is never reopened by reconciliation")
 		}
+		// A resumed claim recovers the pre-claim state: a claim never records
+		// it, so the state is the operation's own last non-claim state, which
+		// the delivery journal distinguishes. 'uncertain' is the only state
+		// a bare claim can be certain about.
+		priorState = "uncertain"
 		var deliveryState string
 		if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM deliveries WHERE operation_id=?", operationID).Scan(&deliveryState); err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return DeliveryStatus{}, err
@@ -209,13 +233,10 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 	}
 	observation, closeAs, err := e.planDeliveryReconciliation(ctx, kind, operationID)
 	if err != nil {
-		// A blocked observation releases the claim so the operation is exactly
-		// as executable as it was found: the operator resolves the underlying
-		// ref or hosting request, then reconciles again.
-		if releaseErr := e.DB.Write(ctx, func(tx *store.Tx) error {
-			_, err := tx.ExecContext(ctx, "UPDATE operations SET state='uncertain' WHERE id=? AND state='reconciled'", operationID)
-			return err
-		}); releaseErr != nil {
+		// A blocked observation releases the claim to the exact state the
+		// operation was found in, so a resumable effect stays resumable and an
+		// observation-only operation stays observation-only.
+		if releaseErr := e.releaseClaim(ctx, operationID, priorState); releaseErr != nil {
 			return DeliveryStatus{}, fmt.Errorf("%w (the claimed operation could not be released: %v)", err, releaseErr)
 		}
 		return DeliveryStatus{}, err
@@ -274,6 +295,12 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 		return nil, errors.New("reconciliation closed automatically without proof the effect occurred; use delivery-close-unobserved to attest")
 	})
 	if err != nil {
+		// A failed closure transaction leaves the claim held. Release it, so a
+		// transient failure cannot strand the operation in a state no command
+		// can act on.
+		if releaseErr := e.releaseClaim(ctx, operationID, priorState); releaseErr != nil {
+			return DeliveryStatus{}, fmt.Errorf("%w (the claimed operation could not be released: %v)", err, releaseErr)
+		}
 		return DeliveryStatus{}, err
 	}
 	var reconciled DeliveryStatus
@@ -361,12 +388,16 @@ func (e *Engine) CloseUnobservedDelivery(ctx context.Context, commandID, operati
 // identity.
 func (e *Engine) planDeliveryReconciliation(ctx context.Context, kind, operationID string) (DeliveryStatus, string, error) {
 	// The push branch is the only one that can reach an external effect, so it
-	// must have a delivery journal to act on. An operation without one has no
-	// recorded effect to reconcile and must never be pushed to.
+	// must have a delivery journal to act on. The journal is written by
+	// push-execute before its effect, so an operation without one crashed in
+	// the window between starting and journaling. Re-running the push
+	// executable records the journal; reconciliation must not perform the
+	// effect itself, because a landing with no journal is a fact nothing could
+	// later record.
 	if kind == "push" {
 		var state string
 		if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM deliveries WHERE operation_id=?", operationID).Scan(&state); err != nil {
-			return DeliveryStatus{}, "", errors.New("push operation has no delivery journal; re-execute the push so its effect is recorded")
+			return DeliveryStatus{}, "", errors.New("push operation has no delivery journal because it started but never journaled; the claim is released, so re-run push-execute to journal and deliver it")
 		}
 	}
 	switch kind {

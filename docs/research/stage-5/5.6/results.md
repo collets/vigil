@@ -2,11 +2,12 @@
 
 <!-- vigil-tier: evidence -->
 
-Status: implementation in progress on `task/5.6-delivery-finalization`. Four
-independent antagonist reviews have run; `9777de0`, `ebf7f0f` and `0368227`
-were rejected and each was remediated on this branch. The current tip is not
-yet independently accepted, and nothing here is production-delivery
-qualification.
+Status: implementation in progress on `task/5.6-delivery-finalization`. Five
+independent antagonist reviews have run. `9777de0`, `ebf7f0f`, `0368227` and
+`7b758f8` were each rejected and remediated on this branch; the fifth returned a
+conditional verdict on `d5906ed`, whose remaining findings are remediated here.
+The current tip is not yet independently accepted, and nothing here is
+production-delivery qualification.
 
 ## Second independent review remediation
 
@@ -133,6 +134,42 @@ Also addressed from the same review:
   its attestation read-back on the marker rather than on `delivery_state`, so a
   journal-less closure is still labelled. A regression test drives the real
   crash window and asserts the remote stays untouched across two reconciles.
+
+- **Fifth review (conditional verdict on `d5906ed`):** it confirmed the P1
+  above is closed robustly, including under a 12-iteration race between
+  `delivery-reconcile` and `delivery-close-unobserved`, and that the closure
+  marker is tamper-proof (`CHECK` rejects any other value, no backfill, no
+  writer can clear it). It raised two P2s and several smaller findings, all
+  remediated here:
+  - The push-journal requirement was load-bearing but entirely unpinned —
+    removing it left the full suite green, and on an **unattested** crash
+    window reconcile would then push while the closure failed on the missing
+    journal, leaving a landed-but-unrecorded effect in a state no command could
+    close. A regression test now drives exactly that window and asserts both
+    that the remote is untouched and that the documented remedy works.
+  - A blocked reconcile downgraded an `executing` operation to `uncertain`.
+    Since `executing` is the resumable effect state and `uncertain` is
+    observation-only, a read-only `delivery-reconcile` permanently removed the
+    push the operator had been told to re-run. A blocked or failed reconcile
+    now releases the claim **to the exact state it found**, and the error names
+    the reachable remedy.
+  - A failed closure transaction could strand a held claim; it is now released
+    on that path too, and the release never clears a closure marker.
+  - `DeliveryStatus` swallowed a `closure_kind` read error, which is the exact
+    provenance-hiding failure the change exists to prevent; the error is
+    returned instead.
+  - The claim release now carries the same `closure_kind IS NULL` guard used
+    everywhere else, matching the marker as append-only.
+  - Documentation corrected: the attested closure is described accurately for a
+    journal-less delivery, and the L3 note records that `reconciled` is written
+    by both `delivery-reconcile` and `delivery-close-unobserved`.
+
+  The same review noted that the permanent tests model a push that has already
+  completed rather than one caught mid-flight by a blocking server-side
+  `pre-receive` hook. That specific interleaving is coverage, not a defect —
+  reconciliation closes only on positive proof — and is recorded here as an
+  accepted residual rather than claimed as covered.
+
 - **P3.4:** the dry-run retention receipt is identified by its recorded command
   kind and human actor (via the `command_applied` event), not by the JSON shape
   of its result.
@@ -227,10 +264,12 @@ branch closes all of them:
   acceptance evidence: it is `ready` while awaiting the runner, `running`
   while an attempt is active, and ends `stopped` after the verified
   narrative, with no acceptance row and no dispatch eligibility.
-- **L3:** `operations.state='reconciled'` is now written by
-  `delivery-reconcile`, and `archives.state='factual_ready'` is written by
-  `archive-build` (the first narrative attempt flips it to
-  `narrative_pending`); no schema value remains unwritten.
+- **L3:** `operations.state='reconciled'` is now written by both
+  `delivery-reconcile` (the transient claim, which is releasable) and
+  `delivery-close-unobserved` (the durable attested closure, marked by
+  `operations.closure_kind`), and `archives.state='factual_ready'` is written by
+  `archive-build` (the first narrative attempt flips it to `narrative_pending`);
+  no schema value remains unwritten.
 - **L4:** hosting HTTP clients never use an ambient proxy, so named
   credentials cannot leak through `HTTPS_PROXY`.
 - **M8 (handoff documentation):** the remaining live-delivery inputs are

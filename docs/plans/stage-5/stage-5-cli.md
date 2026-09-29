@@ -747,18 +747,23 @@ destination holds the approved head when reconcile re-checks it, that *is*
 proof the push landed and the operation closes as observed, so re-run
 `delivery-reconcile` rather than attesting. Reconciliation claims the operation
 while it works so no new executor starts an effect mid-decision, and releases
-the claim when blocked. A committed closure is never reopened: reconciliation
-refuses any operation carrying a durable closure marker, and a push with no
-delivery journal is never attempted, so an attested operation cannot later be
-pushed to.
+the claim **to the exact state it found** when blocked — a resumable `executing`
+operation stays resumable, so inspecting a stuck operation never silently
+removes the operator's ability to re-execute it. A delivery that started but
+never journaled is never attempted: reconciliation refuses it and points at
+`push-execute`, which journals before it delivers. A committed closure is never
+reopened: reconciliation refuses any operation carrying a durable closure
+marker, so an attested operation cannot later be pushed to.
 
 `delivery-close-unobserved` is the explicit **human-attested** exit for an
 operation the operator has verified externally did not take effect. The
 required `--attest` text is recorded in a human receipt, echoed in the result,
 and read back by `delivery-status`, so a later reader can always distinguish
 "the system proved this" from "a person asserted this". The operation becomes
-`reconciled` with a failed delivery, unblocking retention, and that closure is
-final — `delivery-reconcile` will not reopen it.
+`reconciled`, its delivery journal becomes `failed` where one exists, and
+retention stops pinning the plan. That closure is final — `delivery-reconcile`
+will not reopen it, and a delivery that started but never journaled has nothing
+to fail and is reported as such.
 
 ```sh
 ./bin/vigil --state-dir STATE project delivery-close-unobserved PROJECT_ID OPERATION_ID \

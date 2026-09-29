@@ -1292,12 +1292,20 @@ func TestReconcileNeverProvesNonOccurrenceAndAttestationIsExplicit(t *testing.T)
 	}
 	// The ref is untouched, so reconcile must NOT record a net-zero closure:
 	// an executor could be mid-effect and the system cannot prove otherwise.
+	// It must also release the claim to the exact state it found — 'executing'
+	// is resumable, 'uncertain' is observation-only, so downgrading would
+	// silently remove the operator's ability to re-execute the commit.
 	if _, err := e.ReconcileDelivery(ctx, "reconcile-untouched-commit", prepared.OperationID); err == nil {
 		t.Fatal("reconcile closed an unobserved effect without proof")
 	}
 	var state, deliveryState string
-	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM operations WHERE id=?", prepared.OperationID).Scan(&state); err != nil || state != "uncertain" {
-		t.Fatalf("blocked reconcile left the operation %q: %v", state, err)
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM operations WHERE id=?", prepared.OperationID).Scan(&state); err != nil || state != "executing" {
+		t.Fatalf("blocked reconcile left the operation %q, not the state it found: %v", state, err)
+	}
+	// A claim is never left held by a failed or blocked reconciliation.
+	var closureKind sql.NullString
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT closure_kind FROM operations WHERE id=?", prepared.OperationID).Scan(&closureKind); err != nil || closureKind.Valid {
+		t.Fatalf("blocked reconcile left a closure marker: %v %v", closureKind, err)
 	}
 	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM deliveries WHERE operation_id=?", prepared.OperationID).Scan(&deliveryState); err != nil || deliveryState != "uncertain" {
 		t.Fatalf("blocked reconcile closed the journal: %q %v", deliveryState, err)
@@ -1459,6 +1467,76 @@ func TestReconcileNeverReopensAnAttestedClosure(t *testing.T) {
 	// The plan ref is untouched by any of this.
 	if got, err := deliveryGit(ctx, p.Root, nil, nil, "rev-parse", "--verify", "--end-of-options", "refs/heads/"+record.PlanBranch+"^{commit}"); err != nil || got != committed.CommitOID {
 		t.Fatalf("local plan ref moved: %s %v", got, err)
+	}
+}
+
+func TestReconcileNeverPushesAStartedOperationWithNoJournal(t *testing.T) {
+	_, e, p := setup(t)
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	if b, err := exec.Command("git", "init", "--bare", "-q", remote).CombinedOutput(); err != nil {
+		t.Fatalf("bare fixture: %v %s", err, b)
+	}
+	seedAcceptedPlanWithChange(t, e, true, remote)
+	ctx := context.Background()
+	record, err := e.Repository(ctx, "fixture-repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := exec.Command("git", "-C", p.Root, "push", "-q", "origin", record.BaseOID+":refs/heads/main").CombinedOutput(); err != nil {
+		t.Fatalf("seed remote base: %v %s", err, b)
+	}
+	commit, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "prepare-unattested-window", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Unattested window", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: commit.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	committed, err := e.ExecuteCommit(ctx, commit.OperationID, grant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	push, err := e.PreparePush(ctx, PushRequest{CommandID: "prepare-unattested-remote", PlanID: "plan", RepositoryID: "fixture-repo", RemoteName: "origin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushGrant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: push.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	start, err := e.deliveryEnvelope(ctx, store.Digest([]byte("delivery.push.start\x00"+push.OperationID)), "operation.start", map[string]string{"operation_id": push.OperationID, "grant_id": pushGrant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(ctx, Core, start); err != nil {
+		t.Fatal(err)
+	}
+	// The unattested crash window: operation.start committed as executing, the
+	// journal INSERT did not. The push branch is the only reconciliation branch
+	// that reaches an external effect, so it must refuse here — otherwise a
+	// landing would occur that nothing could record, leaving the operation in a
+	// state no command can close.
+	var state string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM operations WHERE id=?", push.OperationID).Scan(&state); err != nil || state != "executing" {
+		t.Fatalf("crash-window precondition: %q %v", state, err)
+	}
+	if _, err := e.ReconcileDelivery(ctx, "reconcile-unattested-window", push.OperationID); err == nil {
+		t.Fatal("reconcile accepted a journal-less push")
+	}
+	if out, err := exec.Command("git", "--git-dir", remote, "rev-parse", "refs/heads/"+record.PlanBranch).Output(); err == nil {
+		t.Fatalf("reconcile pushed an operation with no journal: %s", out)
+	}
+	// The claim is released to the state it found, so the push stays resumable
+	// and the documented remedy actually works.
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM operations WHERE id=?", push.OperationID).Scan(&state); err != nil || state != "executing" {
+		t.Fatalf("refused reconcile downgraded the operation to %q: %v", state, err)
+	}
+	var closureKind sql.NullString
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT closure_kind FROM operations WHERE id=?", push.OperationID).Scan(&closureKind); err != nil || closureKind.Valid {
+		t.Fatalf("refused reconcile left a closure marker: %v %v", closureKind, err)
+	}
+	result, err := e.ExecutePush(ctx, push.OperationID, "")
+	if err != nil || result.State != "succeeded" {
+		t.Fatalf("the documented remedy did not work: %#v %v", result, err)
+	}
+	if out, err := exec.Command("git", "--git-dir", remote, "rev-parse", "refs/heads/"+record.PlanBranch).Output(); err != nil || strings.TrimSpace(string(out)) != committed.CommitOID {
+		t.Fatalf("re-executed push did not deliver the approved head: %s %v", out, err)
 	}
 }
 
@@ -1726,7 +1804,7 @@ func TestCommitReconciliationClosesStuckOperationByObservation(t *testing.T) {
 	}
 	// A blocked reconciliation must leave the operation exactly as executable
 	// as it found it, so the operator can resolve the ref and retry.
-	if status, err := e.DeliveryStatus(ctx, prepared.OperationID); err != nil || status.State != "uncertain" {
+	if status, err := e.DeliveryStatus(ctx, prepared.OperationID); err != nil || status.State != "executing" {
 		t.Fatalf("blocked reconciliation left the operation %q: %#v %v", status.State, status, err)
 	}
 	if _, err := deliveryGit(ctx, p.Root, nil, nil, "rev-parse", "--verify", "--end-of-options", prepared.Intent.TargetRef+"^{commit}"); err != nil {
