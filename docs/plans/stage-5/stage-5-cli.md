@@ -800,11 +800,14 @@ modified.
 ```
 
 `archive-show` re-verifies the manifest and all referenced durable artifacts.
-`archive-export` requires a new absolute directory with no symlink ancestor,
-copies verified content-addressed artifacts, and writes portable relative
-references plus separately typed external URLs. It never overwrites an export.
-The private application state directory remains authoritative; export is an
-explicit copy, not a Git commit or publication.
+`archive-export` requires a new absolute directory whose **named parent is a
+real directory, not a symbolic link**, copies verified content-addressed
+artifacts, and writes portable relative references plus separately typed
+external URLs. Ancestors above that parent are not rejected, because platform
+roots are legitimately symbolic links (macOS resolves `/var` and `/tmp` through
+`/private`); the export is confined to the resolved parent from that point on.
+It never overwrites an export. The private application state directory remains
+authoritative; export is an explicit copy, not a Git commit or publication.
 
 `archive-narrative` is a synthetic fixture gate only. The repository must carry
 the disposable-fixture marker and have fixture acceptance. The JSON file must

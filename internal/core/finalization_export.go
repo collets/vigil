@@ -159,19 +159,19 @@ func safeExportParent(destination string) (*os.Root, string, error) {
 	if name == "." || name == string(filepath.Separator) || name == ".." {
 		return nil, "", errors.New("export destination must be a new named directory")
 	}
-	for path := parentPath; ; path = filepath.Dir(path) {
-		info, err := os.Lstat(path)
-		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return nil, "", errors.New("export parent contains a missing or symbolic-link directory")
-		}
-		if filepath.Dir(path) == path {
-			break
-		}
+	// The directory the operator named must itself be a real directory, not a
+	// symbolic link: an alias there is the redirection this check exists to
+	// refuse. Ancestors above it are deliberately NOT rejected, because system
+	// roots are legitimately symbolic links on some platforms (macOS resolves
+	// /var and /tmp through /private), and those are the OS's own layout rather
+	// than anything the operator controls. os.OpenRoot then confines every
+	// subsequent operation to the resolved parent, so an ancestor symlink cannot
+	// redirect the export once this point is passed.
+	info, err := os.Lstat(parentPath)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, "", errors.New("export parent must be an existing real directory, not a symbolic link")
 	}
-	before, err := os.Lstat(parentPath)
-	if err != nil {
-		return nil, "", err
-	}
+	before := info
 	root, err := os.OpenRoot(parentPath)
 	if err != nil {
 		return nil, "", err

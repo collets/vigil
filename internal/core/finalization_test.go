@@ -401,6 +401,51 @@ func TestArchiveExportIsPortableAndRefusesSymlinkParent(t *testing.T) {
 	}
 }
 
+// A platform root reached through a symbolic link (macOS resolves /var and
+// /tmp through /private) is the operating system's own layout, not an operator
+// redirection, so a real directory beneath it must export successfully. Only
+// the directory the operator named is required to be a real directory. This
+// fails on Linux if the ancestor walk is restored.
+func TestArchiveExportAllowsSystemSymlinkedAncestors(t *testing.T) {
+	_, e, _ := setup(t)
+	seedAcceptedPlan(t, e)
+	ctx := context.Background()
+	archive, err := e.BuildFactualArchive(ctx, "archive-for-ancestor", "plan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Build the same shape macOS presents: <root>/alias -> <real>.
+	real := t.TempDir()
+	systemRoot := filepath.Join(t.TempDir(), "var")
+	if err := os.Mkdir(systemRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(systemRoot, "private")
+	if err := os.Symlink(real, alias); err != nil {
+		t.Fatal(err)
+	}
+	work := filepath.Join(alias, "operator-dir")
+	if err := os.Mkdir(work, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(work, "bundle")
+	if _, err := e.ExportArchive(ctx, "plan", archive.Revision, destination); err != nil {
+		t.Fatalf("export refused a real directory beneath a system symlinked ancestor: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(destination, "manifest.json")); err != nil {
+		t.Fatalf("export did not materialize below the system ancestor: %v", err)
+	}
+	// The operator-named directory must still be a real directory: an alias
+	// there remains a refusal, because that is the redirection under test.
+	aliasParent := filepath.Join(real, "alias")
+	if err := os.Symlink(work, aliasParent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.ExportArchive(ctx, "plan", archive.Revision, filepath.Join(aliasParent, "redirected")); err == nil {
+		t.Fatal("export followed a symbolic link in the named parent directory")
+	}
+}
+
 func TestDefaultPlanArchiveViewIsLocalGitIgnoredAndFingerprintNeutral(t *testing.T) {
 	_, e, p := setup(t)
 	seedAcceptedPlan(t, e)

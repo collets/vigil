@@ -2,12 +2,29 @@
 
 <!-- vigil-tier: evidence -->
 
-Status: implementation in progress on `task/5.6-delivery-finalization`. Five
+Status: implementation in progress on `task/5.6-delivery-finalization`. Six
 independent antagonist reviews have run. `9777de0`, `ebf7f0f`, `0368227` and
-`7b758f8` were each rejected and remediated on this branch; the fifth returned a
-conditional verdict on `d5906ed`, whose remaining findings are remediated here.
-The current tip is not yet independently accepted, and nothing here is
-production-delivery qualification.
+`7b758f8` were each rejected and remediated on this branch; `d5906ed` and
+`3ec4065` received conditional verdicts, both remediated. The current tip has
+not yet been independently accepted, and nothing here is production-delivery
+qualification.
+
+## Native macOS validation
+
+Native macOS validation of the candidate on an agent-owned detached worktree
+(never the user's checkout) found a genuine platform defect that the Linux
+suite could not: `archive-export` refused every legitimate destination. The
+parent walk rejected **any** symbolic link in the ancestor chain, but macOS
+resolves its platform roots through `/private` — `/var` and `/tmp` are both
+symbolic links — so a real operator directory beneath them was refused. The
+check now requires the directory the operator **named** to be a real directory,
+and no longer rejects ancestors above it, which is the operating system's own
+layout rather than an operator redirection; `os.OpenRoot` confines every
+subsequent operation to the resolved parent. A permanent Linux-runnable test
+reproduces the macOS shape (`<root>/var/private -> <real>`, with a real operator
+directory beneath it), asserts the export succeeds there, and still asserts
+that an alias in the *named* parent is refused. Reverting the fix fails that
+test. This is exactly the class of defect the native gate exists to find.
 
 ## Second independent review remediation
 
