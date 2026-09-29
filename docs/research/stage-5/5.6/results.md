@@ -35,14 +35,15 @@ directory beneath it), asserts the export succeeds there, and still asserts
 that an alias in the *named* parent is refused. Reverting the fix fails that
 test. This is exactly the class of defect the native gate exists to find.
 
-Exact-commit native macOS gates then pass at `b42afe1`, run on macOS 26.6.2
-arm64 with the pinned Go 1.27.1 (Homebrew) and Apple Git 2.54.0, in an
-agent-owned detached worktree at `/tmp/vigil-stage56-*`:
+Exact-commit native macOS gates then pass at `b42afe1` and again at the
+current tip `9ef3a98`, run on macOS 26.6.2 arm64 with the pinned Go 1.27.1
+(Homebrew) and Apple Git 2.54.0, in an agent-owned detached worktree under
+`/tmp`:
 
 | Gate | Result |
 | --- | --- |
-| `make check` (vet + full suite) | pass — all packages `ok`, `internal/core` 39.5s |
-| `make check-race` (native darwin/arm64) | pass — every package `ok`, `internal/core` 116.3s, `internal/quality` 193.3s |
+| `make check` (vet + full suite) | pass — all packages `ok` |
+| `make check-race` (native darwin/arm64) | pass — every package `ok`, `internal/quality` 198.4s |
 | `make build` | pass |
 | `make build-boundary` | pass |
 | `make docs-check` | pass |
@@ -52,11 +53,12 @@ agent-owned detached worktree at `/tmp/vigil-stage56-*`:
 
 The worktree was then removed and the user's normal checkout verified
 unchanged (`main` at `19ebc42`, clean). Permission changes during cleanup were
-confined to the identified agent worktree, and the transferred bundle and path
-marker were deleted. The Mac has no GitHub SSH credential, so the exact commit
-was transferred as a git bundle and fetched into the existing repository; object
-identity and the SHA were preserved and verified before validation, and the
-validated SHA is `b42afe1caec3cdbbe1af149dc8186daf47145a77`.
+confined to the identified agent worktree, and the transferred bundles and path
+markers were deleted. The Mac has no GitHub SSH credential, so each exact
+commit was transferred as a git bundle and fetched into the existing
+repository; object identity and the SHA were preserved and verified before
+validation. The validated tip is
+`9ef3a9805f3c7e7ef493c442ba81e979de658126`.
 
 Not exercised natively: no live model turn, no credentialed or real hosted
 remote, and no production dispatch. Those gates remain closed.
