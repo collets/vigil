@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"vigil/internal/store"
 )
@@ -23,6 +24,9 @@ type DeliveryStatus struct {
 	// resolve a diverged observation: the ref or destination the operation was
 	// approved against, and the object it would have produced.
 	ApprovedTargets []string `json:"approved_targets,omitempty"`
+	// Attestation is set only by CloseUnobservedDelivery. It is a human
+	// decision of record, never a system proof that the effect did not occur.
+	Attestation string `json:"attestation,omitempty"`
 }
 
 func (e *Engine) DeliveryStatus(ctx context.Context, operationID string) (DeliveryStatus, error) {
@@ -42,11 +46,11 @@ func (e *Engine) DeliveryStatus(ctx context.Context, operationID string) (Delive
 	switch result.Kind {
 	case "commit":
 		if intent, _, err := e.loadCommitIntent(ctx, operationID); err == nil {
-			result.ApprovedTargets = []string{"target_ref=" + intent.TargetRef, "approved_predecessor=" + intent.ExpectedRefOID, "approved_tree=" + intent.TreeOID}
+			result.ApprovedTargets = []string{"target_ref=" + intent.TargetRef, "approved_predecessor=" + approvedRef(intent.ExpectedRefOID), "approved_tree=" + intent.TreeOID}
 		}
 	case "push":
 		if intent, _, err := e.loadPushIntent(ctx, operationID); err == nil {
-			result.ApprovedTargets = []string{"remote_ref=" + intent.RemoteRef, "approved_predecessor=" + intent.ExpectedRemoteOID, "approved_head=" + intent.HeadOID}
+			result.ApprovedTargets = []string{"remote_ref=" + intent.RemoteRef, "approved_predecessor=" + approvedRef(intent.ExpectedRemoteOID), "approved_head=" + intent.HeadOID}
 		}
 	case "draft_request":
 		if intent, _, err := e.loadDraftIntent(ctx, operationID); err == nil {
@@ -91,14 +95,24 @@ func (e *Engine) CancelPreparedDelivery(ctx context.Context, commandID, operatio
 	return result, nil
 }
 
-// ReconcileDelivery closes a stuck executing or uncertain delivery operation
-// with a fresh exact observation. It closes only when the approved end state
-// was reached (observed/succeeded) or the approved prior state still holds
-// (reconciled/failed: provably no net effect). Any other observation — a ref
-// or remote that moved, or a hosting listing without the exact draft — is
-// reported and left open, because absence is not proof of non-delivery and a
-// moved destination is a human decision. Reconciliation itself has no external
-// effect: it never moves refs, pushes or POSTs.
+// ReconcileDelivery resolves a stuck executing or uncertain delivery operation
+// from a fresh exact observation.
+//
+// Automatic closure is deliberately limited to POSITIVE proof that the
+// approved effect happened (observed/succeeded). Nothing automatic ever asserts
+// that an unobserved effect did not occur: no durable state can distinguish an
+// executor mid-effect from one that crashed mid-effect, so a point-in-time
+// observation cannot prove non-occurrence.
+//
+// For a push whose destination still holds the approved predecessor, the
+// reconciler re-attempts the identical non-force OID:ref push, which is
+// idempotent — a no-op if the first push landed, the delivery if it did not,
+// and a Git rejection (leaving the operation open) if a third party moved the
+// destination. No other kind is retried, and no other outcome closes
+// automatically. Everything else — a ref or remote moved by a third party, or
+// a hosting listing without the exact draft — is reported with its approved
+// operands and left open for CloseUnobservedDelivery's explicit human
+// attestation.
 func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID string) (DeliveryStatus, error) {
 	if !store.SafeID(commandID) || !store.SafeID(operationID) {
 		return DeliveryStatus{}, errors.New("exact reconciliation command and operation IDs required")
@@ -187,9 +201,7 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 				return nil, errors.New("delivery journal changed before reconciliation closure")
 			}
 		}
-		closed := observation
-		closed.OperationID, closed.State, closed.DeliveryState = operationID, "reconciled", "failed"
-		return closed, nil
+		return nil, errors.New("reconciliation closed automatically without proof the effect occurred; use delivery-close-unobserved to attest")
 	})
 	if err != nil {
 		return DeliveryStatus{}, err
@@ -201,9 +213,79 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 	return reconciled, nil
 }
 
-// observeDeliveryForReconciliation reads the current exact external state of
-// one delivery operation and decides the only two provable closures. The
-// returned partial status carries the observed identity.
+// CloseUnobservedDelivery is the explicit, human-attested exit for a delivery
+// operation whose external effect could not be positively observed. The system
+// cannot prove non-occurrence — an executor mid-effect is indistinguishable
+// from one that crashed mid-effect — so this records an operator decision of
+// record, never a system proof: the receipt states that a human attested, and
+// carries the fresh observation it was taken against.
+func (e *Engine) CloseUnobservedDelivery(ctx context.Context, commandID, operationID, attestation string) (DeliveryStatus, error) {
+	if !store.SafeID(commandID) || !store.SafeID(operationID) {
+		return DeliveryStatus{}, errors.New("exact attestation command and operation IDs required")
+	}
+	if len(attestation) < 1 || len(attestation) > store.MaxDocument || strings.TrimSpace(attestation) == "" {
+		return DeliveryStatus{}, errors.New("an explicit human attestation describing the verified external state is required")
+	}
+	var kind, state string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT kind,state FROM operations WHERE id=? AND kind IN ('commit','push','draft_request')", operationID).Scan(&kind, &state); err != nil {
+		return DeliveryStatus{}, errors.New("delivery operation not found")
+	}
+	if state != "executing" && state != "uncertain" {
+		return DeliveryStatus{}, errors.New("only an executing or uncertain delivery can be closed by attestation")
+	}
+	args, _ := json.Marshal(map[string]string{"operation_id": operationID, "kind": kind, "attestation": attestation})
+	receipt, err := e.DB.Command(ctx, store.Command{ID: commandID, Actor: "human", Kind: "delivery.close_unobserved", Args: args}, func(tx *store.Tx) (any, error) {
+		var currentState string
+		if err := tx.QueryRowContext(ctx, "SELECT state FROM operations WHERE id=?", operationID).Scan(&currentState); err != nil ||
+			(currentState != "executing" && currentState != "uncertain") {
+			return nil, errors.New("delivery operation changed before attestation")
+		}
+		var deliveryState string
+		hasRow := true
+		if err := tx.QueryRowContext(ctx, "SELECT state FROM deliveries WHERE operation_id=?", operationID).Scan(&deliveryState); err != nil {
+			if !errors.Is(err, sql.ErrNoRows) {
+				return nil, err
+			}
+			hasRow = false
+		}
+		if hasRow {
+			updated, err := tx.ExecContext(ctx, "UPDATE deliveries SET state='failed' WHERE operation_id=? AND state IN ('pending','uncertain')", operationID)
+			if err != nil {
+				return nil, err
+			}
+			if count, err := updated.RowsAffected(); err != nil || count != 1 {
+				return nil, errors.New("delivery journal changed before attestation")
+			}
+		}
+		updated, err := tx.ExecContext(ctx, "UPDATE operations SET state='reconciled' WHERE id=? AND state IN ('executing','uncertain')", operationID)
+		if err != nil {
+			return nil, err
+		}
+		if count, err := updated.RowsAffected(); err != nil || count != 1 {
+			return nil, errors.New("delivery operation changed before attestation")
+		}
+		status := DeliveryStatus{OperationID: operationID, Kind: kind, State: "reconciled", Attestation: attestation}
+		if hasRow {
+			status.DeliveryState = "failed"
+		}
+		return status, nil
+	})
+	if err != nil {
+		return DeliveryStatus{}, err
+	}
+	var closed DeliveryStatus
+	if err := json.Unmarshal(receipt, &closed); err != nil {
+		return DeliveryStatus{}, err
+	}
+	return closed, nil
+}
+
+// planDeliveryReconciliation reads the current exact external state of one
+// delivery operation and decides whether the approved effect is positively
+// observed. A push whose destination still holds the approved predecessor is
+// re-attempted idempotently first (see retryUnobservedPush); nothing else
+// closes automatically. The returned partial status carries the observed
+// identity.
 func (e *Engine) planDeliveryReconciliation(ctx context.Context, kind, operationID string) (DeliveryStatus, string, error) {
 	switch kind {
 	case "commit":
@@ -224,17 +306,11 @@ func (e *Engine) planDeliveryReconciliation(ctx context.Context, kind, operation
 		if journaled != "" && journaled != intent.ParentOID && current == journaled {
 			return DeliveryStatus{Kind: kind, DeliveryID: commitDeliveryID(operationID), Observation: current}, "observed", nil
 		}
-		if current == intent.ExpectedRefOID {
-			observed := "absent"
-			if current != "" {
-				observed = current
-			}
-			return DeliveryStatus{Kind: kind, DeliveryID: commitDeliveryID(operationID), Observation: observed}, "reconciled", nil
-		}
-		if current == "" {
-			return DeliveryStatus{}, "", errors.New("plan ref disappeared; resolve the ref before reconciling")
-		}
-		return DeliveryStatus{}, "", fmt.Errorf("plan ref is %s, not the approved predecessor %q or the approved commit %q; resolve the ref before reconciling", current, intent.ExpectedRefOID, journaled)
+		// The ref is not at the journaled commit. A local compare-and-swap is
+		// atomic, so this is either untouched or a third party moved it; the
+		// difference is not provable and the plan ref must never be moved by
+		// reconciliation.
+		return DeliveryStatus{}, "", fmt.Errorf("plan ref is %s, not the approved commit %s; its local update is atomic, so resolve the ref yourself or attest the outcome", approvedRef(current), journaled)
 	case "push":
 		intent, _, err := e.loadPushIntent(ctx, operationID)
 		if err != nil {
@@ -252,16 +328,15 @@ func (e *Engine) planDeliveryReconciliation(ctx context.Context, kind, operation
 			return DeliveryStatus{Kind: kind, DeliveryID: pushDeliveryID(operationID), Observation: remote}, "observed", nil
 		}
 		if remote == intent.ExpectedRemoteOID {
-			observed := "absent"
-			if remote != "" {
-				observed = remote
-			}
-			return DeliveryStatus{Kind: kind, DeliveryID: pushDeliveryID(operationID), Observation: observed}, "reconciled", nil
+			// The destination still holds the approved predecessor. The first
+			// push either never landed or landed and was moved back; a
+			// point-in-time read cannot tell. Re-attempt the identical non-force
+			// OID:ref push, which is a no-op if it landed, delivers if it did
+			// not, and is rejected if a third party moved the destination.
+			return e.retryUnobservedPush(ctx, operationID, intent, record, env)
 		}
-		if remote == "" {
-			return DeliveryStatus{}, "", errors.New("remote ref disappeared; resolve the remote before reconciling")
-		}
-		return DeliveryStatus{}, "", fmt.Errorf("remote ref is %s, not the approved predecessor %q or the approved head %q; resolve the remote before reconciling", remote, intent.ExpectedRemoteOID, intent.HeadOID)
+		return DeliveryStatus{}, "", fmt.Errorf("remote ref is %s, not the approved predecessor %q or the approved head %q; a third party moved the destination, so resolve it yourself or attest the outcome",
+			remote, intent.ExpectedRemoteOID, intent.HeadOID)
 	case "draft_request":
 		intent, _, err := e.loadDraftIntent(ctx, operationID)
 		if err != nil {
@@ -281,7 +356,44 @@ func (e *Engine) planDeliveryReconciliation(ctx context.Context, kind, operation
 			return DeliveryStatus{Kind: kind, DeliveryID: draftDeliveryID(operationID), ExternalID: hosted.ExternalID, URL: hosted.URL,
 				Observation: hosted.ExternalID}, "observed", nil
 		}
-		return DeliveryStatus{}, "", errors.New("exact draft absent from a bounded listing; absence is not proof of non-delivery, so the operation stays open for manual remediation")
+		return DeliveryStatus{}, "", errors.New("exact draft absent from a bounded listing; absence is not proof of non-delivery, so the operation stays open for manual remediation or attestation")
 	}
 	return DeliveryStatus{}, "", errors.New("unsupported delivery kind")
+}
+
+func approvedRef(oid string) string {
+	if oid == "" {
+		return "<absent>"
+	}
+	return oid
+}
+
+// retryUnobservedPush re-attempts the exact approved push and reports the
+// result. The refspec is the deterministic approved OID and the same
+// destination, without force, so the re-attempt is idempotent: Git reports
+// everything up to date if the first push landed, delivers the object if it
+// did not, and rejects a non-fast-forward if another writer moved the
+// destination. It never overwrites and never widens the approved ref.
+func (e *Engine) retryUnobservedPush(ctx context.Context, operationID string, intent PushIntent, record RepositoryRecord, env []string) (DeliveryStatus, string, error) {
+	// The destination must still be the approved predecessor immediately
+	// before the effect, so a ref that advanced during this read is not
+	// pushed over.
+	fresh, err := observedRemoteRef(ctx, record, intent.RemoteURL, intent.RemoteRef, env)
+	if err != nil {
+		return DeliveryStatus{}, "", err
+	}
+	if fresh != intent.ExpectedRemoteOID {
+		return DeliveryStatus{}, "", fmt.Errorf("remote ref changed to %s during reconciliation; resolve the destination yourself or attest the outcome", approvedRef(fresh))
+	}
+	_, pushErr := isolatedRemoteGit(ctx, record, env, true, "-c", "push.default=nothing", "push", "--porcelain", "--no-verify", "--no-follow-tags",
+		"--recurse-submodules=no", intent.RemoteURL, intent.HeadOID+":"+intent.RemoteRef)
+	after, err := observedRemoteRef(ctx, record, intent.RemoteURL, intent.RemoteRef, env)
+	if err != nil {
+		return DeliveryStatus{}, "", err
+	}
+	if after == intent.HeadOID {
+		return DeliveryStatus{Kind: "push", DeliveryID: pushDeliveryID(operationID), Observation: after}, "observed", nil
+	}
+	_ = pushErr
+	return DeliveryStatus{}, "", fmt.Errorf("re-attempted the approved push but the destination is now %s; the approved head was not confirmed, so the operation stays open for manual resolution or attestation", approvedRef(after))
 }

@@ -1241,6 +1241,131 @@ func TestFinalizationTaskLifecycleIsVisibleAndNeverAccepted(t *testing.T) {
 	}
 }
 
+func TestReconcileNeverProvesNonOccurrenceAndAttestationIsExplicit(t *testing.T) {
+	_, e, _ := setup(t)
+	seedAcceptedPlanWithChange(t, e, true)
+	ctx := context.Background()
+	prepared, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "prepare-attest-commit", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Attest fixture", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: prepared.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	start, err := e.deliveryEnvelope(ctx, store.Digest([]byte("delivery.start\x00"+prepared.OperationID)), "operation.start", map[string]string{"operation_id": prepared.OperationID, "grant_id": grant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(ctx, Core, start); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, `INSERT INTO deliveries(id,plan_id,repository_id,operation_id,kind,state,head_oid)
+		VALUES(?,?,?,?, 'commit','uncertain',?)`, commitDeliveryID(prepared.OperationID), "plan", "fixture-repo", prepared.OperationID, prepared.Intent.ParentOID); err != nil {
+		t.Fatal(err)
+	}
+	// The ref is untouched, so reconcile must NOT record a net-zero closure:
+	// an executor could be mid-effect and the system cannot prove otherwise.
+	if _, err := e.ReconcileDelivery(ctx, "reconcile-untouched-commit", prepared.OperationID); err == nil {
+		t.Fatal("reconcile closed an unobserved effect without proof")
+	}
+	var state, deliveryState string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM operations WHERE id=?", prepared.OperationID).Scan(&state); err != nil || state != "uncertain" {
+		t.Fatalf("blocked reconcile left the operation %q: %v", state, err)
+	}
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM deliveries WHERE operation_id=?", prepared.OperationID).Scan(&deliveryState); err != nil || deliveryState != "uncertain" {
+		t.Fatalf("blocked reconcile closed the journal: %q %v", deliveryState, err)
+	}
+	// A human attestation is the explicit exit, and is labelled as such.
+	if _, err := e.CloseUnobservedDelivery(ctx, "attest-without-reason", prepared.OperationID, "   "); err == nil {
+		t.Fatal("an empty attestation closed the operation")
+	}
+	closed, err := e.CloseUnobservedDelivery(ctx, "attest-commit", prepared.OperationID, "verified the plan ref is still at the approved predecessor")
+	if err != nil || closed.State != "reconciled" || closed.DeliveryState != "failed" || closed.Attestation == "" {
+		t.Fatalf("human attestation: %#v %v", closed, err)
+	}
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM operations WHERE id=?", prepared.OperationID).Scan(&state); err != nil || state != "reconciled" {
+		t.Fatalf("attested operation state %q: %v", state, err)
+	}
+	// A completed attestation cannot be repeated, and the status of a
+	// never-started plan shows an explicit absent predecessor rather than an
+	// empty operand, which is when an operator most needs it.
+	if status, err := e.DeliveryStatus(ctx, prepared.OperationID); err != nil || len(status.ApprovedTargets) != 3 ||
+		!slices.Contains(status.ApprovedTargets, "approved_predecessor=<absent>") {
+		t.Fatalf("approved operands: %#v %v", status.ApprovedTargets, err)
+	}
+	// The receipt records that a human attested, not that the system proved it.
+	var actor, raw string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT actor,result_json FROM command_receipts WHERE id='attest-commit'").Scan(&actor, &raw); err != nil || actor != "human" {
+		t.Fatalf("attestation receipt: %q %v", actor, err)
+	}
+	if !strings.Contains(raw, "attestation") {
+		t.Fatalf("attestation receipt is not labelled: %s", raw)
+	}
+	// A completed attestation cannot be repeated.
+	if _, err := e.CloseUnobservedDelivery(ctx, "attest-again", prepared.OperationID, "second claim"); err == nil {
+		t.Fatal("an attested operation was closed again")
+	}
+}
+
+func TestPushReconciliationRetriesIdempotentlyWhenDestinationIsAtPredecessor(t *testing.T) {
+	_, e, p := setup(t)
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	if b, err := exec.Command("git", "init", "--bare", "-q", remote).CombinedOutput(); err != nil {
+		t.Fatalf("bare fixture: %v %s", err, b)
+	}
+	seedAcceptedPlanWithChange(t, e, true, remote)
+	ctx := context.Background()
+	record, err := e.Repository(ctx, "fixture-repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := exec.Command("git", "-C", p.Root, "push", "-q", "origin", record.BaseOID+":refs/heads/main").CombinedOutput(); err != nil {
+		t.Fatalf("seed remote base: %v %s", err, b)
+	}
+	commit, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "prepare-retry-push", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Retry fixture", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: commit.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	committed, err := e.ExecuteCommit(ctx, commit.OperationID, grant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	push, err := e.PreparePush(ctx, PushRequest{CommandID: "prepare-retry-remote", PlanID: "plan", RepositoryID: "fixture-repo", RemoteName: "origin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushGrant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: push.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	start, err := e.deliveryEnvelope(ctx, store.Digest([]byte("delivery.push.start\x00"+push.OperationID)), "operation.start", map[string]string{"operation_id": push.OperationID, "grant_id": pushGrant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(ctx, Core, start); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, `INSERT INTO deliveries(id,plan_id,repository_id,operation_id,kind,state,remote_identity,head_oid,base_ref)
+		VALUES(?,?,?,?, 'push','uncertain',?,?,?)`, pushDeliveryID(push.OperationID), "plan", "fixture-repo", push.OperationID, push.Intent.RemoteIdentity, push.Intent.HeadOID, push.Intent.RemoteRef); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE operations SET state='uncertain' WHERE id=?", push.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	// The VPN-drop case: the remote still holds the approved predecessor, so
+	// the idempotent re-attempt delivers the approved object and reconcile
+	// closes on positive proof, with no human attestation.
+	status, err := e.ReconcileDelivery(ctx, "reconcile-retry-push", push.OperationID)
+	if err != nil || status.State != "observed" || status.DeliveryState != "succeeded" {
+		t.Fatalf("idempotent push retry: %#v %v", status, err)
+	}
+	if b, err := exec.Command("git", "--git-dir", remote, "rev-parse", "refs/heads/"+record.PlanBranch).Output(); err != nil || strings.TrimSpace(string(b)) != committed.CommitOID {
+		t.Fatalf("re-attempted push did not deliver the approved head: %s %v", b, err)
+	}
+	// Retrying again is a no-op: the destination already holds the head.
+	if _, err := e.ReconcileDelivery(ctx, "reconcile-retry-again", push.OperationID); err == nil {
+		t.Fatal("an observed push was reconciled again")
+	}
+}
+
 func TestCommitReconciliationClosesStuckOperationByObservation(t *testing.T) {
 	_, e, p := setup(t)
 	seedAcceptedPlanWithChange(t, e, true)
@@ -1266,14 +1391,15 @@ func TestCommitReconciliationClosesStuckOperationByObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Simulate a crash window after effect start: the journal is pending and a
-	// third party has moved the plan ref, so the approved CAS can never succeed.
-	if _, err := e.DB.SQL.ExecContext(ctx, `INSERT INTO deliveries(id,plan_id,repository_id,operation_id,kind,state,head_oid)
-		VALUES(?,?,?,?, 'commit','pending',?)`, commitDeliveryID(prepared.OperationID), "plan", "fixture-repo", prepared.OperationID, prepared.Intent.ParentOID); err != nil {
-		t.Fatal(err)
-	}
+	// A third party moves the plan ref before the effect, so the approved
+	// compare-and-swap can never succeed.
 	if b, err := exec.Command("git", "-C", p.Root, "update-ref", prepared.Intent.TargetRef, other, prepared.Intent.ExpectedRefOID).CombinedOutput(); err != nil {
 		t.Fatalf("third-party ref move: %v %s", err, b)
+	}
+	// Execute the started operation: it journals the commit object and then
+	// cannot move the ref, leaving the operation genuinely stuck.
+	if _, err := e.ExecuteCommit(ctx, prepared.OperationID, ""); err == nil {
+		t.Fatal("commit succeeded against a third-party-moved ref")
 	}
 	if _, err := e.ReconcileDelivery(ctx, "reconcile-moved-commit", prepared.OperationID); err == nil {
 		t.Fatal("reconciliation closed a commit whose ref was moved by a third party")
@@ -1286,24 +1412,20 @@ func TestCommitReconciliationClosesStuckOperationByObservation(t *testing.T) {
 	if _, err := deliveryGit(ctx, p.Root, nil, nil, "rev-parse", "--verify", "--end-of-options", prepared.Intent.TargetRef+"^{commit}"); err != nil {
 		t.Fatalf("blocked reconciliation disturbed the ref: %v", err)
 	}
-	// The approved prior state is the absent branch: restore it by deleting
-	// the third-party ref.
+	// Restore the approved absent ref, then re-attempt the commit through the
+	// normal executor path: reconciliation itself never moves the plan ref.
 	if b, err := exec.Command("git", "-C", p.Root, "update-ref", "-d", prepared.Intent.TargetRef, other).CombinedOutput(); err != nil {
 		t.Fatalf("restore approved absent ref: %v %s", err, b)
 	}
-	status, err := e.ReconcileDelivery(ctx, "reconcile-commit", prepared.OperationID)
-	if err != nil || status.State != "reconciled" || status.DeliveryState != "failed" {
-		t.Fatalf("commit reconciliation: %#v %v", status, err)
+	if _, err := e.ExecuteCommit(ctx, prepared.OperationID, ""); err != nil {
+		t.Fatalf("re-executing the commit after the ref was restored: %v", err)
 	}
-	var operationState, deliveryState string
-	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM operations WHERE id=?", prepared.OperationID).Scan(&operationState); err != nil || operationState != "reconciled" {
-		t.Fatalf("operation not reconciled: %s %v", operationState, err)
-	}
-	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM deliveries WHERE operation_id=?", prepared.OperationID).Scan(&deliveryState); err != nil || deliveryState != "failed" {
-		t.Fatalf("delivery not closed: %s %v", deliveryState, err)
+	status, err := e.DeliveryStatus(ctx, prepared.OperationID)
+	if err != nil || status.State != "observed" || status.DeliveryState != "succeeded" {
+		t.Fatalf("commit did not complete after the ref was restored: %#v %v", status, err)
 	}
 	if _, err := e.ReconcileDelivery(ctx, "reconcile-commit-again", prepared.OperationID); err == nil {
-		t.Fatal("already reconciled operation was reconciled again")
+		t.Fatal("already observed operation was reconciled again")
 	}
 }
 
@@ -1352,19 +1474,25 @@ func TestPushReconciliationClosesUncertainOperationByObservation(t *testing.T) {
 	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE operations SET state='uncertain' WHERE id=?", push.OperationID); err != nil {
 		t.Fatal(err)
 	}
-	// A third party creating the destination ref blocks reconciliation.
+	// A third party creating the destination ref blocks reconciliation: the
+	// approved push must not be forced over someone else's work.
 	if b, err := exec.Command("git", "-C", p.Root, "push", "-q", "origin", record.BaseOID+":refs/heads/"+record.PlanBranch).CombinedOutput(); err != nil {
 		t.Fatalf("third-party remote ref: %v %s", err, b)
 	}
 	if _, err := e.ReconcileDelivery(ctx, "reconcile-moved-push", push.OperationID); err == nil {
 		t.Fatal("reconciliation closed a push whose remote ref was created by a third party")
 	}
+	if out, err := exec.Command("git", "--git-dir", remote, "rev-parse", "refs/heads/"+record.PlanBranch).Output(); err != nil || strings.TrimSpace(string(out)) != record.BaseOID {
+		t.Fatalf("blocked reconciliation overwrote a third-party ref: %s %v", out, err)
+	}
+	// The operator resolves the divergence; only then does the approved push
+	// advance, and it does so by an observed effect, not an assertion.
 	if b, err := exec.Command("git", "-C", p.Root, "push", "-q", "origin", ":refs/heads/"+record.PlanBranch).CombinedOutput(); err != nil {
-		t.Fatalf("restore approved absent remote ref: %v %s", err, b)
+		t.Fatalf("operator resolution of the third-party ref: %v %s", err, b)
 	}
 	closed, err := e.ReconcileDelivery(ctx, "reconcile-quiet-push", push.OperationID)
-	if err != nil || closed.State != "reconciled" || closed.DeliveryState != "failed" {
-		t.Fatalf("quiet push reconciliation: %#v %v", closed, err)
+	if err != nil || closed.State != "observed" || closed.DeliveryState != "succeeded" {
+		t.Fatalf("reconcile after operator resolution: %#v %v", closed, err)
 	}
 }
 

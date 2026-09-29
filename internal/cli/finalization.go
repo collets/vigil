@@ -163,6 +163,25 @@ func addFinalizationCommands(root *cobra.Command, stateDir *string) {
 	}}
 	reconcileDelivery.Flags().StringVar(&reconcileCommand, "command-id", "", "Unique human reconciliation command for an executing or uncertain operation")
 	root.AddCommand(reconcileDelivery)
+	var closeCommand, closeAttestation string
+	closeUnobserved := &cobra.Command{Use: "delivery-close-unobserved PROJECT_ID OPERATION_ID", Short: "Close a delivery an operator has verified externally did not take effect", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		if closeCommand == "" {
+			return errors.New("--command-id required")
+		}
+		if closeAttestation == "" {
+			return errors.New("--attest required: describe the external state you verified")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			result, err := e.CloseUnobservedDelivery(cmd.Context(), closeCommand, args[1], closeAttestation)
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, result)
+		})
+	}}
+	closeUnobserved.Flags().StringVar(&closeCommand, "command-id", "", "Unique human attestation command")
+	closeUnobserved.Flags().StringVar(&closeAttestation, "attest", "", "Required: what external state you verified and why no effect occurred")
+	root.AddCommand(closeUnobserved)
 
 	var archiveCommand string
 	build := &cobra.Command{Use: "archive-build PROJECT_ID PLAN_ID", Short: "Persist a verified factual archive before any optional narrative", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {

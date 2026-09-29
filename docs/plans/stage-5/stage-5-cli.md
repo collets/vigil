@@ -713,6 +713,8 @@ remotes only; real publication needs its own exact operation grant.
 ./bin/vigil --state-dir STATE project delivery-status PROJECT_ID OPERATION_ID
 ./bin/vigil --state-dir STATE project delivery-cancel PROJECT_ID OPERATION_ID --command-id ID
 ./bin/vigil --state-dir STATE project delivery-reconcile PROJECT_ID OPERATION_ID --command-id ID
+./bin/vigil --state-dir STATE project delivery-close-unobserved PROJECT_ID OPERATION_ID \
+  --command-id ID --attest "VERIFIED_EXTERNAL_STATE"
 ```
 
 `delivery-status` inspects one exact commit/push/draft operation and any
@@ -724,19 +726,37 @@ never-started operation — no grant consumed, no delivery journal row — and
 cancels its pending approval request. An executing or uncertain operation is
 never cancelled: it may have an external effect.
 
-`delivery-reconcile` closes a stuck executing or uncertain operation from a
-fresh exact observation, and closes only the two provable cases: the approved
-end state was reached (the operation becomes `observed` with a succeeded
-delivery), or the approved prior state still holds (a provably net-zero
-effect; the operation becomes `reconciled` with a failed delivery and
-retention no longer pins the plan). Reconciliation first **claims** the
-operation, so no executor can start an effect between the observation and the
-recorded closure; a blocked observation releases the claim and leaves the
-operation exactly as executable as it was found. Any other observation — a
-plan ref or remote ref moved by a third party, or a hosting listing without
-the exact draft — is reported with the operands above and left open for
-manual resolution, because absence is not proof of non-delivery.
-Reconciliation itself never moves refs, pushes or POSTs.
+`delivery-reconcile` resolves a stuck executing or uncertain operation from a
+fresh exact observation. **Automatic closure requires positive proof that the
+approved effect happened** — the operation becomes `observed` with a succeeded
+delivery, and retention stops pinning the plan. Nothing automatic ever records
+that an unobserved effect did *not* occur, because no durable state can
+distinguish an executor mid-effect from one that crashed mid-effect.
+
+For a **push** whose destination still holds the approved predecessor (the
+common lost-response case, e.g. a dropped VPN), reconcile re-attempts the
+identical non-force `OID:ref` push. That re-attempt is idempotent: a no-op if
+the first push landed, the delivery if it did not, and a Git rejection (leaving
+the operation open) if another writer moved the destination. No other kind is
+retried, and reconciliation never moves a local ref or POSTs a draft.
+
+Anything else — a plan ref or remote ref moved by a third party, or a hosting
+listing without the exact draft — is reported with the approved operands above
+and left open, because absence is not proof of non-delivery. Reconciliation
+claims the operation while it works so no new executor starts an effect
+mid-decision, and releases the claim when blocked.
+
+`delivery-close-unobserved` is the explicit **human-attested** exit for an
+operation the operator has verified externally did not take effect. The
+required `--attest` text is recorded in a human receipt and echoed in the
+result, so a later reader can always distinguish "the system proved this" from
+"a person asserted this". The operation becomes `reconciled` with a failed
+delivery, unblocking retention.
+
+```sh
+./bin/vigil --state-dir STATE project delivery-close-unobserved PROJECT_ID OPERATION_ID \
+  --command-id ID --attest "verified refs/heads/x is still at the approved predecessor"
+```
 
 The archive controls below are local and do not create a delivery operation. `archive-build`
 requires a current independently accepted plan and task set, unchanged accepted

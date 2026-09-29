@@ -12,16 +12,38 @@ qualification.
 The review of `ebf7f0f` rejected it on four points. This remediation closes
 them:
 
-- **P1.1 (reconcile could record a false net-zero effect):** `delivery-reconcile`
-  now *claims* the operation before observing it. Because every executor acts
-  only on `prepared`/`executing`/`uncertain`, the claim makes the closure
-  decision atomic with respect to a racing effect: an effect cannot start
-  between the observation and the recorded outcome. A blocked observation
-  releases the claim so the operation is exactly as executable as it was found,
-  and a claim left by an interrupted attempt is resumable. The net-zero branch
-  also requires the delivery row to still be in `pending`/`uncertain`
-  (P3.2), and a permanent regression test covers a landed effect, a re-executed
-  claim and a second reconcile of an observed operation.
+- **P1.1 (reconcile could record a false net-zero effect):** the first attempt
+  at this fix claimed the operation before observing it, which the second review
+  showed is insufficient — the claim blocks a *new* executor but not one already
+  past its state check, and the reviewer reproduced a landed push recorded as
+  `reconciled`/`failed` using a blocking server-side `pre-receive` hook. The
+  root cause is not a race that more locking can fix: no durable state
+  distinguishes an executor mid-effect from one that crashed mid-effect, so a
+  point-in-time observation can never *prove* non-occurrence. The design was
+  therefore changed rather than re-plumbed:
+
+  - `delivery-reconcile` now closes automatically **only on positive proof**
+    that the approved effect happened. There is no automatic "no effect"
+    closure, for any kind.
+  - A **push** whose destination still holds the approved predecessor — the
+    common lost-response case — is resolved by re-attempting the identical
+    non-force `OID:ref` push. That is idempotent by construction: a no-op if the
+    first push landed, the delivery if it did not, and a Git non-fast-forward
+    rejection if another writer moved the destination. The destination is
+    re-observed immediately before the effect, and the outcome is re-observed
+    after. No other kind is retried; reconciliation never moves a local ref or
+    POSTs a draft.
+  - The residual case (a ref or remote moved by a third party, or a hosting
+    listing without the exact draft) stays open with its approved operands, and
+    closes only through the new `delivery-close-unobserved`, which records an
+    explicit **human attestation** — a decision of record, never a system proof.
+
+  The claim is retained (it still prevents a new effect from starting during
+  the decision, and is released when blocked) but it is no longer load-bearing
+  for correctness. Regression tests cover: an untouched commit where reconcile
+  must refuse to close, a blocked push not overwriting a third-party ref, the
+  idempotent retry delivering the approved head, the attestation being required
+  and labelled, and a refusal to repeat a closed operation.
 - **P2.1 (`finalization-run` could never succeed):** the live adapter reported
   only harness/model/provider, so the full-identity check added for B2 could
   never pass — a dead CLI command hidden by a bespoke test fixture. The adapter
@@ -49,6 +71,12 @@ them:
   receipt and retries the view. This also makes the "reported success/failure
   matches durable state" property hold for `archive-build`, `archive-narrative`
   and the draft-success path.
+
+- **P3.2:** the reconciliation closure enforces `RowsAffected == 1` on every
+  state transition it performs, so a lost update is never treated as a
+  successful closure. (The claim itself is retained but is no longer the
+  correctness mechanism, so the review's observation that it was untested is
+  resolved differently: the net-zero closure it protected no longer exists.)
 
 Also addressed from the same review:
 
@@ -254,11 +282,13 @@ reuses the Stage 5.5 contained qualification route under an explicit
   receipt consumption, fingerprint-neutral `.vigil` view and always-excluded
   view paths). No real hosted repository, remote or model was exercised.
 - The second review's fix set adds permanent regression tests for: a landed
-  effect observed by reconciliation, a claimed operation refusing
-  re-execution, a second reconcile of an observed operation, a legacy stored
-  exclusion set still matching an unchanged repository (and a tampered one
-  still failing), a blocked `.vigil` view producing a warning rather than a
-  command failure, and user `.vigil` content being left untouched. The reviewer
+  effect observed by reconciliation, a legacy stored exclusion set still
+  matching an unchanged repository (and a tampered one still failing), a
+  blocked `.vigil` view producing a warning rather than a command failure, and
+  user `.vigil` content being left untouched. The second review's P1.1 is
+  closed by the redesign above, with tests for the refusal to prove
+  non-occurrence, the idempotent push retry, a blocked push not overwriting a
+  third-party ref, and the explicit human attestation. The reviewer
   independently confirmed `ebf7f0f` passes vet, the full test suite and
   `docs-check`; the fixes above are verified by the same local Linux gates.
   Native macOS validation remains unverified for this candidate.
