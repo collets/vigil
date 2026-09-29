@@ -142,6 +142,10 @@ type ArchiveRecord struct {
 	NarrativeID    string `json:"narrative_id,omitempty"`
 	State          string `json:"state"`
 	TaskID         string `json:"finalization_task_id"`
+	// ViewWarning is presentation-only and is never persisted in a receipt: it
+	// reports that the in-repository .vigil view could not be materialized
+	// even though the durable archive and its state transition committed.
+	ViewWarning string `json:"view_warning,omitempty"`
 }
 
 type NarrativeResult struct {
@@ -172,7 +176,7 @@ func (e *Engine) BuildFactualArchive(ctx context.Context, commandID, planID stri
 			err = json.Unmarshal(receipt, &record)
 		}
 		if err == nil {
-			err = e.ensurePlanArchiveView(ctx, record)
+			materializePlanArchiveView(e, ctx, &record)
 		}
 		return record, err
 	}
@@ -226,8 +230,17 @@ func (e *Engine) BuildFactualArchive(ctx context.Context, commandID, planID stri
 			if err := accepted.Identity.Validate(); err != nil {
 				return nil, err
 			}
+			// Normalize the stored exclusion set so an acceptance recorded
+			// before an application-owned directory became excluded is not
+			// invalidated by the forced set alone.
+			normalized, err := workspace.NormalizeExclusions(accepted.Identity.Root, accepted.Observed.Exclusions)
+			if err != nil {
+				return nil, errors.New("accepted repository fingerprint exclusions are invalid")
+			}
+			expected := accepted.Observed
+			expected.Exclusions = normalized
 			observed, err := workspace.Fingerprint(ctx, accepted.Identity.Root, accepted.Observed.Exclusions)
-			if err != nil || !reflect.DeepEqual(observed, accepted.Observed) {
+			if err != nil || !reflect.DeepEqual(observed, expected) {
 				return nil, errors.New("accepted repository fingerprint changed before archive publication")
 			}
 		}
@@ -275,7 +288,7 @@ func (e *Engine) BuildFactualArchive(ctx context.Context, commandID, planID stri
 	}
 	err = json.Unmarshal(receipt, &record)
 	if err == nil {
-		err = e.ensurePlanArchiveView(ctx, record)
+		materializePlanArchiveView(e, ctx, &record)
 	}
 	return record, err
 }
@@ -335,8 +348,14 @@ func (e *Engine) collectFactualArchive(ctx context.Context, planID string) (Fact
 		if err := current.Identity.Validate(); err != nil {
 			return manifest, 0, 0, err
 		}
+		normalized, err := workspace.NormalizeExclusions(current.Root, accepted.Observed.Exclusions)
+		if err != nil {
+			return manifest, 0, 0, fmt.Errorf("accepted repository %s has invalid fingerprint exclusions", accepted.ID)
+		}
+		expected := accepted.Observed
+		expected.Exclusions = normalized
 		observed, err := workspace.Fingerprint(ctx, current.Root, accepted.Observed.Exclusions)
-		if err != nil || !reflect.DeepEqual(observed, accepted.Observed) {
+		if err != nil || !reflect.DeepEqual(observed, expected) {
 			return manifest, 0, 0, fmt.Errorf("accepted repository %s changed before archive", accepted.ID)
 		}
 	}
@@ -666,7 +685,10 @@ func (e *Engine) RecordFixtureNarrative(ctx context.Context, request NarrativeRe
 
 func (e *Engine) recordNarrative(ctx context.Context, request NarrativeResult) (ArchiveRecord, error) {
 	var record ArchiveRecord
-	if !store.SafeID(request.CommandID) || !store.SafeID(request.PlanID) || request.ManifestRevision < 1 || (request.Actor != "fixture" && request.Actor != "core") || len(request.Text) == 0 || len(request.Text) > store.MaxDocument || strings.TrimSpace(request.Text) == "" || len(request.CitedIDs) == 0 || len(request.CitedIDs) > 1000 {
+	// Only the fixture actor exists. There is deliberately no "core" actor
+	// branch: a narrative may never complete a plan whose acceptance is not
+	// fixture provenance, which is the dispatch-authority boundary.
+	if !store.SafeID(request.CommandID) || !store.SafeID(request.PlanID) || request.ManifestRevision < 1 || request.Actor != "fixture" || len(request.Text) == 0 || len(request.Text) > store.MaxDocument || strings.TrimSpace(request.Text) == "" || len(request.CitedIDs) == 0 || len(request.CitedIDs) > 1000 {
 		return record, errors.New("bounded fixture narrative and exact archive identity required")
 	}
 	args, err := json.Marshal(request)
@@ -679,14 +701,12 @@ func (e *Engine) recordNarrative(ctx context.Context, request NarrativeResult) (
 			err = json.Unmarshal(receipt, &record)
 		}
 		if err == nil {
-			err = e.ensurePlanArchiveView(ctx, record)
+			materializePlanArchiveView(e, ctx, &record)
 		}
 		return record, err
 	}
-	if request.Actor == "fixture" {
-		if err := e.requireFixtureArchive(ctx, request.PlanID); err != nil {
-			return record, err
-		}
+	if err := e.requireFixtureArchive(ctx, request.PlanID); err != nil {
+		return record, err
 	}
 	record, manifest, err := e.Archive(ctx, request.PlanID, request.ManifestRevision)
 	if err != nil {
@@ -753,8 +773,7 @@ func (e *Engine) recordNarrative(ctx context.Context, request NarrativeResult) (
 		if err := tx.QueryRowContext(ctx, "SELECT factual_manifest,state FROM archives WHERE plan_id=? AND revision=?", request.PlanID, request.ManifestRevision).Scan(&manifestID, &archiveState); err != nil || manifestID != record.ManifestID || (archiveState != "narrative_pending" && archiveState != "factual_ready") {
 			return nil, errors.New("archive state changed before narrative publication")
 		}
-		if err := tx.QueryRowContext(ctx, "SELECT actor FROM quality_acceptances_v2 WHERE id=? AND invalidated_at IS NULL", manifest.AcceptanceID).Scan(&acceptanceActor); err != nil ||
-			(request.Actor == "fixture" && acceptanceActor != "fixture_core") || (request.Actor == "core" && acceptanceActor != "core") {
+		if err := tx.QueryRowContext(ctx, "SELECT actor FROM quality_acceptances_v2 WHERE id=? AND invalidated_at IS NULL", manifest.AcceptanceID).Scan(&acceptanceActor); err != nil || acceptanceActor != "fixture_core" {
 			return nil, errors.New("plan acceptance provenance is no longer current")
 		}
 		for _, task := range manifest.Tasks {
@@ -786,7 +805,7 @@ func (e *Engine) recordNarrative(ctx context.Context, request NarrativeResult) (
 	}
 	err = json.Unmarshal(receipt, &record)
 	if err == nil {
-		err = e.ensurePlanArchiveView(ctx, record)
+		materializePlanArchiveView(e, ctx, &record)
 	}
 	return record, err
 }

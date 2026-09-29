@@ -2,11 +2,84 @@
 
 <!-- vigil-tier: evidence -->
 
-Status: remediation in progress on `task/5.6-delivery-finalization` after the
-first independent antagonist review of `9777de0` rejected that candidate. This
-is not independent acceptance or production-delivery qualification.
+Status: second remediation in progress on `task/5.6-delivery-finalization`
+after independent antagonist reviews of `9777de0` and `ebf7f0f` rejected both
+candidates. This is not independent acceptance or production-delivery
+qualification.
 
-## Independent review remediation
+## Second independent review remediation
+
+The review of `ebf7f0f` rejected it on four points. This remediation closes
+them:
+
+- **P1.1 (reconcile could record a false net-zero effect):** `delivery-reconcile`
+  now *claims* the operation before observing it. Because every executor acts
+  only on `prepared`/`executing`/`uncertain`, the claim makes the closure
+  decision atomic with respect to a racing effect: an effect cannot start
+  between the observation and the recorded outcome. A blocked observation
+  releases the claim so the operation is exactly as executable as it was found,
+  and a claim left by an interrupted attempt is resumable. The net-zero branch
+  also requires the delivery row to still be in `pending`/`uncertain`
+  (P3.2), and a permanent regression test covers a landed effect, a re-executed
+  claim and a second reconcile of an observed operation.
+- **P2.1 (`finalization-run` could never succeed):** the live adapter reported
+  only harness/model/provider, so the full-identity check added for B2 could
+  never pass — a dead CLI command hidden by a bespoke test fixture. The adapter
+  is now constructed from the *persisted profile's own* route identity
+  (`Engine.ProfileRoute`) and additionally requires the prepared manifest's
+  secret environment name to equal the profile's credential reference.
+  `planning-run` and `tool-qualify` take the same route from the profile
+  (`tool-qualify` gained required `--profile-id`/`--profile-revision`).
+- **P2.2 (`.vigil` exclusion invalidated existing acceptances):** making
+  `.vigil` always-excluded changed the exclusion set of every stored
+  `Baseline.Exclusions`, so an acceptance recorded by the previous candidate no
+  longer satisfied its own exact-fingerprint comparison — a stricter check that
+  silently bricked accepted work. Comparisons now normalize the *stored*
+  exclusion set through `workspace.NormalizeExclusions` before comparing
+  (delivery, archive collection and archive publication), so an
+  application-owned forced exclusion alone can never invalidate an otherwise
+  unchanged acceptance, while any real content change is still refused. A
+  regression test covers a legacy manifest and the tampered-content case.
+- **P2.3 (view failure masked advanced durable state):** the in-repository
+  `.vigil` view was materialized *after* the durable transition, so a blocked
+  view (for example an operator-owned `.vigil` file) reported command failure
+  for state that had already advanced, and repeating the command could never
+  repair the view. A blocked view is now a presentation-only `view_warning` on
+  the returned record; the command succeeds and repeating it re-verifies the
+  receipt and retries the view. This also makes the "reported success/failure
+  matches durable state" property hold for `archive-build`, `archive-narrative`
+  and the draft-success path.
+
+Also addressed from the same review:
+
+- **P3.1:** the dead `core` narrative-actor branch is removed. `recordNarrative`
+  accepts only the `fixture` actor, requires the fixture archive unconditionally
+  and requires `fixture_core` plan-acceptance provenance, so the code now matches
+  the documented invariant that the narrative actor is always `fixture`.
+- **P3.4:** the dry-run retention receipt is identified by its recorded command
+  kind and human actor (via the `command_applied` event), not by the JSON shape
+  of its result.
+- **P3.5:** `delivery-status` reports the approved comparison operands
+  (`target_ref`, `approved_predecessor`, `approved_tree`/`approved_head`, or
+  `project`/`head`/`base`) so a diverged observation is resolvable.
+
+Accepted residual observations, disclosed rather than fixed in this slice:
+
+- **P3.3:** archive publication holds the write lock across the repository
+  fingerprint re-verification (git subprocesses plus a worktree walk). The
+  verification is required, but a two-phase prepare/compare would avoid holding
+  the single writer for its duration.
+- **P4.1:** `.vigil` view files are bounded per plan (64 revisions, 1 MiB each)
+  but are never pruned; the authoritative artifact copy remains the store.
+- **P4.2:** the B3 regression test drives `isolatedRemoteGit` directly rather
+  than through `ExecutePush`; the production push path routes through it
+  (`delivery_push.go`), but the test asserts the helper's isolation, not the
+  call site.
+- **P4.3:** `ensureLocalGitIgnore` appends to the repository's shared
+  `.git/info/exclude`; the append is idempotent and marked, but the write is not
+  surfaced in command output.
+
+## First independent review remediation
 
 The independent antagonist review of `9777de0` rejected that commit with four
 blockers, three high and several medium/low findings. The remediation on this
@@ -180,6 +253,14 @@ reuses the Stage 5.5 contained qualification route under an explicit
   delivery cancel/reconcile for commit/push/draft, retention dry-run
   receipt consumption, fingerprint-neutral `.vigil` view and always-excluded
   view paths). No real hosted repository, remote or model was exercised.
+- The second review's fix set adds permanent regression tests for: a landed
+  effect observed by reconciliation, a claimed operation refusing
+  re-execution, a second reconcile of an observed operation, a legacy stored
+  exclusion set still matching an unchanged repository (and a tampered one
+  still failing), a blocked `.vigil` view producing a warning rather than a
+  command failure, and user `.vigil` content being left untouched. The reviewer
+  independently confirmed `ebf7f0f` passes vet, the full test suite and
+  `docs-check`; the fixes above are verified by the same local Linux gates.
   Native macOS validation remains unverified for this candidate.
 
 ## Remaining Stage 5.6 work

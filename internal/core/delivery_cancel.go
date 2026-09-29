@@ -19,6 +19,10 @@ type DeliveryStatus struct {
 	ExternalID    string `json:"external_id,omitempty"`
 	URL           string `json:"url,omitempty"`
 	Observation   string `json:"observation,omitempty"`
+	// ApprovedTargets are the exact comparison operands an operator needs to
+	// resolve a diverged observation: the ref or destination the operation was
+	// approved against, and the object it would have produced.
+	ApprovedTargets []string `json:"approved_targets,omitempty"`
 }
 
 func (e *Engine) DeliveryStatus(ctx context.Context, operationID string) (DeliveryStatus, error) {
@@ -32,6 +36,22 @@ func (e *Engine) DeliveryStatus(ctx context.Context, operationID string) (Delive
 	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT id,state,coalesce(external_id,''),coalesce(url,'') FROM deliveries WHERE operation_id=?", operationID).
 		Scan(&result.DeliveryID, &result.DeliveryState, &result.ExternalID, &result.URL); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return DeliveryStatus{}, err
+	}
+	// Surface the approved comparison operands so an operator can resolve a
+	// diverged observation without re-deriving them from the intent.
+	switch result.Kind {
+	case "commit":
+		if intent, _, err := e.loadCommitIntent(ctx, operationID); err == nil {
+			result.ApprovedTargets = []string{"target_ref=" + intent.TargetRef, "approved_predecessor=" + intent.ExpectedRefOID, "approved_tree=" + intent.TreeOID}
+		}
+	case "push":
+		if intent, _, err := e.loadPushIntent(ctx, operationID); err == nil {
+			result.ApprovedTargets = []string{"remote_ref=" + intent.RemoteRef, "approved_predecessor=" + intent.ExpectedRemoteOID, "approved_head=" + intent.HeadOID}
+		}
+	case "draft_request":
+		if intent, _, err := e.loadDraftIntent(ctx, operationID); err == nil {
+			result.ApprovedTargets = []string{"project=" + intent.Project, "head=" + intent.HeadBranch + "@" + intent.HeadOID, "base=" + intent.BaseBranch}
+		}
 	}
 	return result, nil
 }
@@ -87,26 +107,57 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT kind,state FROM operations WHERE id=? AND kind IN ('commit','push','draft_request')", operationID).Scan(&kind, &state); err != nil {
 		return DeliveryStatus{}, errors.New("delivery operation not found")
 	}
-	if state != "executing" && state != "uncertain" {
+	// A prior claim without a committed closure (an interrupted or blocked
+	// reconciliation) is resumable: the claim is the only thing standing
+	// between the observation and a concurrent effect.
+	claimed := state == "reconciled"
+	if !claimed && state != "executing" && state != "uncertain" {
 		return DeliveryStatus{}, errors.New("only an executing or uncertain delivery can be reconciled; prepared deliveries are cancelled instead")
 	}
-	observation, closeAs, err := e.observeDeliveryForReconciliation(ctx, kind, operationID)
+	if !claimed {
+		// Claim first. Marking the operation reconciled blocks every executor,
+		// which only act on prepared/executing/uncertain, so no new effect can
+		// start while the external state is observed and the closure committed.
+		claim := e.DB.Write(ctx, func(tx *store.Tx) error {
+			updated, err := tx.ExecContext(ctx, "UPDATE operations SET state='reconciled' WHERE id=? AND state IN ('executing','uncertain')", operationID)
+			if err != nil {
+				return err
+			}
+			if count, err := updated.RowsAffected(); err != nil || count != 1 {
+				return errors.New("delivery operation changed before reconciliation claimed")
+			}
+			return nil
+		})
+		if claim != nil {
+			return DeliveryStatus{}, claim
+		}
+	}
+	observation, closeAs, err := e.planDeliveryReconciliation(ctx, kind, operationID)
 	if err != nil {
+		// A blocked observation releases the claim so the operation is exactly
+		// as executable as it was found: the operator resolves the underlying
+		// ref or hosting request, then reconciles again.
+		if releaseErr := e.DB.Write(ctx, func(tx *store.Tx) error {
+			_, err := tx.ExecContext(ctx, "UPDATE operations SET state='uncertain' WHERE id=? AND state='reconciled'", operationID)
+			return err
+		}); releaseErr != nil {
+			return DeliveryStatus{}, fmt.Errorf("%w (the claimed operation could not be released: %v)", err, releaseErr)
+		}
 		return DeliveryStatus{}, err
 	}
 	args, _ := json.Marshal(map[string]string{"operation_id": operationID, "kind": kind, "observed": observation.Observation, "close_as": closeAs})
 	receipt, err := e.DB.Command(ctx, store.Command{ID: commandID, Actor: "human", Kind: "delivery.reconcile", Args: args}, func(tx *store.Tx) (any, error) {
-		var currentState, deliveryState string
+		var claimedState string
+		if err := tx.QueryRowContext(ctx, "SELECT state FROM operations WHERE id=?", operationID).Scan(&claimedState); err != nil || claimedState != "reconciled" {
+			return nil, errors.New("reconciliation claim was lost before closure")
+		}
+		var deliveryState string
 		hasRow := true
 		if err := tx.QueryRowContext(ctx, "SELECT state FROM deliveries WHERE operation_id=?", operationID).Scan(&deliveryState); err != nil {
 			if !errors.Is(err, sql.ErrNoRows) {
 				return nil, err
 			}
 			hasRow = false
-		}
-		if err := tx.QueryRowContext(ctx, "SELECT state FROM operations WHERE id=?", operationID).Scan(&currentState); err != nil ||
-			(currentState != "executing" && currentState != "uncertain") {
-			return nil, errors.New("delivery operation changed before reconciliation")
 		}
 		if closeAs == "observed" {
 			if !hasRow {
@@ -117,10 +168,10 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 			if err != nil {
 				return nil, err
 			}
-			if count, _ := updated.RowsAffected(); count != 1 {
+			if count, err := updated.RowsAffected(); err != nil || count != 1 {
 				return nil, errors.New("delivery journal changed before reconciliation")
 			}
-			if _, err := tx.ExecContext(ctx, "UPDATE operations SET state='observed' WHERE id=? AND state IN ('executing','uncertain')", operationID); err != nil {
+			if _, err := tx.ExecContext(ctx, "UPDATE operations SET state='observed' WHERE id=?", operationID); err != nil {
 				return nil, err
 			}
 			closed := observation
@@ -128,12 +179,13 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 			return closed, nil
 		}
 		if hasRow {
-			if _, err := tx.ExecContext(ctx, "UPDATE deliveries SET state='failed' WHERE operation_id=? AND state IN ('pending','uncertain')", operationID); err != nil {
+			updated, err := tx.ExecContext(ctx, "UPDATE deliveries SET state='failed' WHERE operation_id=? AND state IN ('pending','uncertain')", operationID)
+			if err != nil {
 				return nil, err
 			}
-		}
-		if _, err := tx.ExecContext(ctx, "UPDATE operations SET state='reconciled' WHERE id=? AND state IN ('executing','uncertain')", operationID); err != nil {
-			return nil, err
+			if count, err := updated.RowsAffected(); err != nil || count != 1 {
+				return nil, errors.New("delivery journal changed before reconciliation closure")
+			}
 		}
 		closed := observation
 		closed.OperationID, closed.State, closed.DeliveryState = operationID, "reconciled", "failed"
@@ -152,7 +204,7 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 // observeDeliveryForReconciliation reads the current exact external state of
 // one delivery operation and decides the only two provable closures. The
 // returned partial status carries the observed identity.
-func (e *Engine) observeDeliveryForReconciliation(ctx context.Context, kind, operationID string) (DeliveryStatus, string, error) {
+func (e *Engine) planDeliveryReconciliation(ctx context.Context, kind, operationID string) (DeliveryStatus, string, error) {
 	switch kind {
 	case "commit":
 		intent, _, err := e.loadCommitIntent(ctx, operationID)

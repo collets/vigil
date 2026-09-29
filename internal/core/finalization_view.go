@@ -13,6 +13,18 @@ import (
 	"vigil/internal/workspace"
 )
 
+// materializePlanArchiveView is the caller-facing wrapper: it records a
+// blocked view as a warning on the returned record and never fails a command
+// whose durable state has already advanced.
+func materializePlanArchiveView(e *Engine, ctx context.Context, record *ArchiveRecord) {
+	if e == nil {
+		return
+	}
+	if err := e.ensurePlanArchiveView(ctx, *record); err != nil {
+		record.ViewWarning = err.Error()
+	}
+}
+
 // ensurePlanArchiveView materializes the immutable per-plan archive view inside
 // the Git-ignored .vigil folder of every accepted repository (R66). The
 // durable artifact database remains authoritative; .vigil is a local view, not
@@ -20,6 +32,13 @@ import (
 // checkpointing and commits, so writing it never invalidates the exact tree.
 // The view is immutable and replay-safe: an interrupted write is repaired by
 // repeating the exact archive command.
+//
+// A view failure never invalidates durable state. Callers run this AFTER the
+// archive or narrative has committed, and a blocked view (for example an
+// operator-owned `.vigil` file where the folder belongs) is reported as a
+// warning alongside the successful record rather than as a command failure —
+// otherwise the command would report failure for state that has already
+// advanced, and the view could never be repaired by repeating the command.
 func (e *Engine) ensurePlanArchiveView(ctx context.Context, record ArchiveRecord) error {
 	if e == nil || e.DB == nil || e.DB.Kind != "project" || !store.SafeID(record.PlanID) || record.Revision < 1 ||
 		!validDigest(record.ManifestDigest) {

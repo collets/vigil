@@ -17,11 +17,13 @@ import (
 )
 
 type ToolQualificationRequest struct {
-	Engine      *core.Engine
-	StateDir    string
-	VigilBinary string
-	Manifest    string
-	CommandID   string
+	Engine         *core.Engine
+	StateDir       string
+	VigilBinary    string
+	Manifest       string
+	CommandID      string
+	ProfileID      string
+	ProfileRevision int
 }
 
 type ToolQualificationResult struct {
@@ -39,7 +41,13 @@ func RunHermesToolQualification(ctx context.Context, request ToolQualificationRe
 	if request.Engine == nil || request.Engine.DB == nil || !store.SafeID(request.CommandID) {
 		return result, errors.New("engine and qualification command required")
 	}
-	provider, err := NewPlanningProvider(ctx, request.Manifest, "")
+	// The route identity comes from the same persisted profile the tool
+	// qualification claims, so the adapter reports the profile's own route.
+	version, endpoint, credential, err := request.Engine.ProfileRoute(ctx, request.ProfileID, request.ProfileRevision)
+	if err != nil {
+		return result, err
+	}
+	provider, err := NewPlanningProvider(ctx, request.Manifest, "", Route{Version: version, EndpointID: endpoint, CredentialRef: credential})
 	if err != nil {
 		return result, err
 	}

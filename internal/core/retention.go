@@ -76,6 +76,11 @@ func (e *Engine) InspectTranscriptExpiry(ctx context.Context, commandID string, 
 	return result, nil
 }
 
+// inspectReceiptKinds marks which command kinds produce a transcript dry-run
+// receipt. A receipt is distinguished by its recorded command kind, not by the
+// JSON shape of its result.
+var inspectReceiptKinds = map[string]bool{"retention.inspect": true}
+
 // ExpireTranscripts deletes eligible raw transcript bytes only after an
 // explicitly referenced dry-run inspection receipt still matches a fresh
 // recomputation, through a human envelope with an expected-revision check.
@@ -159,13 +164,20 @@ func (e *Engine) expireTranscriptsCommand(ctx context.Context, tx *store.Tx, cmd
 	if !store.SafeID(request.InspectCommandID) {
 		return nil, errors.New("exact inspected dry-run receipt required")
 	}
-	var actor, recorded string
-	if err := tx.QueryRowContext(ctx, "SELECT actor,result_json FROM command_receipts WHERE id=?", request.InspectCommandID).Scan(&actor, &recorded); err != nil || actor != "human" {
+	var actor, recorded, kind string
+	// The receipt is identified by its recorded command kind and actor, not by
+	// the JSON shape of its result.
+	if err := tx.QueryRowContext(ctx, `SELECT c.actor,c.result_json,json_extract(e.payload_json,'$.command_kind')
+		FROM command_receipts c JOIN events e ON e.command_id=c.id
+		WHERE c.id=?`, request.InspectCommandID).Scan(&actor, &recorded, &kind); err != nil {
 		return nil, errors.New("human dry-run inspection receipt required")
+	}
+	if actor != "human" || !inspectReceiptKinds[kind] {
+		return nil, errors.New("referenced command is not a human transcript dry-run inspection")
 	}
 	var candidates []artifacts.ExpiryCandidate
 	if err := json.Unmarshal([]byte(recorded), &candidates); err != nil {
-		return nil, errors.New("referenced receipt is not a transcript dry-run inspection")
+		return nil, errors.New("dry-run inspection receipt result is unreadable")
 	}
 	repository, err := artifacts.New(e.DB)
 	if err != nil {

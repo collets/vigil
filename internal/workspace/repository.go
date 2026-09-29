@@ -133,6 +133,16 @@ func digestBytes(b []byte) string {
 	return hex.EncodeToString(h[:])
 }
 
+// NormalizeExclusions applies the always-forced exclusion set to a stored
+// exclusion list. Acceptance records store the exclusion set as observed, and
+// the forced set can grow between application versions; comparing a freshly
+// taken fingerprint against a stored baseline must normalize the stored list
+// first, or an otherwise unchanged repository would fail the exact-fingerprint
+// check purely because an application-owned directory became excluded.
+func NormalizeExclusions(root string, exclusions []string) ([]string, error) {
+	return normalizedExclusions(root, exclusions)
+}
+
 // normalizedExclusions always excludes .git and the in-repository .vigil view:
 // both are application-owned, never accepted user content, and therefore never
 // fingerprinted, checkpointed or committed. Nested enrolled repositories join

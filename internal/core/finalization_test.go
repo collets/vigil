@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -402,11 +403,50 @@ func TestDefaultPlanArchiveViewIsLocalGitIgnoredAndFingerprintNeutral(t *testing
 	if _, err := e.BuildFactualArchive(ctx, "local-plan-view", "plan"); err != nil {
 		t.Fatalf("exact archive receipt did not verify existing view: %v", err)
 	}
+	// The ignore entry is written before the first view byte, and a user's own
+	// .vigil directory content is never touched.
+	if err := os.WriteFile(filepath.Join(p.Root, ".vigil", "user-note.txt"), []byte("mine\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.BuildFactualArchive(ctx, "local-plan-view", "plan"); err != nil {
+		t.Fatalf("user .vigil content blocked the view: %v", err)
+	}
+	if b, err := os.ReadFile(filepath.Join(p.Root, ".vigil", "user-note.txt")); err != nil || string(b) != "mine\n" {
+		t.Fatalf("user .vigil content was modified: %q %v", b, err)
+	}
+	// A blocked view is reported as a warning, not a command failure: the
+	// durable archive already committed, so failing would report a false error
+	// for advanced state.
 	if err := os.WriteFile(filepath.Join(view, name), []byte("corrupt"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.BuildFactualArchive(ctx, "local-plan-view", "plan"); err == nil {
-		t.Fatal("corrupt view passed receipt verification")
+	replayed, err := e.BuildFactualArchive(ctx, "local-plan-view", "plan")
+	if err != nil || replayed.ViewWarning == "" {
+		t.Fatalf("corrupt view was not reported as a warning: %#v %v", replayed, err)
+	}
+	// The receipt is the durable fact; the warning is presentation only.
+	replayed.ViewWarning = ""
+	if replayed != record {
+		t.Fatalf("replay after a blocked view: %#v", replayed)
+	}
+	// A user-owned .vigil file where the folder belongs is an operator error
+	// the command must not hide behind a failure.
+	if err := os.RemoveAll(filepath.Join(p.Root, ".vigil")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(p.Root, ".vigil"), []byte("user content\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := e.BuildFactualArchive(ctx, "blocked-plan-view", "plan")
+	if err != nil {
+		t.Fatalf("blocked view failed the command: %v", err)
+	}
+	if blocked.Revision != 2 || blocked.ViewWarning == "" {
+		t.Fatalf("blocked view: %#v", blocked)
+	}
+	var state string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM plans WHERE id='plan'").Scan(&state); err != nil || state != "finalization_pending" {
+		t.Fatalf("durable plan state after a blocked view: %s %v", state, err)
 	}
 }
 
@@ -1036,6 +1076,127 @@ func TestDraftLostPostResponseReconcilesWithoutDuplicate(t *testing.T) {
 	}
 }
 
+func TestStoredAcceptancePredatingVigilExclusionStillMatches(t *testing.T) {
+	_, e, _ := setup(t)
+	seedAcceptedPlan(t, e)
+	ctx := context.Background()
+	record, err := e.Repository(ctx, "fixture-repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Simulate an acceptance recorded before .vigil became always-excluded:
+	// rewrite the stored manifest to carry only the .git exclusion. A scope
+	// row is immutable, so the legacy manifest is passed to the verifier
+	// directly, which is the exact input a pre-change database would hold.
+	var manifest string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT repository_manifest_json FROM quality_scopes_v2 WHERE plan_id='plan' AND task_id IS NULL").Scan(&manifest); err != nil {
+		t.Fatal(err)
+	}
+	var repositories []struct {
+		ID       string             `json:"id"`
+		Revision int                `json:"revision"`
+		Identity workspace.Identity `json:"identity"`
+		Observed workspace.Baseline `json:"observed"`
+	}
+	if err := json.Unmarshal([]byte(manifest), &repositories); err != nil || len(repositories) == 0 {
+		t.Fatal(manifest, err)
+	}
+	for i := range repositories {
+		repositories[i].Observed.Exclusions = []string{".git"}
+	}
+	legacy, _ := json.Marshal(repositories)
+	// The forced set alone must not invalidate that stored acceptance.
+	baseline, err := acceptedBaselineForRepository(ctx, string(legacy), record)
+	if err != nil {
+		t.Fatalf("legacy stored exclusions invalidated an unchanged repository: %v", err)
+	}
+	if !slices.Contains(baseline.Exclusions, ".vigil") {
+		t.Fatalf("stored exclusions were not normalized: %#v", baseline.Exclusions)
+	}
+	// A genuine content change must still be refused.
+	if err := os.WriteFile(filepath.Join(record.Root, "tracked.txt"), []byte("tampered\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := acceptedBaselineForRepository(ctx, string(legacy), record); err == nil {
+		t.Fatal("changed content passed the normalized acceptance check")
+	}
+}
+
+func TestReconcileBlocksAnEffectThatRacesTheObservation(t *testing.T) {
+	_, e, p := setup(t)
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	if b, err := exec.Command("git", "init", "--bare", "-q", remote).CombinedOutput(); err != nil {
+		t.Fatalf("bare fixture: %v %s", err, b)
+	}
+	seedAcceptedPlanWithChange(t, e, true, remote)
+	ctx := context.Background()
+	record, err := e.Repository(ctx, "fixture-repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := exec.Command("git", "-C", p.Root, "push", "-q", "origin", record.BaseOID+":refs/heads/main").CombinedOutput(); err != nil {
+		t.Fatalf("seed remote base: %v %s", err, b)
+	}
+	commit, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "prepare-race-commit", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Race fixture", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitGrant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: commit.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	committed, err := e.ExecuteCommit(ctx, commit.OperationID, commitGrant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	push, err := e.PreparePush(ctx, PushRequest{CommandID: "prepare-race-push", PlanID: "plan", RepositoryID: "fixture-repo", RemoteName: "origin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushGrant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: push.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	start, err := e.deliveryEnvelope(ctx, store.Digest([]byte("delivery.push.start\x00"+push.OperationID)), "operation.start", map[string]string{"operation_id": push.OperationID, "grant_id": pushGrant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(ctx, Core, start); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, `INSERT INTO deliveries(id,plan_id,repository_id,operation_id,kind,state,remote_identity,head_oid,base_ref)
+		VALUES(?,?,?,?, 'push','pending',?,?,?)`, pushDeliveryID(push.OperationID), "plan", "fixture-repo", push.OperationID, push.Intent.RemoteIdentity, push.Intent.HeadOID, push.Intent.RemoteRef); err != nil {
+		t.Fatal(err)
+	}
+	// The push effect lands while the journal stays pending, exactly the
+	// window a concurrent reconcile decision has to survive.
+	if b, err := exec.Command("git", "-C", p.Root, "push", "-q", "origin", committed.CommitOID+":refs/heads/"+record.PlanBranch).CombinedOutput(); err != nil {
+		t.Fatalf("landed push fixture: %v %s", err, b)
+	}
+	// Reconciliation of a landed effect is observed, never restated as a
+	// net-zero effect, and a completed observation is final.
+	status, err := e.ReconcileDelivery(ctx, "reconcile-landed-race", push.OperationID)
+	if err != nil || status.State != "observed" || status.DeliveryState != "succeeded" {
+		t.Fatalf("landed push was not recorded as observed: %#v %v", status, err)
+	}
+	if _, err := e.ReconcileDelivery(ctx, "reconcile-after-observed", push.OperationID); err == nil {
+		t.Fatal("an observed operation was reconciled again")
+	}
+	// A claimed but unclosed operation is not executable: this is what makes
+	// the net-zero closure safe against a racing effect. Re-uncertainize the
+	// journal and claim it, exactly as the reconcile claim does.
+	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE deliveries SET state='pending' WHERE operation_id=?", push.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE operations SET state='uncertain' WHERE id=?", push.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.DB.Write(ctx, func(tx *store.Tx) error {
+		_, err := tx.ExecContext(ctx, "UPDATE operations SET state='reconciled' WHERE id=?", push.OperationID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.ExecutePush(ctx, push.OperationID, ""); err == nil {
+		t.Fatal("a claimed operation was re-executed")
+	}
+}
+
 func TestFinalizationTaskLifecycleIsVisibleAndNeverAccepted(t *testing.T) {
 	_, e, _ := setup(t)
 	seedAcceptedPlan(t, e)
@@ -1117,8 +1278,13 @@ func TestCommitReconciliationClosesStuckOperationByObservation(t *testing.T) {
 	if _, err := e.ReconcileDelivery(ctx, "reconcile-moved-commit", prepared.OperationID); err == nil {
 		t.Fatal("reconciliation closed a commit whose ref was moved by a third party")
 	}
-	if status, err := e.DeliveryStatus(ctx, prepared.OperationID); err != nil || status.State != "executing" {
-		t.Fatalf("blocked reconciliation changed the operation: %#v %v", status, err)
+	// A blocked reconciliation must leave the operation exactly as executable
+	// as it found it, so the operator can resolve the ref and retry.
+	if status, err := e.DeliveryStatus(ctx, prepared.OperationID); err != nil || status.State != "uncertain" {
+		t.Fatalf("blocked reconciliation left the operation %q: %#v %v", status.State, status, err)
+	}
+	if _, err := deliveryGit(ctx, p.Root, nil, nil, "rev-parse", "--verify", "--end-of-options", prepared.Intent.TargetRef+"^{commit}"); err != nil {
+		t.Fatalf("blocked reconciliation disturbed the ref: %v", err)
 	}
 	// The approved prior state is the absent branch: restore it by deleting
 	// the third-party ref.

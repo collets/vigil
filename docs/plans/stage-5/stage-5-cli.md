@@ -605,7 +605,8 @@ acceptance, spending, delivery or publishing authority.
 ```sh
 ./bin/vigil --state-dir STATE project tool-qualify PROJECT_ID \
   --live-local --manifest .cache/spike/stage1-EXAMPLE/launch.json \
-  --command-id hermes-tool-qualification-001
+  --command-id hermes-tool-qualification-001 \
+  --profile-id local --profile-revision 1
 ```
 
 | Flag | Required | Default | Meaning |
@@ -613,6 +614,8 @@ acceptance, spending, delivery or publishing authority.
 | `--live-local` | yes | `false` | Authorize this one existing-local-llama qualification turn |
 | `--manifest PATH` | yes | — | Prepared Hermes qualification manifest |
 | `--command-id ID` | yes | — | Receipt and injected tool-session identity |
+| `--profile-id ID` | yes | — | Profile whose persisted route identity the turn claims |
+| `--profile-revision N` | yes | — | Exact current profile revision |
 
 The qualifier copies only credential-free configuration into a temporary
 private home and supplies the loopback credential by environment reference.
@@ -713,21 +716,27 @@ remotes only; real publication needs its own exact operation grant.
 ```
 
 `delivery-status` inspects one exact commit/push/draft operation and any
-observed delivery journal row without changing anything. `delivery-cancel`
-closes only a prepared, never-started operation — no grant consumed, no
-delivery journal row — and cancels its pending approval request. An executing
-or uncertain operation is never cancelled: it may have an external effect.
+observed delivery journal row without changing anything. It also reports the
+approved comparison operands (target ref, approved predecessor, approved
+tree/head, or project/head/base) so a diverged observation can be resolved
+without re-deriving the intent. `delivery-cancel` closes only a prepared,
+never-started operation — no grant consumed, no delivery journal row — and
+cancels its pending approval request. An executing or uncertain operation is
+never cancelled: it may have an external effect.
 
 `delivery-reconcile` closes a stuck executing or uncertain operation from a
 fresh exact observation, and closes only the two provable cases: the approved
 end state was reached (the operation becomes `observed` with a succeeded
 delivery), or the approved prior state still holds (a provably net-zero
 effect; the operation becomes `reconciled` with a failed delivery and
-retention no longer pins the plan). Any other observation — a plan ref or
-remote ref moved by a third party, or a hosting listing without the exact
-draft — is reported and left open for manual resolution, because absence is
-not proof of non-delivery. Reconciliation itself never moves refs, pushes
-or POSTs.
+retention no longer pins the plan). Reconciliation first **claims** the
+operation, so no executor can start an effect between the observation and the
+recorded closure; a blocked observation releases the claim and leaves the
+operation exactly as executable as it was found. Any other observation — a
+plan ref or remote ref moved by a third party, or a hosting listing without
+the exact draft — is reported with the operands above and left open for
+manual resolution, because absence is not proof of non-delivery.
+Reconciliation itself never moves refs, pushes or POSTs.
 
 The archive controls below are local and do not create a delivery operation. `archive-build`
 requires a current independently accepted plan and task set, unchanged accepted
@@ -742,7 +751,12 @@ immutable per-plan view inside the Git-ignored `.vigil` folder of each accepted
 repository (`.vigil/plans/PLAN_ID/archive/`), kept out of `git status` through
 the repository-local `.git/info/exclude`; the private artifact store stays
 authoritative and the view is excluded from fingerprints, checkpoints and
-commits.
+commits. A view that cannot be written — for example when the operator owns a
+`.vigil` *file* where the folder belongs — is reported as a `view_warning` on
+the returned record, not as a command failure: the durable archive and its
+state transition have already committed, and repeating the command re-verifies
+the receipt. Existing user content inside a `.vigil` directory is never
+modified.
 
 ```sh
 ./bin/vigil --state-dir STATE project archive-build PROJECT_ID PLAN_ID --command-id ID
@@ -769,9 +783,14 @@ contain `command_id`, `plan_id`, `manifest_revision`, `manifest_digest`, bounded
 ```
 
 `finalization-run` selects a current profile with the `finalization` role and
-matching contained local Hermes provider. It is limited to accepted disposable
-fixtures: the plan acceptance must have the `fixture_core` actor and every
-enrolled repository must carry the disposable-fixture marker. It reserves a
+matching contained local Hermes provider. The live adapter is constructed
+from the selected profile's own persisted route identity (version, endpoint,
+credential reference), and the prepared manifest's secret environment name
+must match that credential reference; the runner then requires the reported
+identity to equal the selected eligible profile in all six fields. It is
+limited to accepted disposable fixtures: the plan acceptance must have the
+`fixture_core` actor and every enrolled repository must carry the
+disposable-fixture marker. It reserves a
 bounded allowance from the shared 30-minute plan-services ledger (at most ten
 attempts per plan), creates one durable finalization run, sends only the
 verified factual manifest to the provider, requires terminal idle, and

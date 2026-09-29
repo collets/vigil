@@ -203,11 +203,20 @@ func acceptedBaselineForRepository(ctx context.Context, scopeManifest string, re
 	}
 	for _, candidate := range accepted {
 		if candidate.ID == record.ID && candidate.Revision == record.Revision && reflect.DeepEqual(candidate.Identity, record.Identity) {
+			// Normalize the stored exclusion set before comparing: a stored
+			// acceptance that predates an application-owned exclusion (e.g.
+			// .vigil) must not be invalidated by the forced set alone.
+			normalized, err := workspace.NormalizeExclusions(record.Root, candidate.Observed.Exclusions)
+			if err != nil {
+				return workspace.Baseline{}, errors.New("accepted task fingerprint exclusions are invalid")
+			}
+			expected := candidate.Observed
+			expected.Exclusions = normalized
 			observed, err := workspace.Fingerprint(ctx, record.Root, candidate.Observed.Exclusions)
-			if err != nil || !reflect.DeepEqual(observed, candidate.Observed) {
+			if err != nil || !reflect.DeepEqual(observed, expected) {
 				return workspace.Baseline{}, errors.New("repository no longer matches accepted task fingerprint")
 			}
-			return candidate.Observed, nil
+			return expected, nil
 		}
 	}
 	return workspace.Baseline{}, errors.New("accepted task scope lacks enrolled repository revision")

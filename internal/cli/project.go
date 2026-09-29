@@ -316,11 +316,18 @@ func projectCommand(stateDir *string) *cobra.Command {
 		if planningManifest == "" || planningCommand == "" || planningProposal == "" || planningPlan == "" || planningSpec == "" || planningProfile == "" || planningExpected < 1 || planningSpecRevision < 1 || planningProfileRevision < 1 || planningActiveMS < 1 || planningActiveMS > core.MaxPlanningAttempt.Milliseconds() {
 			return errors.New("manifest, exact identities/revisions and active-limit-ms (1..300000) required")
 		}
-		provider, err := spike.NewPlanningProvider(cmd.Context(), planningManifest, planningKeyFile)
-		if err != nil {
-			return err
-		}
 		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			// The adapter is constructed from the persisted profile's own
+			// route identity, never from operator-supplied route names.
+			version, endpoint, credential, err := e.ProfileRoute(cmd.Context(), planningProfile, planningProfileRevision)
+			if err != nil {
+				return err
+			}
+			provider, err := spike.NewPlanningProvider(cmd.Context(), planningManifest, planningKeyFile,
+				spike.Route{Version: version, EndpointID: endpoint, CredentialRef: credential})
+			if err != nil {
+				return err
+			}
 			result, err := e.RunPlanning(cmd.Context(), core.PlanningRunRequest{CommandID: planningCommand, ExpectedRevision: planningExpected, ProposalID: planningProposal, ExpectedPlanID: planningPlan, SpecificationID: planningSpec, SpecificationRevision: planningSpecRevision, ProfileID: planningProfile, ProfileRevision: planningProfileRevision, ActiveLimit: time.Duration(planningActiveMS) * time.Millisecond}, provider)
 			if err != nil {
 				return err
@@ -360,11 +367,12 @@ func projectCommand(stateDir *string) *cobra.Command {
 			return (&mcp.Server{Handler: &modeltools.Handler{Engine: e}, SessionID: args[1]}).Serve(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
 		})
 	}})
-	var toolQualificationManifest, toolQualificationCommand string
+	var toolQualificationManifest, toolQualificationCommand, toolQualificationProfile string
+	var toolQualificationProfileRevision int
 	var toolQualificationLive bool
 	toolQualification := &cobra.Command{Use: "tool-qualify PROJECT_ID", Short: "Run one bounded native Hermes MCP isolation qualification", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		if !toolQualificationLive || toolQualificationManifest == "" || toolQualificationCommand == "" {
-			return errors.New("--live-local, --manifest and --command-id required")
+		if !toolQualificationLive || toolQualificationManifest == "" || toolQualificationCommand == "" || toolQualificationProfile == "" || toolQualificationProfileRevision < 1 {
+			return errors.New("--live-local, --manifest, --command-id and exact --profile-id/--profile-revision required")
 		}
 		dir := *stateDir
 		if dir == "" {
@@ -383,7 +391,8 @@ func projectCommand(stateDir *string) *cobra.Command {
 			return err
 		}
 		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
-			result, err := spike.RunHermesToolQualification(cmd.Context(), spike.ToolQualificationRequest{Engine: e, StateDir: dir, VigilBinary: binary, Manifest: toolQualificationManifest, CommandID: toolQualificationCommand})
+			result, err := spike.RunHermesToolQualification(cmd.Context(), spike.ToolQualificationRequest{Engine: e, StateDir: dir, VigilBinary: binary,
+				Manifest: toolQualificationManifest, CommandID: toolQualificationCommand, ProfileID: toolQualificationProfile, ProfileRevision: toolQualificationProfileRevision})
 			if err != nil {
 				return err
 			}
@@ -393,6 +402,8 @@ func projectCommand(stateDir *string) *cobra.Command {
 	toolQualification.Flags().BoolVar(&toolQualificationLive, "live-local", false, "Authorize one local Hermes tool-integration turn")
 	toolQualification.Flags().StringVar(&toolQualificationManifest, "manifest", "", "Prepared Hermes qualification manifest")
 	toolQualification.Flags().StringVar(&toolQualificationCommand, "command-id", "", "Unique injected tool-session command")
+	toolQualification.Flags().StringVar(&toolQualificationProfile, "profile-id", "", "Exact eligible profile whose route identity the qualification claims")
+	toolQualification.Flags().IntVar(&toolQualificationProfileRevision, "profile-revision", 0, "Exact current profile revision")
 	root.AddCommand(toolQualification)
 	root.AddCommand(&cobra.Command{Use: "proposal-show PROJECT_ID PROPOSAL_ID REVISION", Short: "Show one exact immutable planning proposal revision", Args: cobra.ExactArgs(3), RunE: func(cmd *cobra.Command, args []string) error {
 		revision, err := strconv.Atoi(args[2])

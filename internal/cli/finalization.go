@@ -239,11 +239,18 @@ func addFinalizationCommands(root *cobra.Command, stateDir *string) {
 		if finalizationManifest == "" || finalizationCommand == "" || finalizationProfile == "" || finalizationRevision < 1 || finalizationProfileRevision < 1 || finalizationDigest == "" || finalizationActiveMS < 1 || finalizationActiveMS > core.MaxPlanningAttempt.Milliseconds() {
 			return errors.New("manifest, exact archive/profile identities and active-limit-ms (1..300000) required")
 		}
-		provider, err := spike.NewPlanningProvider(cmd.Context(), finalizationManifest, finalizationKeyFile)
-		if err != nil {
-			return err
-		}
 		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			// The adapter is constructed from the persisted profile's own
+			// route identity, never from operator-supplied route names.
+			version, endpoint, credential, err := e.ProfileRoute(cmd.Context(), finalizationProfile, finalizationProfileRevision)
+			if err != nil {
+				return err
+			}
+			provider, err := spike.NewPlanningProvider(cmd.Context(), finalizationManifest, finalizationKeyFile,
+				spike.Route{Version: version, EndpointID: endpoint, CredentialRef: credential})
+			if err != nil {
+				return err
+			}
 			record, err := e.RunFinalization(cmd.Context(), core.FinalizationRunRequest{CommandID: finalizationCommand, PlanID: args[1],
 				ManifestRevision: finalizationRevision, ManifestDigest: finalizationDigest, ProfileID: finalizationProfile,
 				ProfileRevision: finalizationProfileRevision, ActiveLimit: time.Duration(finalizationActiveMS) * time.Millisecond}, provider)

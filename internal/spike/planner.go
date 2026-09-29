@@ -28,7 +28,20 @@ type PlanningProvider struct {
 	idle     bool
 }
 
-func NewPlanningProvider(ctx context.Context, manifestPath, keyFile string) (*PlanningProvider, error) {
+// Route names the application-level route identity a prepared manifest is
+// launched for. The spike manifest describes the prepared harness route; these
+// are the application's own route names, which the provider reports so the
+// application can bind them to its selected eligible profile. Fields the
+// manifest itself proves (model, provider, credential environment name) are
+// verified against the manifest and a mismatch is a hard failure — the provider
+// never silently reports a route it did not launch.
+type Route struct {
+	Version       string `json:"version"`
+	EndpointID    string `json:"endpoint_id"`
+	CredentialRef string `json:"credential_ref"`
+}
+
+func NewPlanningProvider(ctx context.Context, manifestPath, keyFile string, route Route) (*PlanningProvider, error) {
 	path, err := filepath.Abs(manifestPath)
 	if err != nil {
 		return nil, err
@@ -80,7 +93,22 @@ func NewPlanningProvider(ctx context.Context, manifestPath, keyFile string) (*Pl
 	if _, err := localMetadata(startupCtx, launch.Env["SPIKE_BASE_URL"], key, profile.Model); err != nil {
 		return nil, err
 	}
-	return &PlanningProvider{manifest: m, launch: launch, profile: profile, identity: core.PlanningProviderIdentity{Harness: "hermes", Model: profile.Model, Provider: profile.Provider}, env: environment(launch.Env)}, nil
+	// The full identity must be reported, not just harness/model/provider: the
+	// finalization runner binds the version, endpoint and credential reference
+	// of the selected profile before it will dispatch a model turn. The
+	// credential reference is checked against the prepared manifest's own
+	// secret environment name so a route can never claim a credential it was
+	// not prepared with.
+	if route.Version == "" || route.EndpointID == "" || route.CredentialRef == "" {
+		return nil, errors.New("exact version, endpoint and credential route identity required")
+	}
+	if !strings.HasPrefix(route.CredentialRef, "env:") || route.CredentialRef != "env:"+launch.SecretEnv {
+		return nil, errors.New("credential route does not name the prepared manifest secret environment")
+	}
+	return &PlanningProvider{manifest: m, launch: launch, profile: profile, identity: core.PlanningProviderIdentity{
+		Harness: "hermes", Model: profile.Model, Provider: profile.Provider,
+		Version: route.Version, EndpointID: route.EndpointID, CredentialRef: route.CredentialRef,
+	}, env: environment(launch.Env)}, nil
 }
 
 func (p *PlanningProvider) Identity() core.PlanningProviderIdentity { return p.identity }

@@ -42,6 +42,30 @@ type finalizationModelOutput struct {
 	CitedIDs []string `json:"cited_ids"`
 }
 
+// ProfileRoute returns the exact route identity a selected profile declares:
+// the version, endpoint and credential reference the live adapter must report
+// before a model turn is dispatched. Exposing it from the persisted profile
+// keeps adapter construction bound to the same profile the runner verifies,
+// instead of trusting operator-supplied route names.
+func (e *Engine) ProfileRoute(ctx context.Context, profileID string, profileRevision int) (version, endpointID, credentialRef string, err error) {
+	if !store.SafeID(profileID) || profileRevision < 1 {
+		return "", "", "", errors.New("exact profile identity required")
+	}
+	var raw string
+	if err := e.DB.SQL.QueryRowContext(ctx, `SELECT c.resolved_json FROM profiles p JOIN config_snapshots c ON c.id=p.config_id
+		WHERE p.id=? AND p.revision=? AND p.revision=(SELECT max(revision) FROM profiles WHERE id=?)`, profileID, profileRevision, profileID).Scan(&raw); err != nil {
+		return "", "", "", errors.New("explicit current profile required")
+	}
+	var profile policy.Profile
+	if err := json.Unmarshal([]byte(raw), &profile); err != nil {
+		return "", "", "", err
+	}
+	if err := profile.Validate(); err != nil {
+		return "", "", "", err
+	}
+	return profile.Version, profile.EndpointID, profile.CredentialRef, nil
+}
+
 const maxFinalizationAttempts = 10
 
 func (e *Engine) RunFinalization(ctx context.Context, request FinalizationRunRequest, provider FinalizationProvider) (ArchiveRecord, error) {
