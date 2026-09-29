@@ -147,7 +147,11 @@ Also addressed from the same review:
   count would turn a concurrent close into a spurious error. (The claim itself
   is retained but is no longer the correctness mechanism, so the earlier
   review's observation that it was untested is resolved differently: the
-  net-zero closure it protected no longer exists.)
+  net-zero closure it protected no longer exists.) The two `state='observed'`
+  assertions added for this are themselves **unpinned** — reverting them leaves
+  the suite green, because the claim transaction holds the project write lock
+  for the whole closure, so a lost claim cannot interleave there. They are
+  recorded as defence-in-depth below rather than claimed as covered.
 - **P1.1 follow-ups (from the third review of the redesign):** the redesign
   itself was confirmed correct — the blocking-`pre-receive` repro now records
   `observed`/`succeeded` — but three defects on the same path were found and
@@ -234,11 +238,14 @@ Also addressed from the same review:
   accepted residual rather than claimed as covered. It also noted that the
   `closure_kind IS NULL` guard on the claim release, the release on a failed
   closure transaction, the `failed`-journal and `succeeded`-journal refusals in
-  the resumed-claim path, and the closure-kind read error in `DeliveryStatus`
-  are defence-in-depth that no test can currently reach (their triggers require
-  a concurrent stale claim, a transactional failure, or a row that cannot be in
-  that state); they are retained deliberately, and are recorded here as unpinned
-  rather than claimed as covered.
+  the resumed-claim path, the closure-kind read error in `DeliveryStatus`, and
+  the two `RowsAffected == 1` assertions on the `state='observed'` closure
+  transitions are defence-in-depth that no test can currently reach (their
+  triggers require a concurrent stale claim, a transactional failure, a row that
+  cannot be in that state, or a lost claim that the write lock excludes); they
+  are retained deliberately, and are recorded here as unpinned rather than
+  claimed as covered. Each was revert-checked: removing one leaves the suite
+  green, which is the definition of unpinned here.
 
 ## Accepted residuals
 
@@ -263,6 +270,13 @@ defects. Each is fail-closed or inert:
   the code — every claim records the state it was taken from — and could only
   arise from a claim held at the instant of the 018→019 upgrade on a
   pre-release database. It fails closed and remains operator-visible.
+- Several reconciliation guards are defence-in-depth that no test can reach,
+  because the claim transaction holds the project write lock for the whole
+  closure: the `closure_kind IS NULL` release guard, the release on a failed
+  closure transaction, the terminal-journal refusals in the resumed-claim path,
+  the `RowsAffected == 1` assertions on the `state='observed'` transitions, and
+  `releaseClaim`'s deliberate omission of that assertion. Each is revert-checked
+  and each leaves the suite green when removed, so none is claimed as covered.
 
 - **P3.4:** the dry-run retention receipt is identified by its recorded command
   kind and human actor (via the `command_applied` event), not by the JSON shape

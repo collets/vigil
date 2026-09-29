@@ -277,8 +277,12 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 					Scan(&closed.DeliveryID, &closed.ExternalID, &closed.URL); err != nil {
 					return nil, err
 				}
-				if _, err := tx.ExecContext(ctx, "UPDATE operations SET state='observed',claimed_from_state=NULL WHERE id=? AND state='reconciled'", operationID); err != nil {
+				updated, err := tx.ExecContext(ctx, "UPDATE operations SET state='observed',claimed_from_state=NULL WHERE id=? AND state='reconciled'", operationID)
+				if err != nil {
 					return nil, err
+				}
+				if count, err := updated.RowsAffected(); err != nil || count != 1 {
+					return nil, errors.New("reconciliation claim was lost before observing the recorded effect")
 				}
 				return closed, nil
 			}
@@ -290,8 +294,12 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 			if count, err := updated.RowsAffected(); err != nil || count != 1 {
 				return nil, errors.New("delivery journal changed before reconciliation")
 			}
-			if _, err := tx.ExecContext(ctx, "UPDATE operations SET state='observed',claimed_from_state=NULL WHERE id=?", operationID); err != nil {
+			updated, err = tx.ExecContext(ctx, "UPDATE operations SET state='observed',claimed_from_state=NULL WHERE id=? AND state='reconciled'", operationID)
+			if err != nil {
 				return nil, err
+			}
+			if count, err := updated.RowsAffected(); err != nil || count != 1 {
+				return nil, errors.New("reconciliation claim was lost before closure")
 			}
 			closed := observation
 			closed.OperationID, closed.State, closed.DeliveryState = operationID, "observed", "succeeded"
