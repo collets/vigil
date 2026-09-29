@@ -148,10 +148,14 @@ Also addressed from the same review:
   is retained but is no longer the correctness mechanism, so the earlier
   review's observation that it was untested is resolved differently: the
   net-zero closure it protected no longer exists.) The two `state='observed'`
-  assertions added for this are themselves **unpinned** — reverting them leaves
-  the suite green, because the claim transaction holds the project write lock
-  for the whole closure, so a lost claim cannot interleave there. They are
-  recorded as defence-in-depth below rather than claimed as covered.
+  assertions and the added `AND state='reconciled'` guard on the main
+  `state='observed'` transition are themselves **unpinned** — reverting them
+  leaves the suite green, because the closure runs as one single-connection
+  `BEGIN IMMEDIATE` transaction and the pre-existing re-read at
+  `delivery_cancel.go:254` already proves the claim is held inside it, so a lost
+  claim cannot interleave. They are recorded in
+  [Accepted residuals](#accepted-residuals) below rather than claimed as
+  covered.
 - **P1.1 follow-ups (from the third review of the redesign):** the redesign
   itself was confirmed correct — the blocking-`pre-receive` repro now records
   `observed`/`succeeded` — but three defects on the same path were found and
@@ -234,49 +238,11 @@ Also addressed from the same review:
   The same review noted that the permanent tests model a push that has already
   completed rather than one caught mid-flight by a blocking server-side
   `pre-receive` hook. That specific interleaving is coverage, not a defect —
-  reconciliation closes only on positive proof — and is recorded here as an
-  accepted residual rather than claimed as covered. It also noted that the
-  `closure_kind IS NULL` guard on the claim release, the release on a failed
-  closure transaction, the `failed`-journal and `succeeded`-journal refusals in
-  the resumed-claim path, the closure-kind read error in `DeliveryStatus`, and
-  the two `RowsAffected == 1` assertions on the `state='observed'` closure
-  transitions are defence-in-depth that no test can currently reach (their
-  triggers require a concurrent stale claim, a transactional failure, a row that
-  cannot be in that state, or a lost claim that the write lock excludes); they
-  are retained deliberately, and are recorded here as unpinned rather than
-  claimed as covered. Each was revert-checked: removing one leaves the suite
-  green, which is the definition of unpinned here.
-
-## Accepted residuals
-
-These are deliberate, disclosed boundaries of the accepted slice, not open
-defects. Each is fail-closed or inert:
-
-- Archive publication holds the project write lock across the repository
-  fingerprint re-verification (git subprocesses plus a worktree walk). The
-  verification is required; a two-phase prepare/compare would avoid holding the
-  single writer for its duration.
-- `.vigil` view files are bounded per plan (64 revisions, 1 MiB each) but are
-  never pruned; the authoritative artifact copy remains the store. The ignore
-  entry is appended to the repository's shared `.git/info/exclude` and is
-  idempotent, but the write is not surfaced in command output.
-- The B3 regression test drives the isolated transport helper rather than the
-  `ExecutePush` call site; the production push path does route through it.
-- Because `.vigil` is always excluded, a user who tracks their own file or
-  directory named `.vigil` has it silently omitted from every acceptance
-  fingerprint. This is the recorded R65/R66 decision and its trade-off.
-- An operation in `reconciled` with neither `closure_kind` nor
-  `claimed_from_state` can be acted on by no command. It is unreachable through
-  the code — every claim records the state it was taken from — and could only
-  arise from a claim held at the instant of the 018→019 upgrade on a
-  pre-release database. It fails closed and remains operator-visible.
-- Several reconciliation guards are defence-in-depth that no test can reach,
-  because the claim transaction holds the project write lock for the whole
-  closure: the `closure_kind IS NULL` release guard, the release on a failed
-  closure transaction, the terminal-journal refusals in the resumed-claim path,
-  the `RowsAffected == 1` assertions on the `state='observed'` transitions, and
-  `releaseClaim`'s deliberate omission of that assertion. Each is revert-checked
-  and each leaves the suite green when removed, so none is claimed as covered.
+  reconciliation closes only on positive proof — and is recorded in
+  [Accepted residuals](#accepted-residuals) below rather than claimed as covered.
+  It also noted a set of defence-in-depth guards that no test can currently
+  reach; those are consolidated into the same section, which is the single place
+  that records what is deliberately unpinned.
 
 - **P3.4:** the dry-run retention receipt is identified by its recorded command
   kind and human actor (via the `command_applied` event), not by the JSON shape
@@ -285,8 +251,54 @@ defects. Each is fail-closed or inert:
   (`target_ref`, `approved_predecessor`, `approved_tree`/`approved_head`, or
   `project`/`head`/`base`) so a diverged observation is resolvable.
 
-The residual observations from the earlier rounds (P3.3, P4.1, P4.2, P4.3) are
-consolidated into [Accepted residuals](#accepted-residuals) above.
+## Accepted residuals
+
+These are deliberate, disclosed boundaries of the accepted slice, not open
+defects, and the single place where anything deliberately unpinned is recorded.
+The severity labels are those of the review that raised each item.
+
+- **P3.3** (first review): archive publication holds the project write lock
+  across the repository fingerprint re-verification (git subprocesses plus a
+  worktree walk). The verification is required; a two-phase prepare/compare would
+  avoid holding the single writer for its duration.
+- **P4.1** (first review): `.vigil` view files are bounded per plan (64
+  revisions, 1 MiB each) but are never pruned; the authoritative artifact copy
+  remains the store.
+- **P4.2** (first review): the B3 regression test drives `isolatedRemoteGit`
+  directly rather than through `ExecutePush`; the production push path routes
+  through it (`delivery_push.go`), but the test asserts the helper's isolation,
+  not the call site.
+- **P4.3** (first review): `ensureLocalGitIgnore` appends to the repository's
+  shared `.git/info/exclude`; the append is idempotent and marked, but the write
+  is not surfaced in command output.
+- Because `.vigil` is always excluded, a user who tracks their own file or
+  directory named `.vigil` has it silently omitted from every acceptance
+  fingerprint. This is the recorded R65/R66 decision and its trade-off.
+- An operation in `reconciled` with neither `closure_kind` nor
+  `claimed_from_state` can be acted on by no command. It is unreachable through
+  the code — every claim records the state it was taken from — and could only
+  arise from a claim held at the instant of the 018→019 upgrade on a
+  pre-release database. It fails closed and remains operator-visible.
+
+### Deliberately unpinned guards
+
+Each of the following is retained as defence-in-depth, is revert-checked, and
+leaves the suite green when removed, so none is claimed as covered. They cannot
+be reached because the reconciliation closure runs as a single
+`BEGIN IMMEDIATE` transaction on a single connection, and the pre-existing
+re-read at `delivery_cancel.go:254` already proves the claim is held inside it:
+
+- the `closure_kind IS NULL` guard on the claim release, so a release can never
+  reopen an attested closure;
+- the release performed when the closure transaction itself fails;
+- the `failed`-journal and `succeeded`-journal refusals in the resumed-claim
+  path;
+- the closure-kind read error in `DeliveryStatus`;
+- the `RowsAffected == 1` assertions on both `state='observed'` transitions, and
+  the `AND state='reconciled'` guard on the main one, added when the P3.2 claim
+  was reconciled against the code;
+- `releaseClaim`'s *deliberate omission* of that assertion, since a release whose
+  claim is already gone is a legitimate no-op.
 
 ## First independent review remediation
 

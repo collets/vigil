@@ -10,7 +10,7 @@ Use one foreground Go process as the owner of a project database and its executi
 
 | Package | Responsibility | Must not own |
 | --- | --- | --- |
-| `internal/core` | Commands, transition guards, readiness, acceptance, revisions | Native RPC parsing or terminal rendering |
+| `internal/core` | Commands, transition guards, readiness, acceptance, revisions, **and authorized delivery effects** (commit/push/draft request reconciliation, see Stage 5.6) | Native RPC parsing, terminal rendering, or **automatic merging** |
 | `internal/store` | Transactions, migrations, immutable records, command receipts | Model decisions |
 | `internal/policy` | Eligibility, grant matching, revision/resource binding | Native permanent allowlists |
 | `internal/coordinator` | Host-local folder ownership, endpoint queues, quarantine | Agent loops or remote clients |
@@ -18,7 +18,6 @@ Use one foreground Go process as the owner of a project database and its executi
 | `internal/harness` | Versioned native protocol and capability observations | App retry, budget or approval authority |
 | `internal/workspace` | Repository map, branches, fingerprints, checkpoints | Broad reset/clean or global stash ownership |
 | `internal/checks` / `review` | Check execution, findings, evidence freshness | Silent baseline waivers or repairs by reviewers |
-| `internal/core` (delivery commands) | Authorized commits/push/draft request reconciliation | Automatic merging |
 | `internal/artifacts` | Bounded private files, manifests, retention | Secrets or competing task state |
 | `internal/cli`, `internal/tui` | Commands, views, inbox | Mutable workflow state inferred from output |
 
