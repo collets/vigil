@@ -2,9 +2,10 @@
 
 <!-- vigil-tier: evidence -->
 
-Status: second remediation in progress on `task/5.6-delivery-finalization`
-after independent antagonist reviews of `9777de0` and `ebf7f0f` rejected both
-candidates. This is not independent acceptance or production-delivery
+Status: implementation in progress on `task/5.6-delivery-finalization`. Four
+independent antagonist reviews have run; `9777de0`, `ebf7f0f` and `0368227`
+were rejected and each was remediated on this branch. The current tip is not
+yet independently accepted, and nothing here is production-delivery
 qualification.
 
 ## Second independent review remediation
@@ -111,7 +112,27 @@ Also addressed from the same review:
   Regression tests cover each: a reconcile attempt on an attested closure is
   refused and the remote stays untouched; a head landing mid-reconciliation is
   observed rather than attested; and the attestation provenance survives in
-  `delivery-status`.
+  `delivery-status`. The mid-reconciliation test uses a `git` shim that lands
+  the approved head on the reconciler's *second* `ls-remote`, so it opens the
+  real window rather than a pre-reconciled state; reverting the fix makes it
+  fail.
+
+- **P1 (the fourth review's live defect):** the terminal-journal gate could
+  not distinguish an attested closure from an interrupted claim when the
+  operation had **no delivery journal row** — which `CloseUnobservedDelivery`
+  explicitly tolerates, and which is exactly the state the normal two-transaction
+  crash window in `ExecutePush` (`operation.start` committed, the journal
+  `INSERT` not) produces. Because the push branch is the only reconciliation
+  branch that reaches an external effect, reconcile could push to an operation
+  a human had attested never took effect, falsifying the attestation and never
+  recording the landing. The closure is now a **first-class durable fact**:
+  forward-only project migration 018 adds `operations.closure_kind`, written
+  atomically with the attested state change. Reconciliation refuses to resume
+  any operation carrying that marker, and the push branch additionally requires
+  a delivery journal before it will attempt anything. `delivery-status` keys
+  its attestation read-back on the marker rather than on `delivery_state`, so a
+  journal-less closure is still labelled. A regression test drives the real
+  crash window and asserts the remote stays untouched across two reconciles.
 - **P3.4:** the dry-run retention receipt is identified by its recorded command
   kind and human actor (via the `command_applied` event), not by the JSON shape
   of its result.

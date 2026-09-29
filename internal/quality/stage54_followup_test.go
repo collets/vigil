@@ -224,6 +224,20 @@ func downgradeQualityFixtureToV12(t *testing.T, f *fixture) {
 	if _, err := raw.Exec("DROP INDEX one_draft_delivery_per_head_base"); err != nil {
 		t.Fatal(err)
 	}
+	// Migration 18 adds operations.closure_kind; the v12 reconstruction must
+	// remove it along with the later additions it already drops.
+	if _, err := raw.Exec("PRAGMA ignore_check_constraints=ON"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec("DELETE FROM schema_migrations WHERE version=18"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec("ALTER TABLE operations DROP COLUMN closure_kind"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec("PRAGMA ignore_check_constraints=OFF"); err != nil {
+		t.Fatal(err)
+	}
 	for _, statement := range []string{"DROP TRIGGER planning_attempt_terminal_no_update", "DROP TRIGGER planning_attempt_no_delete", "DROP TABLE planning_budget_transfers", "DROP TABLE planning_attempts", "DROP TABLE planning_service_ledgers", "DROP INDEX one_active_tool_generation", "DROP TRIGGER blocked_observation_no_update", "DROP TRIGGER blocked_observation_no_delete", "DROP TRIGGER specification_revision_no_update", "DROP TRIGGER specification_revision_no_delete", "DROP TABLE blocked_observations", "DROP TABLE tool_sessions", "DROP TABLE planning_proposals", "DROP TABLE specification_revisions", "DROP TABLE workflow_dispatches", "DROP TABLE workflow_controls", "DROP TRIGGER quality_budget_segment_no_delete_v2", "DROP TRIGGER quality_budget_segment_update_guard_v2", "DROP TRIGGER quality_assessment_source_no_delete_v2", "DROP TRIGGER quality_assessment_source_update_guard_v2", "DROP TABLE quality_assessment_sources_v2", "DROP TABLE quality_budget_segments_v2", "DROP TABLE quality_authority_v2", "DELETE FROM schema_migrations WHERE version>=13"} {
 		if _, err := raw.Exec(statement); err != nil {
 			t.Fatal(err)

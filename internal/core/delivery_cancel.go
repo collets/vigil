@@ -64,13 +64,18 @@ func (e *Engine) DeliveryStatus(ctx context.Context, operationID string) (Delive
 			result.ApprovedTargets = []string{"project=" + intent.Project, "head=" + intent.HeadBranch + "@" + intent.HeadOID, "base=" + intent.BaseBranch}
 		}
 	}
-	// A reconciled delivery with no observed effect was closed by a human
-	// attestation. Surface that provenance from the attestation receipt so the
-	// status never reads as a system-proven outcome.
-	if result.State == "reconciled" && result.DeliveryState == "failed" {
-		result.Attestation = e.findDeliveryAttestation(ctx, operationID)
-		if result.Attestation == "" {
-			result.Attestation = "closed without a recorded human attestation"
+	// A reconciled delivery carrying the durable closure marker was closed by
+	// a human attestation. Surface that provenance from the attestation receipt
+	// so an in-progress claim and an attested closure are always
+	// distinguishable, whatever the delivery journal says — an attested
+	// operation may legitimately have no journal row.
+	if result.State == "reconciled" {
+		var closureKind sql.NullString
+		if err := e.DB.SQL.QueryRowContext(ctx, "SELECT closure_kind FROM operations WHERE id=?", operationID).Scan(&closureKind); err == nil && closureKind.Valid {
+			result.Attestation = e.findDeliveryAttestation(ctx, operationID)
+			if result.Attestation == "" {
+				result.Attestation = "closed by human attestation"
+			}
 		}
 	}
 	return result, nil
@@ -158,20 +163,27 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT kind,state FROM operations WHERE id=? AND kind IN ('commit','push','draft_request')", operationID).Scan(&kind, &state); err != nil {
 		return DeliveryStatus{}, errors.New("delivery operation not found")
 	}
-	// A claim is resumable ONLY when no closure was committed for it. A claim
-	// is written as operations.state='reconciled', and so is a terminal
-	// human-attested closure, which additionally moves the delivery journal to
-	// a terminal state. Resuming a closed operation would re-attempt an
-	// external effect on an operation the operator already decided was closed,
-	// so the journal is what distinguishes an interrupted claim from a
-	// finished one.
+	// A claim is resumable ONLY when no closure was committed for it. Both an
+	// interrupted claim and a human-attested closure write
+	// operations.state='reconciled', and an operation may have no delivery
+	// journal row at all when it is attested, so the durable closure marker —
+	// not the journal — is what distinguishes them. Resuming an attested
+	// operation would re-attempt its external effect and falsify the
+	// attestation.
 	claimed := state == "reconciled"
 	if claimed {
+		var closureKind sql.NullString
+		if err := e.DB.SQL.QueryRowContext(ctx, "SELECT closure_kind FROM operations WHERE id=?", operationID).Scan(&closureKind); err != nil {
+			return DeliveryStatus{}, err
+		}
+		if closureKind.Valid {
+			return DeliveryStatus{}, errors.New("delivery operation is closed by human attestation; a committed closure is never reopened by reconciliation")
+		}
 		var deliveryState string
 		if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM deliveries WHERE operation_id=?", operationID).Scan(&deliveryState); err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return DeliveryStatus{}, err
-		} else if err == nil && (deliveryState == "succeeded" || deliveryState == "failed") {
-			return DeliveryStatus{}, errors.New("delivery operation is already closed; a committed closure is never reopened by reconciliation")
+		} else if err == nil && deliveryState == "succeeded" {
+			return DeliveryStatus{}, errors.New("delivery effect is already recorded as succeeded; a completed observation is never reopened")
 		}
 	}
 	if !claimed && state != "executing" && state != "uncertain" {
@@ -315,7 +327,10 @@ func (e *Engine) CloseUnobservedDelivery(ctx context.Context, commandID, operati
 				return nil, errors.New("delivery journal changed before attestation")
 			}
 		}
-		updated, err := tx.ExecContext(ctx, "UPDATE operations SET state='reconciled' WHERE id=? AND state IN ('executing','uncertain')", operationID)
+		// The closure marker is durable and written with the state change, so
+		// reconciliation can never mistake this closure for an interrupted
+		// claim and re-attempt an external effect on it.
+		updated, err := tx.ExecContext(ctx, "UPDATE operations SET state='reconciled',closure_kind='attested' WHERE id=? AND state IN ('executing','uncertain') AND closure_kind IS NULL", operationID)
 		if err != nil {
 			return nil, err
 		}
@@ -345,6 +360,15 @@ func (e *Engine) CloseUnobservedDelivery(ctx context.Context, commandID, operati
 // closes automatically. The returned partial status carries the observed
 // identity.
 func (e *Engine) planDeliveryReconciliation(ctx context.Context, kind, operationID string) (DeliveryStatus, string, error) {
+	// The push branch is the only one that can reach an external effect, so it
+	// must have a delivery journal to act on. An operation without one has no
+	// recorded effect to reconcile and must never be pushed to.
+	if kind == "push" {
+		var state string
+		if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM deliveries WHERE operation_id=?", operationID).Scan(&state); err != nil {
+			return DeliveryStatus{}, "", errors.New("push operation has no delivery journal; re-execute the push so its effect is recorded")
+		}
+	}
 	switch kind {
 	case "commit":
 		intent, _, err := e.loadCommitIntent(ctx, operationID)

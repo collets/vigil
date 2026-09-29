@@ -1,0 +1,12 @@
+-- Stage 5.6: record how a delivery operation was closed.
+--
+-- A committed closure and an interrupted reconciliation claim both write
+-- operations.state='reconciled'. A delivery journal row cannot distinguish
+-- them, because an operation may legitimately have no journal row yet when it
+-- is attested. Without a durable marker, an attested closure could be resumed
+-- and would re-attempt its external effect, falsifying the attestation.
+--
+-- closure_kind is NULL while an operation is open or merely claimed, and
+-- 'attested' once a human has closed it as not-having-taken-effect. No other
+-- value may be written: an observed effect is recorded by state='observed'.
+ALTER TABLE operations ADD COLUMN closure_kind TEXT CHECK(closure_kind IS NULL OR closure_kind='attested');

@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1461,6 +1462,80 @@ func TestReconcileNeverReopensAnAttestedClosure(t *testing.T) {
 	}
 }
 
+func TestAttestationOnAPushWithNoJournalIsNeverPushedTo(t *testing.T) {
+	_, e, p := setup(t)
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	if b, err := exec.Command("git", "init", "--bare", "-q", remote).CombinedOutput(); err != nil {
+		t.Fatalf("bare fixture: %v %s", err, b)
+	}
+	seedAcceptedPlanWithChange(t, e, true, remote)
+	ctx := context.Background()
+	record, err := e.Repository(ctx, "fixture-repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := exec.Command("git", "-C", p.Root, "push", "-q", "origin", record.BaseOID+":refs/heads/main").CombinedOutput(); err != nil {
+		t.Fatalf("seed remote base: %v %s", err, b)
+	}
+	commit, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "prepare-journal-less", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Journal-less fixture", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: commit.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	if _, err := e.ExecuteCommit(ctx, commit.OperationID, grant); err != nil {
+		t.Fatal(err)
+	}
+	push, err := e.PreparePush(ctx, PushRequest{CommandID: "prepare-journal-less-remote", PlanID: "plan", RepositoryID: "fixture-repo", RemoteName: "origin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushGrant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: push.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	start, err := e.deliveryEnvelope(ctx, store.Digest([]byte("delivery.push.start\x00"+push.OperationID)), "operation.start", map[string]string{"operation_id": push.OperationID, "grant_id": pushGrant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(ctx, Core, start); err != nil {
+		t.Fatal(err)
+	}
+	// The normal two-transaction crash window in ExecutePush: operation.start
+	// has committed as executing, but the delivery journal INSERT never did.
+	// The push branch is the only reconciliation branch that can reach an
+	// external effect, so this state must never be pushed to.
+	var state string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM operations WHERE id=?", push.OperationID).Scan(&state); err != nil || state != "executing" {
+		t.Fatalf("crash-window precondition: operation state %q: %v", state, err)
+	}
+	var rows int
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT count(*) FROM deliveries WHERE operation_id=?", push.OperationID).Scan(&rows); err != nil || rows != 0 {
+		t.Fatalf("crash-window precondition: %d journal rows: %v", rows, err)
+	}
+	closed, err := e.CloseUnobservedDelivery(ctx, "attest-journal-less", push.OperationID, "verified the destination branch does not exist; the push never started")
+	if err != nil || closed.State != "reconciled" {
+		t.Fatalf("attestation of a journal-less operation: %#v %v", closed, err)
+	}
+	// Neither reconcile nor a repeated reconcile may push.
+	for _, commandID := range []string{"reconcile-journal-less", "reconcile-journal-less-again"} {
+		if _, err := e.ReconcileDelivery(ctx, commandID, push.OperationID); err == nil {
+			t.Fatalf("%s reopened an attested closure", commandID)
+		}
+		if out, err := exec.Command("git", "--git-dir", remote, "rev-parse", "refs/heads/"+record.PlanBranch).Output(); err == nil {
+			t.Fatalf("%s pushed onto an attested closure: %s", commandID, out)
+		}
+	}
+	// The attestation is visible with no journal row present.
+	status, err := e.DeliveryStatus(ctx, push.OperationID)
+	if err != nil || status.State != "reconciled" || status.DeliveryState != "" ||
+		status.Attestation != "verified the destination branch does not exist; the push never started" {
+		t.Fatalf("journal-less attested status: %#v %v", status, err)
+	}
+	// The closure marker is durable.
+	var closureKind sql.NullString
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT closure_kind FROM operations WHERE id=?", push.OperationID).Scan(&closureKind); err != nil || !closureKind.Valid || closureKind.String != "attested" {
+		t.Fatalf("closure marker: %v %v", closureKind, err)
+	}
+}
+
 func TestPushReconciliationObservesAHeadLandedDuringReconciliation(t *testing.T) {
 	_, e, p := setup(t)
 	remote := filepath.Join(t.TempDir(), "remote.git")
@@ -1512,9 +1587,32 @@ func TestPushReconciliationObservesAHeadLandedDuringReconciliation(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b, err := exec.Command("git", "-C", p.Root, "push", "-q", "origin", committed.CommitOID+":"+intent.RemoteRef).CombinedOutput(); err != nil {
-		t.Fatalf("concurrent landing: %v %s", err, b)
+	// A shim around git lands the approved head on the reconciler's SECOND
+	// ls-remote, deterministically opening the real window between the first
+	// observation and the pre-push re-check. The committed head is what the
+	// approved push would have delivered, so this models the original push
+	// landing mid-reconciliation rather than a third party.
+	shim := t.TempDir()
+	log := filepath.Join(shim, "calls.log")
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
 	}
+	// The shim lands the approved head when the reconciler re-observes the
+	// destination immediately before the re-attempt (its second ls-remote),
+	// which is exactly the window the fix covers.
+	script := "#!/bin/sh\n" +
+		"case \"$*\" in\n" +
+		"  *ls-remote*) echo ls-remote >> " + log + "\n" +
+		"    if [ \"$(grep -cx ls-remote " + log + ")\" = 2 ]; then\n" +
+		"      " + realGit + " -C " + p.Root + " push -q origin " + committed.CommitOID + ":" + intent.RemoteRef + " >/dev/null 2>&1\n" +
+		"    fi ;;\n" +
+		"esac\n" +
+		"exec " + realGit + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(shim, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", shim+string(os.PathListSeparator)+os.Getenv("PATH"))
 	status, err := e.ReconcileDelivery(ctx, "reconcile-concurrent-landing", push.OperationID)
 	if err != nil || status.State != "observed" || status.DeliveryState != "succeeded" {
 		t.Fatalf("concurrently landed push was not observed: %#v %v", status, err)

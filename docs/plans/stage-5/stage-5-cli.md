@@ -747,8 +747,10 @@ destination holds the approved head when reconcile re-checks it, that *is*
 proof the push landed and the operation closes as observed, so re-run
 `delivery-reconcile` rather than attesting. Reconciliation claims the operation
 while it works so no new executor starts an effect mid-decision, and releases
-the claim when blocked; a committed closure is never reopened, so an attested
-operation cannot later be pushed to.
+the claim when blocked. A committed closure is never reopened: reconciliation
+refuses any operation carrying a durable closure marker, and a push with no
+delivery journal is never attempted, so an attested operation cannot later be
+pushed to.
 
 `delivery-close-unobserved` is the explicit **human-attested** exit for an
 operation the operator has verified externally did not take effect. The

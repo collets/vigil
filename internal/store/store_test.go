@@ -24,6 +24,20 @@ func TestProjectV6UpgradeAndRollback(t *testing.T) {
 	if _, err = db.SQL.Exec("DROP INDEX one_draft_delivery_per_head_base"); err != nil {
 		t.Fatal(err)
 	}
+	// Migration 18 adds operations.closure_kind; it must be dropped before the
+	// database can be rolled back to v6 and re-upgraded.
+	if _, err = db.SQL.Exec("PRAGMA ignore_check_constraints=ON"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.SQL.Exec("DELETE FROM schema_migrations WHERE version=18"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.SQL.Exec("ALTER TABLE operations DROP COLUMN closure_kind"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.SQL.Exec("PRAGMA ignore_check_constraints=OFF"); err != nil {
+		t.Fatal(err)
+	}
 	for _, trigger := range qualityAuthorityTriggers {
 		if _, err = db.SQL.Exec("DROP TRIGGER " + trigger); err != nil {
 			t.Fatal(err)
@@ -85,7 +99,7 @@ func TestProjectV6UpgradeAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer upgraded.Close()
-	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 17 {
+	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 18 {
 		t.Fatal("v6 database was not upgraded", versions, err)
 	}
 	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM config_snapshots WHERE id='existing'").Scan(&existing); err != nil || existing != 1 {
@@ -112,6 +126,10 @@ func TestProjectV14UpgradeAndRollback(t *testing.T) {
 	}
 	for _, statement := range []string{
 		"PRAGMA foreign_keys=OFF",
+		"PRAGMA ignore_check_constraints=ON",
+		"DELETE FROM schema_migrations WHERE version=18",
+		"ALTER TABLE operations DROP COLUMN closure_kind",
+		"PRAGMA ignore_check_constraints=OFF",
 		"DROP INDEX one_draft_delivery_per_head_base",
 		"DELETE FROM schema_migrations WHERE version=17",
 		"DROP TRIGGER planning_attempt_terminal_no_update",
@@ -167,7 +185,7 @@ func TestProjectV14UpgradeAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer upgraded.Close()
-	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 17 {
+	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 18 {
 		t.Fatal("v14 database was not upgraded", versions, err)
 	}
 	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM config_snapshots WHERE id='pre15'").Scan(&retained); err != nil || retained != 1 {
@@ -186,6 +204,10 @@ func TestProjectV15UpgradeAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, statement := range []string{
+		"PRAGMA ignore_check_constraints=ON",
+		"DELETE FROM schema_migrations WHERE version=18",
+		"ALTER TABLE operations DROP COLUMN closure_kind",
+		"PRAGMA ignore_check_constraints=OFF",
 		"DROP INDEX one_draft_delivery_per_head_base",
 		"DELETE FROM schema_migrations WHERE version=17",
 		"DROP INDEX one_active_tool_generation",
@@ -232,7 +254,7 @@ func TestProjectV15UpgradeAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer upgraded.Close()
-	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 17 {
+	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil || versions != 18 {
 		t.Fatal("v15 database was not upgraded", versions, err)
 	}
 	if err = upgraded.SQL.QueryRow("SELECT count(*) FROM config_snapshots WHERE id='pre16'").Scan(&retained); err != nil || retained != 1 {
@@ -260,8 +282,8 @@ func TestProjectV8UpgradePreservesRecoverySnapshotsAndPermitsEqualDigests(t *tes
  VALUES('generation-one','run',1,'synthetic','runtime-one','transport-one','contained','delivered','{}','checkout','{}',1)`,
 		`INSERT INTO run_generations(id,run_id,ordinal,runtime_kind,runtime_resource_id,transport_generation,state,submission_state,qualification_request_json,checkout_plan_digest,expected_routes_json,created_at)
  VALUES('generation-two','run',2,'synthetic','runtime-two','transport-two','contained','delivered','{}','checkout','{}',2)`,
-		"INSERT INTO operations VALUES('operation-one','checkpoint_save','resource','args',1,'observed','plan','task','run','{}',1)",
-		"INSERT INTO operations VALUES('operation-two','checkpoint_save','resource-two','args-two',1,'observed','plan','task','run','{}',2)",
+		"INSERT INTO operations(id,kind,resource_digest,args_digest,policy_epoch,state,plan_id,task_id,run_id,evidence_json,created_at) VALUES('operation-one','checkpoint_save','resource','args',1,'observed','plan','task','run','{}',1)",
+		"INSERT INTO operations(id,kind,resource_digest,args_digest,policy_epoch,state,plan_id,task_id,run_id,evidence_json,created_at) VALUES('operation-two','checkpoint_save','resource-two','args-two',1,'observed','plan','task','run','{}',2)",
 		"INSERT INTO checkpoint_sets(id,run_id,operation_id,state,created_at) VALUES('checkpoint-one','run','operation-one','incomplete',1)",
 		"INSERT INTO checkpoint_sets(id,run_id,operation_id,state,created_at) VALUES('checkpoint-two','run','operation-two','incomplete',2)",
 	}
@@ -281,6 +303,10 @@ func TestProjectV8UpgradePreservesRecoverySnapshotsAndPermitsEqualDigests(t *tes
 	}
 	statements := []string{
 		"PRAGMA foreign_keys=OFF",
+		"PRAGMA ignore_check_constraints=ON",
+		"DELETE FROM schema_migrations WHERE version=18",
+		"ALTER TABLE operations DROP COLUMN closure_kind",
+		"PRAGMA ignore_check_constraints=OFF",
 		"DROP INDEX one_draft_delivery_per_head_base",
 		"DROP TRIGGER planning_attempt_terminal_no_update",
 		"DROP TRIGGER planning_attempt_no_delete",
