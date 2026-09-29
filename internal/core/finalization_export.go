@@ -66,8 +66,11 @@ func (e *Engine) ExportArchive(ctx context.Context, planID string, revision int,
 		if delivery.URL == "" {
 			continue
 		}
+		// Same rule as the archive collector: https, or the credential-free
+		// loopback host used only by marked disposable fixtures.
 		parsed, err := url.Parse(delivery.URL)
-		if err != nil || parsed.User != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
+		if err != nil || parsed.User != nil || parsed.Host == "" ||
+			(parsed.Scheme != "https" && !fixtureLoopback(parsed.Scheme+"://"+parsed.Host)) {
 			return result, errors.New("archive contains an invalid or credential-bearing external URL")
 		}
 		result.ExternalURLs = append(result.ExternalURLs, ExportedURL{DeliveryID: delivery.ID, URL: delivery.URL})

@@ -643,7 +643,8 @@ approval request with the exact tree, parent, plan ref, paths and acceptance
 identity. Retry the same command ID with identical arguments to retrieve the
 same request. Pre-existing dirty paths must have been explicitly included at
 repository enrollment. Paths outside the accepted task scope, nested repos,
-filters and hooks are rejected or bypassed.
+the application-owned `.git` and `.vigil` directories, filters and hooks are
+rejected or bypassed.
 
 ```sh
 ./bin/vigil --state-dir STATE project commit-prepare PROJECT_ID --file COMMIT.json
@@ -699,17 +700,49 @@ disposable fixture may use credential-free loopback hosting with
 `draft-execute` searches bounded exact head/base results before a single POST,
 requires a verified draft response, then appends its URL to a new factual
 archive revision. A timeout or ambiguous result becomes uncertain; retry
-without `--grant-id` performs observation only, never a second POST. There is
+without `--grant-id` performs observation only, never a second POST. A hosting
+response that created the exact request as non-draft is journaled as an
+uncertain external side effect requiring manual remediation. There is
 no merge command or endpoint. Routine tests use fake hosting and local bare
 remotes only; real publication needs its own exact operation grant.
+
+```sh
+./bin/vigil --state-dir STATE project delivery-status PROJECT_ID OPERATION_ID
+./bin/vigil --state-dir STATE project delivery-cancel PROJECT_ID OPERATION_ID --command-id ID
+./bin/vigil --state-dir STATE project delivery-reconcile PROJECT_ID OPERATION_ID --command-id ID
+```
+
+`delivery-status` inspects one exact commit/push/draft operation and any
+observed delivery journal row without changing anything. `delivery-cancel`
+closes only a prepared, never-started operation — no grant consumed, no
+delivery journal row — and cancels its pending approval request. An executing
+or uncertain operation is never cancelled: it may have an external effect.
+
+`delivery-reconcile` closes a stuck executing or uncertain operation from a
+fresh exact observation, and closes only the two provable cases: the approved
+end state was reached (the operation becomes `observed` with a succeeded
+delivery), or the approved prior state still holds (a provably net-zero
+effect; the operation becomes `reconciled` with a failed delivery and
+retention no longer pins the plan). Any other observation — a plan ref or
+remote ref moved by a third party, or a hosting listing without the exact
+draft — is reported and left open for manual resolution, because absence is
+not proof of non-delivery. Reconciliation itself never moves refs, pushes
+or POSTs.
 
 The archive controls below are local and do not create a delivery operation. `archive-build`
 requires a current independently accepted plan and task set, unchanged accepted
 repository fingerprints, and available durable evidence. It persists the factual
 manifest before any narrative and creates one visible system finalization task.
-The resulting plan remains `finalization_pending` until a separately validated
-result completes it. Repeating the same `--command-id` returns its receipt;
-building again with a new ID creates a new archive revision.
+The new archive is `factual_ready`; the first narrative attempt marks it
+`narrative_pending`. The resulting plan remains `finalization_pending` until a
+separately validated result completes it. Repeating the same `--command-id`
+returns its receipt; building again with a new ID creates a new archive
+revision (bounded). Every archive and narrative command also materializes the
+immutable per-plan view inside the Git-ignored `.vigil` folder of each accepted
+repository (`.vigil/plans/PLAN_ID/archive/`), kept out of `git status` through
+the repository-local `.git/info/exclude`; the private artifact store stays
+authoritative and the view is excluded from fingerprints, checkpoints and
+commits.
 
 ```sh
 ./bin/vigil --state-dir STATE project archive-build PROJECT_ID PLAN_ID --command-id ID
@@ -736,16 +769,19 @@ contain `command_id`, `plan_id`, `manifest_revision`, `manifest_digest`, bounded
 ```
 
 `finalization-run` selects a current profile with the `finalization` role and
-matching contained local Hermes provider. It reserves a bounded allowance
-from the shared 30-minute plan-services ledger, creates one durable
-finalization run, sends only the verified factual manifest to the provider,
-requires terminal idle, and validates closed narrative citations before
-completing the plan. A failed idle-observed result charges elapsed time and
-leaves the accepted plan `finalization_pending`; a new command can retry only
-the narrative. An unconfirmed provider outcome is `unknown` and is never
-replayed automatically. It does not turn on production implementation or
-review dispatch and requires explicit `--live-local` for the prepared llama
-route. No metered endpoint fallback is permitted.
+matching contained local Hermes provider. It is limited to accepted disposable
+fixtures: the plan acceptance must have the `fixture_core` actor and every
+enrolled repository must carry the disposable-fixture marker. It reserves a
+bounded allowance from the shared 30-minute plan-services ledger (at most ten
+attempts per plan), creates one durable finalization run, sends only the
+verified factual manifest to the provider, requires terminal idle, and
+validates closed narrative citations before completing the plan. A failed
+idle-observed result charges elapsed time and leaves the accepted plan
+`finalization_pending`; a new command can retry only the narrative. An
+unconfirmed provider outcome is `unknown` and is never replayed automatically.
+It does not turn on production implementation or review dispatch and requires
+explicit `--live-local` for the prepared llama route. No metered endpoint
+fallback is permitted.
 
 ```sh
 ./bin/vigil --state-dir STATE project finalization-run PROJECT_ID PLAN_ID \
@@ -753,19 +789,33 @@ route. No metered endpoint fallback is permitted.
   --archive-revision N --manifest-digest SHA256 \
   --profile-id PROFILE --profile-revision N --active-limit-ms 300000 \
   [--key-file PRIVATE_KEY_FILE]
+./bin/vigil --state-dir STATE project finalization-quarantine PROJECT_ID ATTEMPT_COMMAND_ID
 ```
+
+`finalization-quarantine` conservatively accounts for an overdue, unconfirmed
+fixture finalization attempt after its wall deadline plus a one-minute grace
+period: the run becomes `unknown` with `unconfirmed` writer state — the global
+execution fence stays held — the full reserved cap is charged as unknown time,
+and the visible finalization task returns to `ready` for an explicit retry
+with a new command. It never asserts that a native writer stopped.
 
 Project policy `transcript_retention_days` is optional: `0` or omission means
 30 days after plan completion; an explicit value may be 1–36500 days. Only
 application-owned `transcript` artifacts linked to completed-plan runs become
-eligible. Unfinished runs/plans, pending requests, unresolved operations and
-other typed references block expiry. Dry inspection changes nothing. Expiry
-marks references unavailable before deleting unshared bytes; it does not touch
-durable evidence, checkpoint artifacts or global harness history.
+eligible. Unfinished runs/plans, live pending requests, unresolved operations
+and other typed references block expiry; a pending request whose deadline has
+passed no longer blocks. Expiry is human-gated in two steps: `retention-inspect`
+persists the exact dry-run candidate set as a durable human receipt, and
+`retention-expire` consumes that receipt unchanged through a human envelope
+with an expected-revision check — a changed candidate set or a missing or
+already-consumed receipt refuses the expiry. Expiry marks references
+unavailable before deleting unshared bytes; it does not touch durable
+evidence, checkpoint artifacts or global harness history.
 
 ```sh
-./bin/vigil --state-dir STATE project retention-inspect PROJECT_ID
-./bin/vigil --state-dir STATE project retention-expire PROJECT_ID --command-id ID
+./bin/vigil --state-dir STATE project retention-inspect PROJECT_ID --command-id ID
+./bin/vigil --state-dir STATE project retention-expire PROJECT_ID \
+  --command-id ID --inspect-command-id INSPECT_ID
 ```
 
 ## Development-only spike runner

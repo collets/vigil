@@ -28,6 +28,46 @@ func repositoryFixture(t *testing.T) string {
 	return root
 }
 
+func TestFingerprintAlwaysExcludesVigilViewDirectory(t *testing.T) {
+	ctx := context.Background()
+	root := repositoryFixture(t)
+	clean, err := Fingerprint(ctx, root, nil)
+	if err != nil || clean.Dirty {
+		t.Fatal(clean, err)
+	}
+	// The in-repository .vigil archive view is application-owned, never
+	// accepted user content: writing it must not dirty the fingerprint.
+	if err := os.MkdirAll(filepath.Join(root, ".vigil", "plans", "plan", "archive"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".vigil", "plans", "plan", "archive", "factual-r1-x.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	observed, err := Fingerprint(ctx, root, nil)
+	if err != nil || observed.Dirty || observed.ContentDigest != clean.ContentDigest {
+		t.Fatalf("vigil view dirtied the fingerprint: %#v %v", observed, err)
+	}
+	if !contains(observed.Exclusions, ".git") || !contains(observed.Exclusions, ".vigil") {
+		t.Fatalf("forced exclusions missing: %#v", observed.Exclusions)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".git", "info", "exclude"), []byte(".vigil/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ignored, err := Fingerprint(ctx, root, nil)
+	if err != nil || ignored.ContentDigest != clean.ContentDigest {
+		t.Fatalf("local ignore file dirtied the fingerprint: %#v %v", ignored, err)
+	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestFingerprintCoversIndexTrackedAndUntrackedBytes(t *testing.T) {
 	ctx := context.Background()
 	root := repositoryFixture(t)

@@ -171,15 +171,24 @@ func (e *Engine) BuildFactualArchive(ctx context.Context, commandID, planID stri
 		if err == nil {
 			err = json.Unmarshal(receipt, &record)
 		}
+		if err == nil {
+			err = e.ensurePlanArchiveView(ctx, record)
+		}
 		return record, err
 	}
 	manifest, revision, qualityRevision, err := e.collectFactualArchive(ctx, planID)
 	if err != nil {
 		return record, err
 	}
+	if revision > 64 {
+		return record, errors.New("plan archive revision limit exhausted")
+	}
 	content, err := json.Marshal(manifest)
 	if err != nil {
 		return record, err
+	}
+	if len(content) > 1<<20 {
+		return record, errors.New("factual archive exceeds one MiB bound")
 	}
 	repository, err := artifacts.New(e.DB)
 	if err != nil {
@@ -189,7 +198,7 @@ func (e *Engine) BuildFactualArchive(ctx context.Context, commandID, planID stri
 	if err != nil {
 		return record, err
 	}
-	record = ArchiveRecord{PlanID: planID, Revision: revision, ManifestID: artifact.ID, ManifestDigest: artifact.Digest, State: "narrative_pending", TaskID: finalizationTaskID(planID)}
+	record = ArchiveRecord{PlanID: planID, Revision: revision, ManifestID: artifact.ID, ManifestDigest: artifact.Digest, State: "factual_ready", TaskID: finalizationTaskID(planID)}
 	receipt, err := e.DB.Command(ctx, command, func(tx *store.Tx) (any, error) {
 		var state string
 		var currentPlanRevision, latest int
@@ -213,6 +222,15 @@ func (e *Engine) BuildFactualArchive(ctx context.Context, commandID, planID stri
 		if err := tx.QueryRowContext(ctx, "SELECT id FROM quality_acceptances_v2 WHERE plan_id=? AND target_kind='plan' AND invalidated_at IS NULL", planID).Scan(&currentAcceptance); err != nil || currentAcceptance != manifest.AcceptanceID {
 			return nil, errors.New("current plan acceptance changed before archive publication")
 		}
+		for _, accepted := range manifest.Repositories {
+			if err := accepted.Identity.Validate(); err != nil {
+				return nil, err
+			}
+			observed, err := workspace.Fingerprint(ctx, accepted.Identity.Root, accepted.Observed.Exclusions)
+			if err != nil || !reflect.DeepEqual(observed, accepted.Observed) {
+				return nil, errors.New("accepted repository fingerprint changed before archive publication")
+			}
+		}
 		currentFacts := FactualArchive{Runs: []ArchiveRun{}, Deliveries: []ArchiveDelivery{}, Operations: []ArchiveOperation{}, Recovery: []ArchiveRecovery{}}
 		if err := collectArchiveOperations(ctx, tx, planID, &currentFacts); err != nil {
 			return nil, err
@@ -224,10 +242,13 @@ func (e *Engine) BuildFactualArchive(ctx context.Context, commandID, planID stri
 		if err := tx.QueryRowContext(ctx, "SELECT coalesce(max(revision),0) FROM archives WHERE plan_id=?", planID).Scan(&latest); err != nil {
 			return nil, err
 		}
+		if latest >= 64 {
+			return nil, errors.New("plan archive revision limit exhausted")
+		}
 		if latest+1 != revision {
 			return nil, errors.New("archive revision changed before publication")
 		}
-		if _, err := tx.ExecContext(ctx, "INSERT INTO archives(plan_id,revision,factual_manifest,state,created_at) VALUES(?, ?, ?, 'narrative_pending', ?)", planID, revision, artifact.ID, store.Now()); err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO archives(plan_id,revision,factual_manifest,state,created_at) VALUES(?, ?, ?, 'factual_ready', ?)", planID, revision, artifact.ID, store.Now()); err != nil {
 			return nil, err
 		}
 		if latest == 0 {
@@ -253,6 +274,9 @@ func (e *Engine) BuildFactualArchive(ctx context.Context, commandID, planID stri
 		return ArchiveRecord{}, err
 	}
 	err = json.Unmarshal(receipt, &record)
+	if err == nil {
+		err = e.ensurePlanArchiveView(ctx, record)
+	}
 	return record, err
 }
 
@@ -654,6 +678,9 @@ func (e *Engine) recordNarrative(ctx context.Context, request NarrativeResult) (
 		if err == nil {
 			err = json.Unmarshal(receipt, &record)
 		}
+		if err == nil {
+			err = e.ensurePlanArchiveView(ctx, record)
+		}
 		return record, err
 	}
 	if request.Actor == "fixture" {
@@ -665,7 +692,7 @@ func (e *Engine) recordNarrative(ctx context.Context, request NarrativeResult) (
 	if err != nil {
 		return record, err
 	}
-	if record.State != "narrative_pending" || record.ManifestDigest != request.ManifestDigest {
+	if record.State != "narrative_pending" && record.State != "factual_ready" || record.ManifestDigest != request.ManifestDigest {
 		return ArchiveRecord{}, errors.New("narrative refers to a stale or completed factual manifest")
 	}
 	allowed := map[string]bool{manifest.AcceptanceID: true}
@@ -723,7 +750,7 @@ func (e *Engine) recordNarrative(ctx context.Context, request NarrativeResult) (
 		if err := tx.QueryRowContext(ctx, "SELECT coalesce(max(revision),0) FROM archives WHERE plan_id=?", request.PlanID).Scan(&latest); err != nil || latest != request.ManifestRevision {
 			return nil, errors.New("a newer factual manifest superseded the narrative")
 		}
-		if err := tx.QueryRowContext(ctx, "SELECT factual_manifest,state FROM archives WHERE plan_id=? AND revision=?", request.PlanID, request.ManifestRevision).Scan(&manifestID, &archiveState); err != nil || manifestID != record.ManifestID || archiveState != "narrative_pending" {
+		if err := tx.QueryRowContext(ctx, "SELECT factual_manifest,state FROM archives WHERE plan_id=? AND revision=?", request.PlanID, request.ManifestRevision).Scan(&manifestID, &archiveState); err != nil || manifestID != record.ManifestID || (archiveState != "narrative_pending" && archiveState != "factual_ready") {
 			return nil, errors.New("archive state changed before narrative publication")
 		}
 		if err := tx.QueryRowContext(ctx, "SELECT actor FROM quality_acceptances_v2 WHERE id=? AND invalidated_at IS NULL", manifest.AcceptanceID).Scan(&acceptanceActor); err != nil ||
@@ -739,12 +766,15 @@ func (e *Engine) recordNarrative(ctx context.Context, request NarrativeResult) (
 		if _, err := tx.ExecContext(ctx, "UPDATE archives SET narrative=?,state='verified' WHERE plan_id=? AND revision=?", artifact.ID, request.PlanID, request.ManifestRevision); err != nil {
 			return nil, err
 		}
-		updated, err := tx.ExecContext(ctx, "UPDATE tasks SET state='accepted' WHERE id=? AND kind='finalization' AND state='ready'", record.TaskID)
+		// The finalization task is a visible system marker, never dispatched
+		// and never quality-accepted: it ends stopped, not accepted, once the
+		// verified narrative records the durable summary.
+		updated, err := tx.ExecContext(ctx, "UPDATE tasks SET state='stopped' WHERE id=? AND kind='finalization' AND state IN('ready','running')", record.TaskID)
 		if err != nil {
 			return nil, err
 		}
 		if count, err := updated.RowsAffected(); err != nil || count != 1 {
-			return nil, errors.New("finalization task is not ready")
+			return nil, errors.New("finalization task is not ready or running")
 		}
 		if _, err := tx.ExecContext(ctx, "UPDATE plans SET state='completed',completed_at=? WHERE id=?", store.Now(), request.PlanID); err != nil {
 			return nil, err
@@ -755,6 +785,9 @@ func (e *Engine) recordNarrative(ctx context.Context, request NarrativeResult) (
 		return ArchiveRecord{}, err
 	}
 	err = json.Unmarshal(receipt, &record)
+	if err == nil {
+		err = e.ensurePlanArchiveView(ctx, record)
+	}
 	return record, err
 }
 

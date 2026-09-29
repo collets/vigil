@@ -13,11 +13,11 @@ import (
 
 func fakeHostedItem(provider, baseURL, body string, draft bool) map[string]any {
 	if provider == "github" {
-		return map[string]any{"number": 1, "draft": draft, "state": "open", "html_url": baseURL + "/pull/1", "body": body,
+		return map[string]any{"number": 1, "draft": draft, "state": "open", "html_url": baseURL + "/fixture/project/pull/1", "body": body,
 			"head": map[string]any{"ref": "branch", "sha": strings.Repeat("a", 40), "repo": map[string]string{"full_name": "fixture/project"}},
 			"base": map[string]any{"ref": "main", "repo": map[string]string{"full_name": "fixture/project"}}}
 	}
-	return map[string]any{"iid": 1, "draft": draft, "state": "opened", "web_url": baseURL + "/merge_requests/1", "description": body,
+	return map[string]any{"iid": 1, "draft": draft, "state": "opened", "web_url": baseURL + "/fixture/project/-/merge_requests/1", "description": body,
 		"source_branch": "branch", "target_branch": "main", "sha": strings.Repeat("a", 40), "source_project_id": 7, "target_project_id": 7}
 }
 
@@ -71,6 +71,14 @@ func TestHostingAdapterAdversarialResponses(t *testing.T) {
 				case "duplicate":
 					item := fakeHostedItem(provider, server.URL, "<!-- vigil-delivery-operation:operation-one -->", true)
 					_ = json.NewEncoder(w).Encode([]any{item, item})
+				case "wrong-url":
+					item := fakeHostedItem(provider, server.URL, "<!-- vigil-delivery-operation:operation-one -->", true)
+					if provider == "github" {
+						item["html_url"] = server.URL + "/other/project/pull/1"
+					} else {
+						item["web_url"] = server.URL + "/other/project/-/merge_requests/1"
+					}
+					_ = json.NewEncoder(w).Encode([]any{item})
 				case "pages":
 					items := make([]any, 100)
 					for i := range items {
@@ -100,6 +108,10 @@ func TestHostingAdapterAdversarialResponses(t *testing.T) {
 			}
 			if _, _, err := adapter.List(ctx); err == nil {
 				t.Fatal("duplicate exact candidates accepted")
+			}
+			setMode("wrong-url")
+			if _, _, err := adapter.List(ctx); err == nil {
+				t.Fatal("same-host URL for another project accepted")
 			}
 			setMode("rate-limit")
 			if _, _, err := adapter.List(ctx); err == nil {

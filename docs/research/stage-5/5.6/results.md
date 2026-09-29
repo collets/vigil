@@ -2,9 +2,90 @@
 
 <!-- vigil-tier: evidence -->
 
-Status: implementation in progress on `task/5.6-delivery-finalization` from
-`54784ecb8987877f0cb4079daf43defd14371b6b`. This is not independent
-acceptance or production-delivery qualification.
+Status: remediation in progress on `task/5.6-delivery-finalization` after the
+first independent antagonist review of `9777de0` rejected that candidate. This
+is not independent acceptance or production-delivery qualification.
+
+## Independent review remediation
+
+The independent antagonist review of `9777de0` rejected that commit with four
+blockers, three high and several medium/low findings. The remediation on this
+branch closes all of them:
+
+- **B1/B2 (finalization dispatch authority):** `finalization-run` now requires
+  a current plan acceptance whose actor is `fixture_core` plus the
+  disposable-fixture marker on every enrolled repository, and the recorded
+  narrative actor is always `fixture`. A live model turn can no longer
+  complete a real (non-fixture) plan. The provider identity binding covers
+  the full profile: harness, model, provider, version, endpoint and
+  credential reference.
+- **B3 (repo-local Git configuration):** all push/ls-remote transport now
+  runs in a fresh temporary bare repository with the approved URL passed
+  directly, so repository-local `receivepack`, `insteadOf` rewrites, hooks,
+  refspecs and credential helpers cannot retarget or execute. A regression
+  test proves a managed-repository URL rewrite cannot retarget the push.
+- **B4 (unverifiable URL archived as fact):** hosting URLs must now match the
+  exact project path plus the request number (`OWNER/REPO/pull/N` or
+  `OWNER/REPO/-/merge_requests/N`), not merely the same host. An adversarial
+  same-host wrong-project response is rejected by a permanent test.
+- **H1:** commit reconciliation refuses to move a newly checked-out plan
+  branch (the user's HEAD branch) with a dedicated regression test.
+- **H2 (no exit from non-terminal operations):** `delivery-status` inspects
+  any delivery operation; `delivery-cancel` closes a never-started prepared
+  operation; `delivery-reconcile` closes an executing/uncertain operation
+  only from a fresh observation proving the approved end state or the still
+  unchanged approved prior state, and the duplicate-draft race loser is
+  auto-cancelled before any POST. Genuinely diverged observations (a moved
+  ref or remote) stay observably open for manual resolution — that is a
+  human decision, not a stuck state: the operator resolves the underlying
+  ref and reconciles. Reconciled/observed/failed states no longer pin
+  transcript retention.
+- **H3 (grant-free irreversible retention expiry):** `retention-inspect`
+  now persists the exact candidate set as a durable human dry-run receipt,
+  and `retention-expire` runs through a human `retention.expire` envelope
+  with an expected-revision check and consumes that receipt unchanged; a
+  missing, stale, non-inspection or already-consumed receipt refuses the
+  expiry. `archive-build` and `archive-export` remain core-actor creation
+  paths: they create or copy records and delete nothing.
+- **M1:** a hosting creation response that made the exact request non-draft
+  (GitLab with `FF_DISABLE_IMPLICIT_DRAFT`) is detected, journaled as an
+  uncertain external side effect with its exact external ID and URL, and
+  requires manual remediation instead of being silently discarded.
+- **M2/M4:** archives are bounded to 64 revisions, one MiB and ten
+  finalization attempts per plan; the plan-services ledger is reconciled
+  with the plan's current service limit before reserving an attempt.
+- **M3:** accepted repository fingerprints are re-verified inside the
+  publication transaction, not only during collection.
+- **M5:** `finalization-quarantine` conservatively accounts for an overdue
+  unconfirmed attempt (run `unknown`, full cap charged, execution fence
+  held, task back to `ready`) so a crashed attempt no longer bricks the plan.
+- **M6:** destination base branches are bounded to 255 bytes and validated
+  with `git check-ref-format --branch`.
+- **M7 (in-repository archive view, R65/R66):** the user chose the
+  in-repository `.vigil` view over the interim private-state view. The
+  `.vigil` directory is now always excluded from repository fingerprints
+  (like `.git`), never checkpointed, and never enters approved commit paths;
+  the view is materialized into `.vigil/plans/PLAN_ID/archive/` of every
+  accepted repository and kept locally Git-ignored via the repository-local
+  `.git/info/exclude`. A regression test proves the view write leaves the
+  accepted fingerprint unchanged and the view is ignored.
+- **M9:** a pending request whose deadline has passed no longer pins
+  transcript retention.
+- **L1:** export URL validation now agrees with the archive collector
+  (https or credential-free loopback only).
+- **L2:** the finalization task no longer claims `accepted` without
+  acceptance evidence: it is `ready` while awaiting the runner, `running`
+  while an attempt is active, and ends `stopped` after the verified
+  narrative, with no acceptance row and no dispatch eligibility.
+- **L3:** `operations.state='reconciled'` is now written by
+  `delivery-reconcile`, and `archives.state='factual_ready'` is written by
+  `archive-build` (the first narrative attempt flips it to
+  `narrative_pending`); no schema value remains unwritten.
+- **L4:** hosting HTTP clients never use an ambient proxy, so named
+  credentials cannot leak through `HTTPS_PROXY`.
+- **M8 (handoff documentation):** the remaining live-delivery inputs are
+  recorded in [pending decisions](../../../process/pending-decisions.md), and
+  the design decisions below are recorded in the session audit.
 
 ## Local factual archive and retention slice
 
@@ -91,12 +172,19 @@ reuses the Stage 5.5 contained qualification route under an explicit
 - After migration 017, the first full check exposed two old downgrade test
   fixtures that dropped the preceding indexes but not the new partial index.
   Their downgrade setup was updated; the focused migration tests passed.
-- On the current uncommitted candidate, `make docs-check`, `git diff --check`
-  and escalated `make check` pass. The full check ran pinned `go vet ./...`
-  and `go test ./...`; it did not exercise a real hosted repository or model.
+- On the remediated candidate, `go vet ./...`, the full `go test ./...`,
+  `make docs-check` and `git diff --check` pass locally on Linux with the
+  pinned Go 1.27.1 toolchain, including the new regression tests for the
+  review findings (URL rewrite isolation, wrong-project URL rejection,
+  checked-out reconciliation refusal, crash quarantine, task lifecycle,
+  delivery cancel/reconcile for commit/push/draft, retention dry-run
+  receipt consumption, fingerprint-neutral `.vigil` view and always-excluded
+  view paths). No real hosted repository, remote or model was exercised.
+  Native macOS validation remains unverified for this candidate.
 
 ## Remaining Stage 5.6 work
 
-The exact candidate still needs adversarial review, native macOS validation,
-and a decision on the default in-project Git-ignored archive view required by
-R65/R66. No real publication is authorized.
+The exact candidate needs a fresh independent antagonist review of the
+remediation commit, then native macOS validation. No real publication is
+authorized; every production dispatch, real-approval and real-delivery gate
+remains closed.

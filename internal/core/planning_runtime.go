@@ -18,9 +18,12 @@ const (
 )
 
 type PlanningProviderIdentity struct {
-	Harness  string `json:"harness"`
-	Model    string `json:"model"`
-	Provider string `json:"provider"`
+	Harness       string `json:"harness"`
+	Model         string `json:"model"`
+	Provider      string `json:"provider"`
+	Version       string `json:"version,omitempty"`
+	EndpointID    string `json:"endpoint_id,omitempty"`
+	CredentialRef string `json:"credential_ref,omitempty"`
 }
 
 type PlanningInput struct {

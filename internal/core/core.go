@@ -274,6 +274,11 @@ func (e *Engine) Apply(ctx context.Context, actor Authority, cmd Envelope) (json
 			result, err = e.resolveInput(ctx, tx, cmd)
 		case "operation.request", "permission.grant", "permission.revoke", "operation.start":
 			result, err = e.permission(ctx, tx, actor, cmd, epoch)
+		case "retention.expire":
+			if actor != Human {
+				return nil, errors.New("transcript expiry requires human authority")
+			}
+			result, err = e.expireTranscriptsCommand(ctx, tx, cmd)
 		default:
 			return nil, errors.New("unsupported command; execution, acceptance and delivery are not enabled")
 		}

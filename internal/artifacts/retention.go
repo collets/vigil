@@ -3,12 +3,10 @@ package artifacts
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"vigil/internal/store"
@@ -29,16 +27,21 @@ type ExpiryResult struct {
 }
 
 type artifactForeignKey struct{ table, column string }
-type retentionReader interface {
+
+// RetentionReader is the database surface the expiry candidate query and
+// expiry marking run against: either the shared connection or one open write
+// transaction.
+type RetentionReader interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 	QueryRowContext(context.Context, string, ...any) *sql.Row
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }
 
 func quotedSQL(name string) string { return `"` + strings.ReplaceAll(name, `"`, `""`) + `"` }
 
 // Discover every typed artifact reference, including future migrations. New
 // reference tables therefore make expiry more conservative by default.
-func artifactReferences(ctx context.Context, db retentionReader) ([]artifactForeignKey, error) {
+func artifactReferences(ctx context.Context, db RetentionReader) ([]artifactForeignKey, error) {
 	tables, err := db.QueryContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
 	if err != nil {
 		return nil, err
@@ -87,7 +90,7 @@ func artifactReferences(ctx context.Context, db retentionReader) ([]artifactFore
 	return refs, nil
 }
 
-func (r *Repository) expiryCandidates(ctx context.Context, db retentionReader, now int64, days int, checkBytes bool) ([]ExpiryCandidate, error) {
+func (r *Repository) expiryCandidates(ctx context.Context, db RetentionReader, now int64, days int, checkBytes bool) ([]ExpiryCandidate, error) {
 	if days < 1 || days > 36500 || now < 0 {
 		return nil, errors.New("invalid retention clock or interval")
 	}
@@ -144,10 +147,10 @@ func (r *Repository) expiryCandidates(ctx context.Context, db retentionReader, n
 				EXISTS(SELECT 1 FROM checkpoint_sets c JOIN runs cr ON cr.id=c.run_id WHERE cr.plan_id=p.id AND c.state!='restored') OR
 				EXISTS(SELECT 1 FROM operations o WHERE o.plan_id=p.id AND o.state IN ('prepared','executing','uncertain')) OR
 				EXISTS(SELECT 1 FROM deliveries d WHERE d.plan_id=p.id AND d.state IN ('prepared','pending','uncertain')) OR
-				EXISTS(SELECT 1 FROM requests q WHERE q.plan_id=p.id AND q.state='pending')
+				EXISTS(SELECT 1 FROM requests q WHERE q.plan_id=p.id AND q.state='pending' AND (q.deadline IS NULL OR q.deadline>?))
 			THEN 1 ELSE 0 END),0), max(p.completed_at)
 			FROM run_artifacts ra JOIN runs r ON r.id=ra.run_id JOIN plans p ON p.id=r.plan_id
-			WHERE ra.artifact_id=?`, cutoff, candidate.ID).Scan(&owners, &incomplete, &latestCompletion)
+			WHERE ra.artifact_id=?`, cutoff, now, candidate.ID).Scan(&owners, &incomplete, &latestCompletion)
 		if err != nil {
 			return nil, err
 		}
@@ -166,57 +169,38 @@ func (r *Repository) expiryCandidates(ctx context.Context, db retentionReader, n
 	return eligible, nil
 }
 
-func (r *Repository) InspectTranscriptExpiry(ctx context.Context, now int64, days int) ([]ExpiryCandidate, error) {
-	return r.expiryCandidates(ctx, r.DB.SQL, now, days, true)
+// TranscriptExpiryCandidates computes the exact eligible candidate set. The
+// caller chooses the reader (shared connection or open command transaction)
+// and whether blob bytes are re-verified before relying on the result.
+func (r *Repository) TranscriptExpiryCandidates(ctx context.Context, reader RetentionReader, now int64, days int, checkBytes bool) ([]ExpiryCandidate, error) {
+	return r.expiryCandidates(ctx, reader, now, days, checkBytes)
 }
 
-// ExpireTranscripts marks eligible references expired in a durable command
-// before removing unshared blobs. Retry also cleans blobs left by a crash after
-// the mark. Both phases share the publisher lock to avoid concurrent reuse.
-func (r *Repository) ExpireTranscripts(ctx context.Context, commandID string, now int64, days int) (ExpiryResult, error) {
-	result := ExpiryResult{Expired: []ExpiryCandidate{}, Deleted: []string{}}
-	if !store.SafeID(commandID) {
-		return result, errors.New("command ID required")
+// ExpireCandidates marks an exact eligible candidate set expired inside the
+// caller's transaction. The irreversible blob deletion is deliberately a
+// separate phase that runs only after this transaction commits.
+func (r *Repository) ExpireCandidates(ctx context.Context, reader RetentionReader, now int64, candidates []ExpiryCandidate) error {
+	for _, candidate := range candidates {
+		updated, err := reader.ExecContext(ctx, "UPDATE artifacts SET state='expired',expires_at=? WHERE id=? AND state='available' AND retention='transcript'", now, candidate.ID)
+		if err != nil {
+			return err
+		}
+		n, _ := updated.RowsAffected()
+		if n != 1 {
+			return errors.New("retention candidate changed before expiry")
+		}
 	}
+	return nil
+}
+
+// CleanupExpiredTranscriptBlobs removes blob bytes of expired transcripts that
+// no available artifact still needs, under the blob lock so a concurrent
+// publication cannot lose its bytes. A retry after a crash between marking
+// and deletion cleans up the remaining blobs. No durable evidence is eligible
+// for this operation.
+func (r *Repository) CleanupExpiredTranscriptBlobs(ctx context.Context) ([]string, error) {
+	deleted := []string{}
 	err := r.withBlobLock(func() error {
-		candidates, err := r.expiryCandidates(ctx, r.DB.SQL, now, days, true)
-		if err != nil {
-			return err
-		}
-		args, _ := json.Marshal(map[string]any{"now": now, "days": days})
-		receipt, err := r.DB.Command(ctx, store.Command{ID: commandID, Actor: "core", Kind: "artifact.transcript.expire", Args: args}, func(tx *store.Tx) (any, error) {
-			fresh, err := r.expiryCandidates(ctx, tx, now, days, false)
-			if err != nil {
-				return nil, err
-			}
-			if len(fresh) != len(candidates) {
-				return nil, errors.New("retention candidates changed before expiry")
-			}
-			for i := range fresh {
-				if fresh[i] != candidates[i] {
-					return nil, errors.New("retention candidates changed before expiry")
-				}
-			}
-			for _, c := range candidates {
-				updated, err := tx.ExecContext(ctx, "UPDATE artifacts SET state='expired',expires_at=? WHERE id=? AND state='available' AND retention='transcript'", now, c.ID)
-				if err != nil {
-					return nil, err
-				}
-				n, _ := updated.RowsAffected()
-				if n != 1 {
-					return nil, errors.New("retention candidate changed before expiry")
-				}
-			}
-			return candidates, nil
-		})
-		if err != nil {
-			return err
-		}
-		if err := json.Unmarshal(receipt, &result.Expired); err != nil {
-			return err
-		}
-		// Revisit all previously expired transcript blobs too. Marking and deletion
-		// are deliberately separate so a process death cannot erase available refs.
 		rows, err := r.DB.SQL.QueryContext(ctx, "SELECT DISTINCT digest FROM artifacts WHERE retention='transcript' AND state='expired' ORDER BY digest")
 		if err != nil {
 			return err
@@ -250,13 +234,12 @@ func (r *Repository) ExpireTranscripts(ctx context.Context, commandID string, no
 			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 				return err
 			}
-			result.Deleted = append(result.Deleted, digest)
+			deleted = append(deleted, digest)
 		}
-		if len(result.Deleted) != 0 {
+		if len(deleted) != 0 {
 			return syncDir(filepath.Join(r.Dir, "blobs"))
 		}
 		return nil
 	})
-	sort.Strings(result.Deleted)
-	return result, err
+	return deleted, err
 }

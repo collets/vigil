@@ -20,7 +20,8 @@ import (
 )
 
 // Baseline is a content-sensitive checkout observation. Exclusions are
-// explicit relative path prefixes (nested enrolled repositories plus .git).
+// explicit relative path prefixes (nested enrolled repositories plus the
+// always-excluded .git and in-repository .vigil view directories).
 // It does not execute hooks, filters, credential helpers or repository tools.
 type Baseline struct {
 	HeadOID       string   `json:"head_oid"`
@@ -132,8 +133,12 @@ func digestBytes(b []byte) string {
 	return hex.EncodeToString(h[:])
 }
 
+// normalizedExclusions always excludes .git and the in-repository .vigil view:
+// both are application-owned, never accepted user content, and therefore never
+// fingerprinted, checkpointed or committed. Nested enrolled repositories join
+// them as caller-supplied exclusions.
 func normalizedExclusions(root string, exclusions []string) ([]string, error) {
-	set := map[string]bool{".git": true}
+	set := map[string]bool{".git": true, ".vigil": true}
 	for _, item := range exclusions {
 		clean := filepath.Clean(filepath.FromSlash(item))
 		if clean == "." || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {

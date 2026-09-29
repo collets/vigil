@@ -42,6 +42,8 @@ type finalizationModelOutput struct {
 	CitedIDs []string `json:"cited_ids"`
 }
 
+const maxFinalizationAttempts = 10
+
 func (e *Engine) RunFinalization(ctx context.Context, request FinalizationRunRequest, provider FinalizationProvider) (ArchiveRecord, error) {
 	var empty ArchiveRecord
 	if e == nil || e.DB == nil || provider == nil || !store.SafeID(request.CommandID) || !store.SafeID(request.PlanID) ||
@@ -72,8 +74,18 @@ func (e *Engine) RunFinalization(ctx context.Context, request FinalizationRunReq
 		return empty, fmt.Errorf("finalization command has durable %s attempt; provider will not be replayed", state)
 	}
 	record, manifest, err := e.Archive(ctx, request.PlanID, request.ManifestRevision)
-	if err != nil || record.State != "narrative_pending" || record.ManifestDigest != request.ManifestDigest {
+	if err != nil || (record.State != "narrative_pending" && record.State != "factual_ready") || record.ManifestDigest != request.ManifestDigest {
 		return empty, errors.New("current pending factual archive and exact digest required")
+	}
+	// The live spike adapter is not a Stage 5.1 qualified runtime. Keep this
+	// path limited to disposable fixture plans until containment, route binding
+	// and crash recovery are independently qualified.
+	var acceptanceActor string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT actor FROM quality_acceptances_v2 WHERE id=? AND invalidated_at IS NULL", manifest.AcceptanceID).Scan(&acceptanceActor); err != nil || acceptanceActor != "fixture_core" {
+		return empty, errors.New("finalization model dispatch is limited to accepted disposable fixtures")
+	}
+	if err := e.requireFixtureArchive(ctx, request.PlanID); err != nil {
+		return empty, err
 	}
 	var latest int
 	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT coalesce(max(revision),0) FROM archives WHERE plan_id=?", request.PlanID).Scan(&latest); err != nil || latest != request.ManifestRevision {
@@ -98,6 +110,7 @@ func (e *Engine) RunFinalization(ctx context.Context, request FinalizationRunReq
 	identity := provider.Identity()
 	if err := profile.Validate(); err != nil || profile.ID != request.ProfileID ||
 		identity.Harness != profile.Harness || identity.Model != profile.Model || identity.Provider != profile.Provider ||
+		identity.Version != profile.Version || identity.EndpointID != profile.EndpointID || identity.CredentialRef != profile.CredentialRef ||
 		len(policy.Eligibility(config, profile, "finalization")) != 0 {
 		return empty, errors.New("finalization provider does not match selected eligible profile")
 	}
@@ -113,9 +126,29 @@ func (e *Engine) RunFinalization(ctx context.Context, request FinalizationRunReq
 		if err := tx.QueryRowContext(ctx, "SELECT state,revision,service_limit_ms FROM plans WHERE id=?", request.PlanID).Scan(&state, &planRevision, &serviceLimit); err != nil || state != "finalization_pending" || planRevision != manifest.PlanRevision {
 			return nil, errors.New("plan changed before finalization effect")
 		}
+		var attempts int
+		if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM runs WHERE plan_id=? AND role='finalization'", request.PlanID).Scan(&attempts); err != nil || attempts >= maxFinalizationAttempts {
+			return nil, errors.New("finalization attempt count exhausted")
+		}
 		var archiveState, archiveID string
-		if err := tx.QueryRowContext(ctx, "SELECT state,factual_manifest FROM archives WHERE plan_id=? AND revision=?", request.PlanID, request.ManifestRevision).Scan(&archiveState, &archiveID); err != nil || archiveState != "narrative_pending" || archiveID != record.ManifestID {
+		if err := tx.QueryRowContext(ctx, "SELECT state,factual_manifest FROM archives WHERE plan_id=? AND revision=?", request.PlanID, request.ManifestRevision).Scan(&archiveState, &archiveID); err != nil || archiveID != record.ManifestID || (archiveState != "narrative_pending" && archiveState != "factual_ready") {
 			return nil, errors.New("archive changed before finalization effect")
+		}
+		// The first attempt marks the archive narrative-pending; retries and
+		// the fixture narrative path observe the same pending state.
+		if archiveState == "factual_ready" {
+			if _, err := tx.ExecContext(ctx, "UPDATE archives SET state='narrative_pending' WHERE plan_id=? AND revision=? AND state='factual_ready'", request.PlanID, request.ManifestRevision); err != nil {
+				return nil, err
+			}
+		}
+		// The finalization task is a visible marker: it runs only through the
+		// finalization runner, never through task dispatch.
+		updated, err := tx.ExecContext(ctx, "UPDATE tasks SET state='running' WHERE id=? AND kind='finalization' AND state='ready'", record.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		if count, err := updated.RowsAffected(); err != nil || count != 1 {
+			return nil, errors.New("finalization task is not ready for the attempt")
 		}
 		var acceptanceID string
 		if err := tx.QueryRowContext(ctx, "SELECT id FROM quality_acceptances_v2 WHERE plan_id=? AND target_kind='plan' AND invalidated_at IS NULL", request.PlanID).Scan(&acceptanceID); err != nil || acceptanceID != manifest.AcceptanceID {
@@ -129,6 +162,15 @@ func (e *Engine) RunFinalization(ctx context.Context, request FinalizationRunReq
 		if err := tx.QueryRowContext(ctx, "SELECT charged_ms,unknown_ms,active_limit_ms FROM budget_ledgers WHERE id=? AND scope='plan_services' AND plan_id=?", ledgerID, request.PlanID).Scan(&charged, &unknown, &limit); err != nil {
 			return nil, err
 		}
+		if limit != int64(serviceLimit) {
+			if charged+unknown > int64(serviceLimit) {
+				return nil, errors.New("plan-services allowance was reduced below already charged usage")
+			}
+			if _, err := tx.ExecContext(ctx, "UPDATE budget_ledgers SET active_limit_ms=?,revision=revision+1,updated_at=? WHERE id=?", serviceLimit, store.Now(), ledgerID); err != nil {
+				return nil, err
+			}
+			limit = int64(serviceLimit)
+		}
 		if charged+unknown+request.ActiveLimit.Milliseconds() > limit {
 			return nil, errors.New("plan-services budget cannot reserve finalization attempt")
 		}
@@ -140,7 +182,7 @@ func (e *Engine) RunFinalization(ctx context.Context, request FinalizationRunReq
 		if err := tx.QueryRowContext(ctx, "SELECT max(revision) FROM profiles WHERE id=?", request.ProfileID).Scan(&currentProfileRevision); err != nil || currentProfileRevision != request.ProfileRevision {
 			return nil, errors.New("profile changed before finalization effect")
 		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO runs(id,plan_id,plan_revision,task_id,task_revision,config_id,profile_id,profile_revision,role,attempt_kind,state,writer_state,active_limit_ms,wall_limit_ms,created_at,started_at)
+		_, err = tx.ExecContext(ctx, `INSERT INTO runs(id,plan_id,plan_revision,task_id,task_revision,config_id,profile_id,profile_revision,role,attempt_kind,state,writer_state,active_limit_ms,wall_limit_ms,created_at,started_at)
 			VALUES(?,?,?,?,?,?,?,?,'finalization','initial','active','unconfirmed',?,?,?,?)`, runID, request.PlanID, manifest.PlanRevision, record.TaskID, 1, configID, request.ProfileID, request.ProfileRevision,
 			request.ActiveLimit.Milliseconds(), request.ActiveLimit.Milliseconds(), store.Now(), store.Now())
 		return map[string]string{"run_id": runID}, err
@@ -175,6 +217,13 @@ func (e *Engine) RunFinalization(ctx context.Context, request FinalizationRunReq
 			if count, err := updated.RowsAffected(); err != nil || count != 1 {
 				return errors.New("finalization run changed before outcome")
 			}
+			if outcome != "completed" {
+				// A finished or quarantined attempt leaves the visible
+				// finalization marker ready for an explicit retry.
+				if _, err := tx.ExecContext(context.Background(), "UPDATE tasks SET state='ready' WHERE id=? AND kind='finalization' AND state='running'", record.TaskID); err != nil {
+					return err
+				}
+			}
 			_, err = tx.ExecContext(context.Background(), "UPDATE budget_ledgers SET charged_ms=charged_ms+?,unknown_ms=unknown_ms+?,revision=revision+1,updated_at=? WHERE id=?", charge, unknown, store.Now(), ledgerID)
 			return err
 		})
@@ -196,17 +245,8 @@ func (e *Engine) RunFinalization(ctx context.Context, request FinalizationRunReq
 		_ = finish("failed", elapsed, 0)
 		return empty, err
 	}
-	actor := "core"
-	var acceptanceActor string
-	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT actor FROM quality_acceptances_v2 WHERE id=?", manifest.AcceptanceID).Scan(&acceptanceActor); err != nil {
-		_ = finish("failed", elapsed, 0)
-		return empty, err
-	}
-	if acceptanceActor == "fixture_core" {
-		actor = "fixture"
-	}
 	completed, err := e.recordNarrative(ctx, NarrativeResult{CommandID: store.Digest([]byte("finalization.narrative\x00" + request.CommandID)), PlanID: request.PlanID,
-		ManifestRevision: request.ManifestRevision, ManifestDigest: request.ManifestDigest, Text: output.Text, CitedIDs: output.CitedIDs, Actor: actor})
+		ManifestRevision: request.ManifestRevision, ManifestDigest: request.ManifestDigest, Text: output.Text, CitedIDs: output.CitedIDs, Actor: "fixture"})
 	if err != nil {
 		_ = finish("failed", elapsed, 0)
 		return empty, err
@@ -229,4 +269,60 @@ func (e *Engine) FinalizationRun(ctx context.Context, runID string) (string, err
 		return "", errors.New("finalization run not found")
 	}
 	return state, err
+}
+
+// QuarantineFinalizationAttempt accounts for a lost provider response after
+// its wall deadline. It deliberately does not assert that the native writer
+// stopped: the global execution fence remains held until qualified containment
+// proves quiescence. A crashed attempt is never silently retried.
+func (e *Engine) QuarantineFinalizationAttempt(ctx context.Context, attemptCommandID string) (string, error) {
+	if !store.SafeID(attemptCommandID) {
+		return "", errors.New("exact finalization attempt command ID required")
+	}
+	runID := store.Digest([]byte("finalization-run\x00" + attemptCommandID))
+	args, _ := json.Marshal(map[string]string{"attempt_command_id": attemptCommandID})
+	command := store.Command{ID: store.Digest([]byte("finalization.quarantine\x00" + attemptCommandID)), Actor: "core", Kind: "finalization.quarantine",
+		Args: args}
+	receipt, err := e.DB.Command(ctx, command, func(tx *store.Tx) (any, error) {
+		var state, planID, taskID string
+		var capMS, startedAt, wallMS int64
+		if err := tx.QueryRowContext(ctx, "SELECT state,plan_id,task_id,active_limit_ms,started_at,wall_limit_ms FROM runs WHERE id=? AND role='finalization'", runID).
+			Scan(&state, &planID, &taskID, &capMS, &startedAt, &wallMS); err != nil {
+			return nil, errors.New("finalization attempt not found")
+		}
+		if state != "active" || startedAt < 1 || store.Now() < startedAt+wallMS+60000 {
+			return nil, errors.New("only an overdue active finalization attempt can be quarantined")
+		}
+		updated, err := tx.ExecContext(ctx, "UPDATE runs SET state='unknown',writer_state='unconfirmed',ended_at=? WHERE id=? AND state='active'", store.Now(), runID)
+		if err != nil {
+			return nil, err
+		}
+		if count, err := updated.RowsAffected(); err != nil || count != 1 {
+			return nil, errors.New("finalization state changed before quarantine")
+		}
+		// A quarantined attempt leaves the visible finalization marker ready
+		// for an explicit retry; a completed narrative already stopped it.
+		if _, err := tx.ExecContext(ctx, "UPDATE tasks SET state='ready' WHERE id=? AND kind='finalization' AND state='running'", taskID); err != nil {
+			return nil, err
+		}
+		ledgerID := store.Digest([]byte("plan-services\x00" + planID))
+		updated, err = tx.ExecContext(ctx, "UPDATE budget_ledgers SET unknown_ms=unknown_ms+?,revision=revision+1,updated_at=? WHERE id=? AND scope='plan_services' AND plan_id=?", capMS, store.Now(), ledgerID, planID)
+		if err != nil {
+			return nil, err
+		}
+		if count, err := updated.RowsAffected(); err != nil || count != 1 {
+			return nil, errors.New("finalization budget ledger missing during quarantine")
+		}
+		return map[string]string{"run_id": runID, "state": "unknown"}, nil
+	})
+	if err != nil {
+		return "", err
+	}
+	var result struct {
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(receipt, &result); err != nil {
+		return "", err
+	}
+	return result.State, nil
 }

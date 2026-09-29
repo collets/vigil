@@ -35,6 +35,8 @@ type hostedDraft struct {
 	URL        string
 }
 
+var errNonDraftCreated = errors.New("hosting created an exact request that is not a draft")
+
 type hostingAdapter interface {
 	List(context.Context) (hostedDraft, bool, error)
 	Create(context.Context) (hostedDraft, error)
@@ -88,7 +90,9 @@ func newHostingAdapter(spec hostingSpec) (hostingAdapter, error) {
 		}
 	}
 	spec.APIBase = base
-	return &hostingClient{spec: spec, token: token, client: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil // never send a named hosting credential to an ambient proxy
+	return &hostingClient{spec: spec, token: token, client: &http.Client{Transport: transport, Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
 func (c *hostingClient) request(ctx context.Context, method, endpoint string, body any) ([]byte, int, error) {
@@ -147,9 +151,24 @@ func (c *hostingClient) marker() string {
 	return "<!-- vigil-delivery-operation:" + c.spec.OperationID + " -->"
 }
 
-func (c *hostingClient) validURL(raw string) bool {
+func (c *hostingClient) validURL(raw string, id int) bool {
 	u, err := url.Parse(raw)
-	if err != nil || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path == "" {
+	if err != nil || id < 1 || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path == "" {
+		return false
+	}
+	parts := strings.Split(c.spec.Project, "/")
+	for i := range parts {
+		if parts[i] == "" || parts[i] == "." || parts[i] == ".." {
+			return false
+		}
+		parts[i] = url.PathEscape(parts[i])
+	}
+	projectPath := "/" + strings.Join(parts, "/")
+	wantPath := projectPath + "/-/merge_requests/" + strconv.Itoa(id)
+	if c.spec.Provider == "github" {
+		wantPath = projectPath + "/pull/" + strconv.Itoa(id)
+	}
+	if u.EscapedPath() != wantPath {
 		return false
 	}
 	if c.spec.Fixture {
@@ -201,7 +220,7 @@ func (c *hostingClient) classifyGitHub(item githubDraft) (hostedDraft, bool, err
 	}
 	if item.Head.Repo.FullName != c.spec.Project || item.Base.Repo.FullName != c.spec.Project ||
 		item.Head.SHA != c.spec.HeadOID || !item.Draft || item.State != "open" || !strings.Contains(item.Body, c.marker()) ||
-		item.Number < 1 || !c.validURL(item.HTMLURL) {
+		item.Number < 1 || !c.validURL(item.HTMLURL, item.Number) {
 		return hostedDraft{}, false, errors.New("conflicting or unverifiable GitHub pull request for exact head/base")
 	}
 	return hostedDraft{ExternalID: strconv.Itoa(item.Number), URL: item.HTMLURL}, true, nil
@@ -213,7 +232,7 @@ func (c *hostingClient) classifyGitLab(item gitlabDraft) (hostedDraft, bool, err
 	}
 	if item.SourceProjectID <= 0 || item.SourceProjectID != item.TargetProjectID || item.SHA != c.spec.HeadOID ||
 		!item.Draft || item.State != "opened" || !strings.Contains(item.Description, c.marker()) ||
-		item.IID < 1 || !c.validURL(item.WebURL) {
+		item.IID < 1 || !c.validURL(item.WebURL, item.IID) {
 		return hostedDraft{}, false, errors.New("conflicting or unverifiable GitLab merge request for exact head/base")
 	}
 	return hostedDraft{ExternalID: strconv.Itoa(item.IID), URL: item.WebURL}, true, nil
@@ -313,6 +332,12 @@ func (c *hostingClient) Create(ctx context.Context) (hostedDraft, error) {
 		}
 		candidate, ok, err := c.classifyGitHub(item)
 		if err != nil || !ok {
+			if !item.Draft && item.Head.Ref == c.spec.HeadRef && item.Base.Ref == c.spec.BaseRef &&
+				item.Head.Repo.FullName == c.spec.Project && item.Base.Repo.FullName == c.spec.Project &&
+				item.Head.SHA == c.spec.HeadOID && item.State == "open" && strings.Contains(item.Body, c.marker()) &&
+				item.Number > 0 && c.validURL(item.HTMLURL, item.Number) {
+				return hostedDraft{ExternalID: strconv.Itoa(item.Number), URL: item.HTMLURL}, errNonDraftCreated
+			}
 			return hostedDraft{}, errors.New("GitHub did not verify the exact draft request")
 		}
 		return candidate, nil
@@ -323,6 +348,11 @@ func (c *hostingClient) Create(ctx context.Context) (hostedDraft, error) {
 	}
 	candidate, ok, err := c.classifyGitLab(item)
 	if err != nil || !ok {
+		if !item.Draft && item.SourceBranch == c.spec.HeadRef && item.TargetBranch == c.spec.BaseRef &&
+			item.SourceProjectID > 0 && item.SourceProjectID == item.TargetProjectID && item.SHA == c.spec.HeadOID &&
+			item.State == "opened" && strings.Contains(item.Description, c.marker()) && item.IID > 0 && c.validURL(item.WebURL, item.IID) {
+			return hostedDraft{ExternalID: strconv.Itoa(item.IID), URL: item.WebURL}, errNonDraftCreated
+		}
 		return hostedDraft{}, errors.New("GitLab did not verify the exact draft request")
 	}
 	return candidate, nil

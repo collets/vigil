@@ -123,6 +123,46 @@ func addFinalizationCommands(root *cobra.Command, stateDir *string) {
 	}}
 	executeDraft.Flags().StringVar(&draftGrant, "grant-id", "", "Exact human grant for a prepared draft; omit only for already started reconciliation")
 	root.AddCommand(executeDraft)
+	status := &cobra.Command{Use: "delivery-status PROJECT_ID OPERATION_ID", Short: "Inspect an exact delivery operation and any observed effect", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			result, err := e.DeliveryStatus(cmd.Context(), args[1])
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, result)
+		})
+	}}
+	root.AddCommand(status)
+	var cancelCommand string
+	cancelDelivery := &cobra.Command{Use: "delivery-cancel PROJECT_ID OPERATION_ID", Short: "Cancel a never-started delivery approval without an external effect", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		if cancelCommand == "" {
+			return errors.New("--command-id required")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			result, err := e.CancelPreparedDelivery(cmd.Context(), cancelCommand, args[1])
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, result)
+		})
+	}}
+	cancelDelivery.Flags().StringVar(&cancelCommand, "command-id", "", "Unique human cancellation command for a prepared operation")
+	root.AddCommand(cancelDelivery)
+	var reconcileCommand string
+	reconcileDelivery := &cobra.Command{Use: "delivery-reconcile PROJECT_ID OPERATION_ID", Short: "Close a stuck executing or uncertain delivery from a fresh exact observation", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		if reconcileCommand == "" {
+			return errors.New("--command-id required")
+		}
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			result, err := e.ReconcileDelivery(cmd.Context(), reconcileCommand, args[1])
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, result)
+		})
+	}}
+	reconcileDelivery.Flags().StringVar(&reconcileCommand, "command-id", "", "Unique human reconciliation command for an executing or uncertain operation")
+	root.AddCommand(reconcileDelivery)
 
 	var archiveCommand string
 	build := &cobra.Command{Use: "archive-build PROJECT_ID PLAN_ID", Short: "Persist a verified factual archive before any optional narrative", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
@@ -192,7 +232,7 @@ func addFinalizationCommands(root *cobra.Command, stateDir *string) {
 	var finalizationRevision, finalizationProfileRevision int
 	var finalizationActiveMS int64
 	var finalizationLiveLocal bool
-	finalizationRun := &cobra.Command{Use: "finalization-run PROJECT_ID PLAN_ID", Short: "Run one bounded narrative turn through the selected local Hermes profile", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+	finalizationRun := &cobra.Command{Use: "finalization-run PROJECT_ID PLAN_ID", Short: "Run one bounded disposable-fixture narrative turn through local Hermes", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
 		if !finalizationLiveLocal {
 			return errors.New("--live-local required; finalization inference is never implicit")
 		}
@@ -223,6 +263,16 @@ func addFinalizationCommands(root *cobra.Command, stateDir *string) {
 	finalizationRun.Flags().IntVar(&finalizationProfileRevision, "profile-revision", 0, "Exact current finalization profile revision")
 	finalizationRun.Flags().Int64Var(&finalizationActiveMS, "active-limit-ms", core.MaxPlanningAttempt.Milliseconds(), "Active finalization cap, maximum 300000ms")
 	root.AddCommand(finalizationRun)
+	quarantine := &cobra.Command{Use: "finalization-quarantine PROJECT_ID ATTEMPT_COMMAND_ID", Short: "Conservatively account for an overdue, unconfirmed fixture finalization attempt", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
+			state, err := e.QuarantineFinalizationAttempt(cmd.Context(), args[1])
+			if err != nil {
+				return err
+			}
+			return printJSON(cmd, map[string]string{"attempt_command_id": args[1], "state": state, "writer_state": "unconfirmed"})
+		})
+	}}
+	root.AddCommand(quarantine)
 
 	export := &cobra.Command{Use: "archive-export PROJECT_ID PLAN_ID REVISION DESTINATION", Short: "Copy verified archive records into a new portable private directory", Args: cobra.ExactArgs(4), RunE: func(cmd *cobra.Command, args []string) error {
 		revision, err := strconv.Atoi(args[2])
@@ -239,23 +289,31 @@ func addFinalizationCommands(root *cobra.Command, stateDir *string) {
 	}}
 	root.AddCommand(export)
 
-	inspect := &cobra.Command{Use: "retention-inspect PROJECT_ID", Short: "Dry-inspect completed-plan transcript expiry candidates", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	var retentionInspectCommand string
+	inspect := &cobra.Command{Use: "retention-inspect PROJECT_ID", Short: "Dry-inspect completed-plan transcript expiry candidates as a durable receipt", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if retentionInspectCommand == "" {
+			return errors.New("--command-id required")
+		}
 		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
-			candidates, err := e.InspectTranscriptExpiry(cmd.Context(), store.Now())
+			candidates, err := e.InspectTranscriptExpiry(cmd.Context(), retentionInspectCommand, store.Now())
 			if err != nil {
 				return err
 			}
 			return printJSON(cmd, candidates)
 		})
 	}}
+	inspect.Flags().StringVar(&retentionInspectCommand, "command-id", "", "Unique dry-run inspection command whose receipt expiry must consume")
 	root.AddCommand(inspect)
-	var retentionCommand string
+	var retentionCommand, retentionInspectReceipt string
 	expire := &cobra.Command{Use: "retention-expire PROJECT_ID", Short: "Expire eligible raw transcripts after the configured completed-plan interval", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		if retentionCommand == "" {
 			return errors.New("--command-id required")
 		}
+		if retentionInspectReceipt == "" {
+			return errors.New("--inspect-command-id required: expiry consumes an unchanged dry-run inspection receipt")
+		}
 		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
-			result, err := e.ExpireTranscripts(cmd.Context(), retentionCommand, store.Now())
+			result, err := e.ExpireTranscripts(cmd.Context(), retentionCommand, retentionInspectReceipt, store.Now())
 			if err != nil {
 				return err
 			}
@@ -263,5 +321,6 @@ func addFinalizationCommands(root *cobra.Command, stateDir *string) {
 		})
 	}}
 	expire.Flags().StringVar(&retentionCommand, "command-id", "", "Unique replay-safe transcript expiry command")
+	expire.Flags().StringVar(&retentionInspectReceipt, "inspect-command-id", "", "Exact dry-run inspection command ID whose candidate set must be unchanged")
 	root.AddCommand(expire)
 }

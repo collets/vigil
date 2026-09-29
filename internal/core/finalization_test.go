@@ -121,7 +121,7 @@ func TestFactualArchivePersistsBeforeNarrative(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if record.State != "narrative_pending" || record.Revision != 1 || record.ManifestDigest == "" {
+	if record.State != "factual_ready" || record.Revision != 1 || record.ManifestDigest == "" {
 		t.Fatal(record)
 	}
 	var state string
@@ -214,18 +214,75 @@ type fixtureFinalizationProvider struct {
 	err    error
 	idle   bool
 	calls  int
+	identity *PlanningProviderIdentity
+	crash bool
 }
 
 func (p *fixtureFinalizationProvider) Identity() PlanningProviderIdentity {
-	return PlanningProviderIdentity{Harness: "hermes", Model: "fixture-local", Provider: "custom"}
+	if p.identity != nil {
+		return *p.identity
+	}
+	return PlanningProviderIdentity{Harness: "hermes", Model: "fixture-local", Provider: "custom", Version: "0.21.3", EndpointID: "windows-llama", CredentialRef: "env:VIGIL_LLAMA_API_KEY"}
 }
 func (p *fixtureFinalizationProvider) IdleObserved() bool { return p.idle }
 func (p *fixtureFinalizationProvider) GenerateFinalization(_ context.Context, input FinalizationInput) ([]byte, error) {
 	p.calls++
+	if p.crash {
+		panic("simulated finalization process loss")
+	}
 	if input.Manifest.AcceptanceID != "accept-plan" || input.ManifestDigest == "" {
 		return nil, fmt.Errorf("fixture provider got wrong factual input")
 	}
 	return p.output, p.err
+}
+
+func TestFinalizationCrashQuarantinePreservesExecutionFence(t *testing.T) {
+	for _, afterNarrative := range []bool{false, true} {
+		t.Run(fmt.Sprint("after-narrative-", afterNarrative), func(t *testing.T) {
+			_, e, _ := setup(t)
+			seedAcceptedPlan(t, e)
+			ctx := context.Background()
+			archive, err := e.BuildFactualArchive(ctx, "archive-for-crash", "plan")
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := FinalizationRunRequest{CommandID: "crashed-finalization", PlanID: "plan", ManifestRevision: archive.Revision,
+				ManifestDigest: archive.ManifestDigest, ProfileID: "local", ProfileRevision: 1, ActiveLimit: time.Second}
+			func() {
+				defer func() { _ = recover() }()
+				_, _ = e.RunFinalization(ctx, request, &fixtureFinalizationProvider{crash: true})
+			}()
+			if afterNarrative {
+				_, err := e.RecordFixtureNarrative(ctx, NarrativeResult{CommandID: "narrative-after-crash", PlanID: "plan", ManifestRevision: archive.Revision,
+					ManifestDigest: archive.ManifestDigest, Text: "Accepted fixture", CitedIDs: []string{"accept-plan", "accept-first", "accept-second"}, Actor: "fixture"})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			runID := store.Digest([]byte("finalization-run\x00" + request.CommandID))
+			if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE runs SET started_at=? WHERE id=?", store.Now()-62000, runID); err != nil {
+				t.Fatal(err)
+			}
+			if state, err := e.QuarantineFinalizationAttempt(ctx, request.CommandID); err != nil || state != "unknown" {
+				t.Fatalf("quarantine failed: %q %v", state, err)
+			}
+			if state, err := e.QuarantineFinalizationAttempt(ctx, request.CommandID); err != nil || state != "unknown" {
+				t.Fatalf("quarantine receipt was not idempotent: %q %v", state, err)
+			}
+			var writer string
+			var unknown int64
+			if err := e.DB.SQL.QueryRowContext(ctx, "SELECT writer_state FROM runs WHERE id=?", runID).Scan(&writer); err != nil || writer != "unconfirmed" {
+				t.Fatalf("quarantine asserted unsupported writer stop: %q %v", writer, err)
+			}
+			if err := e.DB.SQL.QueryRowContext(ctx, "SELECT unknown_ms FROM budget_ledgers WHERE scope='plan_services' AND plan_id='plan'").Scan(&unknown); err != nil || unknown != 1000 {
+				t.Fatalf("crashed attempt not charged full cap: %d %v", unknown, err)
+			}
+			if _, err := e.DB.SQL.ExecContext(ctx, `INSERT INTO runs(id,plan_id,plan_revision,task_id,task_revision,config_id,profile_id,profile_revision,role,attempt_kind,state,writer_state,active_limit_ms,wall_limit_ms,created_at)
+				SELECT 'another-run',plan_id,plan_revision,task_id,task_revision,config_id,profile_id,profile_revision,role,attempt_kind,'active','unconfirmed',active_limit_ms,wall_limit_ms,? FROM runs WHERE id=?`, store.Now(), runID); err == nil {
+				t.Fatal("unknown writer did not retain global execution fence")
+			}
+		})
+	}
 }
 
 func TestFinalizationRunnerChargesFailureAndRetriesOnlyNarrative(t *testing.T) {
@@ -238,6 +295,12 @@ func TestFinalizationRunnerChargesFailureAndRetriesOnlyNarrative(t *testing.T) {
 	}
 	request := FinalizationRunRequest{CommandID: "finalization-failure", PlanID: "plan", ManifestRevision: archive.Revision,
 		ManifestDigest: archive.ManifestDigest, ProfileID: "local", ProfileRevision: 1, ActiveLimit: 2 * time.Second}
+	mismatch := (&fixtureFinalizationProvider{}).Identity()
+	mismatch.EndpointID = "other-local-endpoint"
+	wrongRoute := &fixtureFinalizationProvider{identity: &mismatch, idle: true}
+	if _, err := e.RunFinalization(ctx, request, wrongRoute); err == nil || wrongRoute.calls != 0 {
+		t.Fatalf("mismatched endpoint reached finalization provider: %v calls=%d", err, wrongRoute.calls)
+	}
 	failed := &fixtureFinalizationProvider{err: fmt.Errorf("fixture model failure"), idle: true}
 	if _, err := e.RunFinalization(ctx, request, failed); err == nil || failed.calls != 1 {
 		t.Fatalf("failed provider did not fail once: %v calls=%d", err, failed.calls)
@@ -310,6 +373,43 @@ func TestArchiveExportIsPortableAndRefusesSymlinkParent(t *testing.T) {
 	}
 }
 
+func TestDefaultPlanArchiveViewIsLocalGitIgnoredAndFingerprintNeutral(t *testing.T) {
+	_, e, p := setup(t)
+	seedAcceptedPlan(t, e)
+	ctx := context.Background()
+	record, err := e.BuildFactualArchive(ctx, "local-plan-view", "plan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := filepath.Join(p.Root, ".vigil", "plans", "plan", "archive")
+	name := fmt.Sprintf("factual-r%d-%s.json", record.Revision, record.ManifestDigest)
+	content, err := os.ReadFile(filepath.Join(view, name))
+	if err != nil || store.Digest(content) != record.ManifestDigest {
+		t.Fatalf("default factual view missing or corrupt: %v", err)
+	}
+	if b, err := exec.Command("git", "-C", p.Root, "check-ignore", "--quiet", "--", filepath.ToSlash(filepath.Join(".vigil", "plans", "plan", "archive", name))).Output(); err != nil {
+		t.Fatalf("archive view is not Git-ignored: %v %s", err, b)
+	}
+	// The in-repository view must not disturb the accepted exact fingerprint.
+	accepted, err := e.Repository(ctx, "fixture-repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed, err := workspace.Fingerprint(ctx, accepted.Root, accepted.Baseline.Exclusions)
+	if err != nil || !reflect.DeepEqual(observed, accepted.Baseline) {
+		t.Fatalf("view write changed the accepted fingerprint: %v", err)
+	}
+	if _, err := e.BuildFactualArchive(ctx, "local-plan-view", "plan"); err != nil {
+		t.Fatalf("exact archive receipt did not verify existing view: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(view, name), []byte("corrupt"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.BuildFactualArchive(ctx, "local-plan-view", "plan"); err == nil {
+		t.Fatal("corrupt view passed receipt verification")
+	}
+}
+
 func TestTranscriptRetentionFakeClockAndSharedBlob(t *testing.T) {
 	_, e, _ := setup(t)
 	seedAcceptedPlan(t, e)
@@ -345,7 +445,7 @@ func TestTranscriptRetentionFakeClockAndSharedBlob(t *testing.T) {
 		}
 	}
 	now := int64(50 * 86400000)
-	if candidates, err := e.InspectTranscriptExpiry(ctx, now); err != nil || len(candidates) != 0 {
+	if candidates, err := e.InspectTranscriptExpiry(ctx, "retention-inspect-1", now); err != nil || len(candidates) != 0 {
 		t.Fatalf("unfinished plan eligible: %#v %v", candidates, err)
 	}
 	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE plans SET state='completed',completed_at=? WHERE id='plan'", int64(10*86400000)); err != nil {
@@ -354,7 +454,7 @@ func TestTranscriptRetentionFakeClockAndSharedBlob(t *testing.T) {
 	if _, err := e.DB.SQL.ExecContext(ctx, "INSERT INTO operations(id,kind,resource_digest,args_digest,policy_epoch,state,plan_id,evidence_json,created_at) VALUES('unresolved-retention','commit',?,?,1,'uncertain','plan','{}',1000)", strings.Repeat("a", 64), strings.Repeat("b", 64)); err != nil {
 		t.Fatal(err)
 	}
-	if candidates, err := e.InspectTranscriptExpiry(ctx, now); err != nil || len(candidates) != 0 {
+	if candidates, err := e.InspectTranscriptExpiry(ctx, "retention-inspect-2", now); err != nil || len(candidates) != 0 {
 		t.Fatalf("unresolved operation eligible: %#v %v", candidates, err)
 	}
 	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE operations SET state='reconciled' WHERE id='unresolved-retention'"); err != nil {
@@ -367,20 +467,41 @@ func TestTranscriptRetentionFakeClockAndSharedBlob(t *testing.T) {
 	if _, err := e.DB.SQL.ExecContext(ctx, "INSERT INTO checkpoint_sets(id,run_id,operation_id,state,manifest_id,created_at) VALUES('retention-checkpoint','retention-run','unresolved-retention','saved',?,1000)", checkpointManifest.ID); err != nil {
 		t.Fatal(err)
 	}
-	if candidates, err := e.InspectTranscriptExpiry(ctx, now); err != nil || len(candidates) != 0 {
+	if candidates, err := e.InspectTranscriptExpiry(ctx, "retention-inspect-3", now); err != nil || len(candidates) != 0 {
 		t.Fatalf("saved recovery checkpoint eligible: %#v %v", candidates, err)
 	}
 	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE checkpoint_sets SET state='restored' WHERE id='retention-checkpoint'"); err != nil {
 		t.Fatal(err)
 	}
-	if candidates, err := e.InspectTranscriptExpiry(ctx, int64(39*86400000)); err != nil || len(candidates) != 0 {
+	if candidates, err := e.InspectTranscriptExpiry(ctx, "retention-inspect-4", int64(39*86400000)); err != nil || len(candidates) != 0 {
 		t.Fatalf("premature expiry: %#v %v", candidates, err)
 	}
-	candidates, err := e.InspectTranscriptExpiry(ctx, now)
+	if _, err := e.DB.SQL.ExecContext(ctx, "INSERT INTO requests(id,kind,state,plan_id,context_json,blocking,created_at,deadline) VALUES('retention-deadline','approval','pending','plan','{}',0,1000,?)", now+1000); err != nil {
+		t.Fatal(err)
+	}
+	if candidates, err := e.InspectTranscriptExpiry(ctx, "retention-inspect-5", now); err != nil || len(candidates) != 0 {
+		t.Fatalf("live pending request eligible: %#v %v", candidates, err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE requests SET deadline=? WHERE id='retention-deadline'", now-1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.ExpireTranscripts(ctx, "expire-without-inspection", "retention-inspect-missing", now); err == nil {
+		t.Fatal("expiry without a dry-run inspection receipt succeeded")
+	}
+	candidates, err := e.InspectTranscriptExpiry(ctx, "retention-inspect-final", now)
 	if err != nil || len(candidates) != 2 {
 		t.Fatalf("eligible raw transcripts: %#v %v", candidates, err)
 	}
-	result, err := e.ExpireTranscripts(ctx, "expire-transcripts", now)
+	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE artifacts SET state='corrupt' WHERE id=?", unique.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.ExpireTranscripts(ctx, "expire-stale-inspection", "retention-inspect-final", now); err == nil {
+		t.Fatal("expiry consumed a stale dry-run inspection receipt")
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE artifacts SET state='available' WHERE id=?", unique.ID); err != nil {
+		t.Fatal(err)
+	}
+	result, err := e.ExpireTranscripts(ctx, "expire-transcripts", "retention-inspect-final", now)
 	if err != nil || len(result.Expired) != 2 || len(result.Deleted) != 1 || result.Deleted[0] != unique.Digest {
 		t.Fatalf("expiry result: %#v %v", result, err)
 	}
@@ -393,8 +514,11 @@ func TestTranscriptRetentionFakeClockAndSharedBlob(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(repository.Dir, "blobs", unique.Digest)); !os.IsNotExist(err) {
 		t.Fatalf("unique expired blob remains: %v", err)
 	}
-	if replay, err := e.ExpireTranscripts(ctx, "expire-transcripts", now); err != nil || len(replay.Expired) != 2 {
+	if replay, err := e.ExpireTranscripts(ctx, "expire-transcripts", "retention-inspect-final", now); err != nil || len(replay.Expired) != 2 {
 		t.Fatalf("expiry replay: %#v %v", replay, err)
+	}
+	if _, err := e.ExpireTranscripts(ctx, "expire-again", "retention-inspect-final", now); err == nil {
+		t.Fatal("a second expiry consumed the already-expired inspection receipt")
 	}
 }
 
@@ -484,6 +608,38 @@ func TestCommitReconcilesCrashAfterRefUpdate(t *testing.T) {
 	var count int
 	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT count(*) FROM deliveries WHERE kind='commit'").Scan(&count); err != nil || count != 1 {
 		t.Fatalf("duplicate commit delivery: %d %v", count, err)
+	}
+}
+
+func TestCommitReconciliationRefusesNewlyCheckedOutPlanBranch(t *testing.T) {
+	_, e, p := setup(t)
+	seedAcceptedPlanWithChange(t, e, true)
+	ctx := context.Background()
+	prepared, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "prepare-checked-out", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Guard checked-out branch", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: prepared.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	start, err := e.deliveryEnvelope(ctx, store.Digest([]byte("delivery.start\x00"+prepared.OperationID)), "operation.start", map[string]string{"operation_id": prepared.OperationID, "grant_id": grant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(ctx, Core, start); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := exec.Command("git", "-C", p.Root, "checkout", "-q", "-b", "vigil/fixture").CombinedOutput(); err != nil {
+		t.Fatalf("switch fixture checkout: %v %s", err, b)
+	}
+	if _, err := e.ExecuteCommit(ctx, prepared.OperationID, ""); err == nil {
+		t.Fatal("reconciliation moved a newly checked-out plan ref")
+	}
+	var state string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM operations WHERE id=?", prepared.OperationID).Scan(&state); err != nil || state != "executing" {
+		t.Fatalf("checked-out reconciliation was marked observed: %s %v", state, err)
+	}
+	if _, err := deliveryGit(ctx, p.Root, nil, nil, "rev-parse", "--verify", prepared.Intent.TargetRef); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -584,6 +740,47 @@ func TestPushRejectsChangedRemoteBeforeGrantConsumption(t *testing.T) {
 	}
 }
 
+func TestPushTransportIgnoresManagedRepositoryURLRewrite(t *testing.T) {
+	_, e, p := setup(t)
+	approved := filepath.Join(t.TempDir(), "approved.git")
+	redirected := filepath.Join(t.TempDir(), "redirected.git")
+	for _, location := range []string{approved, redirected} {
+		if b, err := exec.Command("git", "init", "--bare", "-q", location).CombinedOutput(); err != nil {
+			t.Fatalf("bare fixture: %v %s", err, b)
+		}
+	}
+	seedAcceptedPlanWithChange(t, e, true, approved)
+	ctx := context.Background()
+	prepared, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "prepare-rewrite-commit", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Rewrite fixture", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: prepared.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	committed, err := e.ExecuteCommit(ctx, prepared.OperationID, grant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := exec.Command("git", "-C", p.Root, "config", "url."+redirected+".insteadOf", approved).CombinedOutput(); err != nil {
+		t.Fatalf("fixture URL rewrite: %v %s", err, b)
+	}
+	record, err := e.Repository(ctx, "fixture-repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := isolatedRemoteGit(ctx, record, []string{"GIT_ALLOW_PROTOCOL=file"}, true,
+		"push", "--porcelain", "--no-verify", "--no-follow-tags", "--recurse-submodules=no", approved,
+		committed.CommitOID+":refs/heads/vigil/fixture"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := exec.Command("git", "--git-dir", approved, "rev-parse", "refs/heads/vigil/fixture").Output(); err != nil || strings.TrimSpace(string(got)) != committed.CommitOID {
+		t.Fatalf("approved destination was not updated: %s %v", got, err)
+	}
+	if _, err := exec.Command("git", "--git-dir", redirected, "rev-parse", "refs/heads/vigil/fixture").Output(); err == nil {
+		t.Fatal("repository URL rewrite retargeted isolated push")
+	}
+}
+
 func TestPushReconcilesRemoteSuccessAfterLostObservation(t *testing.T) {
 	_, e, p := setup(t)
 	remote := filepath.Join(t.TempDir(), "remote.git")
@@ -679,11 +876,11 @@ func TestDraftAdaptersUseOneVerifiedFixtureRequest(t *testing.T) {
 				var input map[string]any
 				_ = json.Unmarshal(posted, &input)
 				if provider == "github" {
-					return map[string]any{"number": 1, "draft": true, "state": "open", "html_url": server.URL + "/pull/1", "body": input["body"],
+					return map[string]any{"number": 1, "draft": true, "state": "open", "html_url": server.URL + "/fixture/project/pull/1", "body": input["body"],
 						"head": map[string]any{"ref": "vigil/fixture", "sha": head, "repo": map[string]string{"full_name": "fixture/project"}},
 						"base": map[string]any{"ref": "main", "repo": map[string]string{"full_name": "fixture/project"}}}
 				}
-				return map[string]any{"iid": 1, "draft": true, "state": "opened", "web_url": server.URL + "/merge_requests/1", "description": input["description"],
+				return map[string]any{"iid": 1, "draft": true, "state": "opened", "web_url": server.URL + "/fixture/project/-/merge_requests/1", "description": input["description"],
 					"source_branch": "vigil/fixture", "target_branch": "main", "sha": head, "source_project_id": 7, "target_project_id": 7}
 			}
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -739,6 +936,53 @@ func TestDraftAdaptersUseOneVerifiedFixtureRequest(t *testing.T) {
 	}
 }
 
+func TestConcurrentDraftLoserCancelsBeforePost(t *testing.T) {
+	e, _ := seededPushedArchive(t)
+	ctx := context.Background()
+	posts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			posts++
+			t.Error("duplicate draft loser posted externally")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("[]"))
+	}))
+	defer server.Close()
+	request := DraftRequest{CommandID: "first-draft-race", PlanID: "plan", RepositoryID: "fixture-repo", Provider: "github",
+		Project: "fixture/project", APIBase: server.URL, BaseBranch: "main", Title: "Race fixture", Body: "Accepted work", Fixture: true}
+	first, err := e.PrepareDraft(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.CommandID = "second-draft-race"
+	second, err := e.PrepareDraft(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstGrant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: first.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	secondGrant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: second.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	start, err := e.deliveryEnvelope(ctx, store.Digest([]byte("delivery.draft.start\x00"+first.OperationID)), "operation.start", map[string]string{"operation_id": first.OperationID, "grant_id": firstGrant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(ctx, Core, start); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, `INSERT INTO deliveries(id,plan_id,repository_id,operation_id,kind,state,remote_identity,head_oid,base_ref)
+		VALUES(?,?,?,?,'draft_request','pending',?,?,?)`, draftDeliveryID(first.OperationID), first.Intent.PlanID, first.Intent.RepositoryID, first.OperationID,
+		first.Intent.RemoteIdentity, first.Intent.HeadOID, first.Intent.BaseBranch); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.ExecuteDraft(ctx, second.OperationID, secondGrant); err == nil {
+		t.Fatal("duplicate draft loser was not rejected")
+	}
+	status, err := e.DeliveryStatus(ctx, second.OperationID)
+	if err != nil || status.State != "cancelled" || status.DeliveryID != "" || posts != 0 {
+		t.Fatalf("duplicate loser retained effect authority: %#v %v posts=%d", status, err, posts)
+	}
+}
+
 func TestDraftLostPostResponseReconcilesWithoutDuplicate(t *testing.T) {
 	e, head := seededPushedArchive(t)
 	var mutex sync.Mutex
@@ -789,5 +1033,325 @@ func TestDraftLostPostResponseReconcilesWithoutDuplicate(t *testing.T) {
 	mutex.Unlock()
 	if count != 1 {
 		t.Fatalf("duplicate POST after lost response: %d", count)
+	}
+}
+
+func TestFinalizationTaskLifecycleIsVisibleAndNeverAccepted(t *testing.T) {
+	_, e, _ := setup(t)
+	seedAcceptedPlan(t, e)
+	ctx := context.Background()
+	archive, err := e.BuildFactualArchive(ctx, "task-lifecycle-archive", "plan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskState := func() string {
+		var state string
+		if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM tasks WHERE id=?", archive.TaskID).Scan(&state); err != nil {
+			t.Fatal(err)
+		}
+		return state
+	}
+	if taskState() != "ready" {
+		t.Fatalf("finalization task not visibly ready: %s", taskState())
+	}
+	request := FinalizationRunRequest{CommandID: "task-lifecycle-failure", PlanID: "plan", ManifestRevision: archive.Revision,
+		ManifestDigest: archive.ManifestDigest, ProfileID: "local", ProfileRevision: 1, ActiveLimit: 2 * time.Second}
+	failed := &fixtureFinalizationProvider{err: fmt.Errorf("fixture model failure"), idle: true}
+	if _, err := e.RunFinalization(ctx, request, failed); err == nil {
+		t.Fatal("failing fixture provider succeeded")
+	}
+	if taskState() != "ready" {
+		t.Fatalf("failed attempt did not leave the finalization task ready: %s", taskState())
+	}
+	request.CommandID = "task-lifecycle-success"
+	output, _ := json.Marshal(map[string]any{"text": "The accepted fixture tasks passed their recorded evidence.",
+		"cited_ids": []string{"accept-plan", "accept-first", "accept-second"}})
+	success := &fixtureFinalizationProvider{output: output, idle: true}
+	completed, err := e.RunFinalization(ctx, request, success)
+	if err != nil || completed.State != "verified" {
+		t.Fatalf("finalization success: %#v %v", completed, err)
+	}
+	if taskState() != "stopped" {
+		t.Fatalf("verified narrative left the finalization task %q instead of stopped", taskState())
+	}
+	var accepted int
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT count(*) FROM quality_acceptances_v2 WHERE task_id=? AND invalidated_at IS NULL", archive.TaskID).Scan(&accepted); err != nil || accepted != 0 {
+		t.Fatalf("finalization task claims acceptance evidence: %d %v", accepted, err)
+	}
+}
+
+func TestCommitReconciliationClosesStuckOperationByObservation(t *testing.T) {
+	_, e, p := setup(t)
+	seedAcceptedPlanWithChange(t, e, true)
+	ctx := context.Background()
+	prepared, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "prepare-reconcile-commit", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Reconcile fixture", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: prepared.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	start, err := e.deliveryEnvelope(ctx, store.Digest([]byte("delivery.start\x00"+prepared.OperationID)), "operation.start", map[string]string{"operation_id": prepared.OperationID, "grant_id": grant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(ctx, Core, start); err != nil {
+		t.Fatal(err)
+	}
+	tree, err := deliveryGit(ctx, p.Root, nil, nil, "rev-parse", fmt.Sprintf("%s^{tree}", prepared.Intent.ParentOID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := deliveryGit(ctx, p.Root, nil, nil, "-c", "user.name=Fixture", "-c", "user.email=fixture@invalid", "commit-tree", tree, "-m", "Third-party move")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a crash window after effect start: the journal is pending and a
+	// third party has moved the plan ref, so the approved CAS can never succeed.
+	if _, err := e.DB.SQL.ExecContext(ctx, `INSERT INTO deliveries(id,plan_id,repository_id,operation_id,kind,state,head_oid)
+		VALUES(?,?,?,?, 'commit','pending',?)`, commitDeliveryID(prepared.OperationID), "plan", "fixture-repo", prepared.OperationID, prepared.Intent.ParentOID); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := exec.Command("git", "-C", p.Root, "update-ref", prepared.Intent.TargetRef, other, prepared.Intent.ExpectedRefOID).CombinedOutput(); err != nil {
+		t.Fatalf("third-party ref move: %v %s", err, b)
+	}
+	if _, err := e.ReconcileDelivery(ctx, "reconcile-moved-commit", prepared.OperationID); err == nil {
+		t.Fatal("reconciliation closed a commit whose ref was moved by a third party")
+	}
+	if status, err := e.DeliveryStatus(ctx, prepared.OperationID); err != nil || status.State != "executing" {
+		t.Fatalf("blocked reconciliation changed the operation: %#v %v", status, err)
+	}
+	// The approved prior state is the absent branch: restore it by deleting
+	// the third-party ref.
+	if b, err := exec.Command("git", "-C", p.Root, "update-ref", "-d", prepared.Intent.TargetRef, other).CombinedOutput(); err != nil {
+		t.Fatalf("restore approved absent ref: %v %s", err, b)
+	}
+	status, err := e.ReconcileDelivery(ctx, "reconcile-commit", prepared.OperationID)
+	if err != nil || status.State != "reconciled" || status.DeliveryState != "failed" {
+		t.Fatalf("commit reconciliation: %#v %v", status, err)
+	}
+	var operationState, deliveryState string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM operations WHERE id=?", prepared.OperationID).Scan(&operationState); err != nil || operationState != "reconciled" {
+		t.Fatalf("operation not reconciled: %s %v", operationState, err)
+	}
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM deliveries WHERE operation_id=?", prepared.OperationID).Scan(&deliveryState); err != nil || deliveryState != "failed" {
+		t.Fatalf("delivery not closed: %s %v", deliveryState, err)
+	}
+	if _, err := e.ReconcileDelivery(ctx, "reconcile-commit-again", prepared.OperationID); err == nil {
+		t.Fatal("already reconciled operation was reconciled again")
+	}
+}
+
+func TestPushReconciliationClosesUncertainOperationByObservation(t *testing.T) {
+	_, e, p := setup(t)
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	if b, err := exec.Command("git", "init", "--bare", "-q", remote).CombinedOutput(); err != nil {
+		t.Fatalf("bare fixture: %v %s", err, b)
+	}
+	seedAcceptedPlanWithChange(t, e, true, remote)
+	ctx := context.Background()
+	record, err := e.Repository(ctx, "fixture-repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := exec.Command("git", "-C", p.Root, "push", "-q", "origin", record.BaseOID+":refs/heads/main").CombinedOutput(); err != nil {
+		t.Fatalf("seed remote base: %v %s", err, b)
+	}
+	commit, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "prepare-reconcile-push", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Reconcile push", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitGrant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: commit.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	if _, err := e.ExecuteCommit(ctx, commit.OperationID, commitGrant); err != nil {
+		t.Fatal(err)
+	}
+	push, err := e.PreparePush(ctx, PushRequest{CommandID: "prepare-reconcile-remote", PlanID: "plan", RepositoryID: "fixture-repo", RemoteName: "origin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushGrant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: push.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	start, err := e.deliveryEnvelope(ctx, store.Digest([]byte("delivery.push.start\x00"+push.OperationID)), "operation.start", map[string]string{"operation_id": push.OperationID, "grant_id": pushGrant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(ctx, Core, start); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a lost push response: the journal is uncertain and the approved
+	// remote ref never moved.
+	if _, err := e.DB.SQL.ExecContext(ctx, `INSERT INTO deliveries(id,plan_id,repository_id,operation_id,kind,state,remote_identity,head_oid,base_ref)
+		VALUES(?,?,?,?, 'push','uncertain',?,?,?)`, pushDeliveryID(push.OperationID), "plan", "fixture-repo", push.OperationID, push.Intent.RemoteIdentity, push.Intent.HeadOID, push.Intent.RemoteRef); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE operations SET state='uncertain' WHERE id=?", push.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	// A third party creating the destination ref blocks reconciliation.
+	if b, err := exec.Command("git", "-C", p.Root, "push", "-q", "origin", record.BaseOID+":refs/heads/"+record.PlanBranch).CombinedOutput(); err != nil {
+		t.Fatalf("third-party remote ref: %v %s", err, b)
+	}
+	if _, err := e.ReconcileDelivery(ctx, "reconcile-moved-push", push.OperationID); err == nil {
+		t.Fatal("reconciliation closed a push whose remote ref was created by a third party")
+	}
+	if b, err := exec.Command("git", "-C", p.Root, "push", "-q", "origin", ":refs/heads/"+record.PlanBranch).CombinedOutput(); err != nil {
+		t.Fatalf("restore approved absent remote ref: %v %s", err, b)
+	}
+	closed, err := e.ReconcileDelivery(ctx, "reconcile-quiet-push", push.OperationID)
+	if err != nil || closed.State != "reconciled" || closed.DeliveryState != "failed" {
+		t.Fatalf("quiet push reconciliation: %#v %v", closed, err)
+	}
+}
+
+func TestPushReconciliationObservesLandedHead(t *testing.T) {
+	_, e, p := setup(t)
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	if b, err := exec.Command("git", "init", "--bare", "-q", remote).CombinedOutput(); err != nil {
+		t.Fatalf("bare fixture: %v %s", err, b)
+	}
+	seedAcceptedPlanWithChange(t, e, true, remote)
+	ctx := context.Background()
+	record, err := e.Repository(ctx, "fixture-repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := exec.Command("git", "-C", p.Root, "push", "-q", "origin", record.BaseOID+":refs/heads/main").CombinedOutput(); err != nil {
+		t.Fatalf("seed remote base: %v %s", err, b)
+	}
+	commit, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "prepare-landed-push", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Landed push", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitGrant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: commit.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	committed, err := e.ExecuteCommit(ctx, commit.OperationID, commitGrant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	push, err := e.PreparePush(ctx, PushRequest{CommandID: "prepare-landed-remote", PlanID: "plan", RepositoryID: "fixture-repo", RemoteName: "origin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushGrant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: push.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	start, err := e.deliveryEnvelope(ctx, store.Digest([]byte("delivery.push.start\x00"+push.OperationID)), "operation.start", map[string]string{"operation_id": push.OperationID, "grant_id": pushGrant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(ctx, Core, start); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, `INSERT INTO deliveries(id,plan_id,repository_id,operation_id,kind,state,remote_identity,head_oid,base_ref)
+		VALUES(?,?,?,?, 'push','uncertain',?,?,?)`, pushDeliveryID(push.OperationID), "plan", "fixture-repo", push.OperationID, push.Intent.RemoteIdentity, push.Intent.HeadOID, push.Intent.RemoteRef); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE operations SET state='uncertain' WHERE id=?", push.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	// The approved push landed but its response was lost.
+	if b, err := exec.Command("git", "-C", p.Root, "push", "-q", "origin", committed.CommitOID+":refs/heads/"+record.PlanBranch).CombinedOutput(); err != nil {
+		t.Fatalf("landed push fixture: %v %s", err, b)
+	}
+	status, err := e.ReconcileDelivery(ctx, "reconcile-landed-push", push.OperationID)
+	if err != nil || status.State != "observed" || status.DeliveryState != "succeeded" || status.DeliveryID == "" {
+		t.Fatalf("landed push reconciliation: %#v %v", status, err)
+	}
+}
+
+func TestDraftReconciliationRequiresPositiveObservation(t *testing.T) {
+	e, head := seededPushedArchive(t)
+	ctx := context.Background()
+	mode := "absent"
+	var opID string
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if mode == "exact" {
+			item := fakeHostedItem("github", server.URL, "<!-- vigil-delivery-operation:"+opID+" -->", true)
+			item["head"] = map[string]any{"ref": "vigil/fixture", "sha": head, "repo": map[string]string{"full_name": "fixture/project"}}
+			_ = json.NewEncoder(w).Encode([]any{item})
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]any{})
+	}))
+	defer server.Close()
+	prepared, err := e.PrepareDraft(ctx, DraftRequest{CommandID: "draft-reconcile", PlanID: "plan", RepositoryID: "fixture-repo",
+		Provider: "github", Project: "fixture/project", APIBase: server.URL, BaseBranch: "main", Title: "Reconcile draft", Body: "Accepted work", Fixture: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opID = prepared.OperationID
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: prepared.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	start, err := e.deliveryEnvelope(ctx, store.Digest([]byte("delivery.draft.start\x00"+prepared.OperationID)), "operation.start", map[string]string{"operation_id": prepared.OperationID, "grant_id": grant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(ctx, Core, start); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, `INSERT INTO deliveries(id,plan_id,repository_id,operation_id,kind,state,remote_identity,head_oid,base_ref)
+		VALUES(?,?,?,?, 'draft_request','uncertain',?,?,?)`, draftDeliveryID(prepared.OperationID), "plan", "fixture-repo", prepared.OperationID,
+		prepared.Intent.RemoteIdentity, prepared.Intent.HeadOID, prepared.Intent.BaseBranch); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE operations SET state='uncertain' WHERE id=?", prepared.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.ReconcileDelivery(ctx, "reconcile-absent-draft", prepared.OperationID); err == nil {
+		t.Fatal("absent draft listing closed an uncertain draft request")
+	}
+	mode = "exact"
+	status, err := e.ReconcileDelivery(ctx, "reconcile-exact-draft", prepared.OperationID)
+	if err != nil || status.State != "observed" || status.DeliveryState != "succeeded" || status.ExternalID != "1" {
+		t.Fatalf("exact draft reconciliation: %#v %v", status, err)
+	}
+}
+
+func TestPreparedDeliveryCancelIsSafeAndObserved(t *testing.T) {
+	_, e, _ := setup(t)
+	seedAcceptedPlanWithChange(t, e, true)
+	ctx := context.Background()
+	prepared, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "prepare-cancel-commit", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Cancel fixture", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelled, err := e.CancelPreparedDelivery(ctx, "cancel-prepared", prepared.OperationID)
+	if err != nil || cancelled.State != "cancelled" {
+		t.Fatalf("prepared cancel: %#v %v", cancelled, err)
+	}
+	if _, err := e.CancelPreparedDelivery(ctx, "cancel-prepared-again", prepared.OperationID); err == nil {
+		t.Fatal("cancelled operation was cancelled again")
+	}
+	second, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "prepare-cancel-started", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Cancel started fixture", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: second.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	start, err := e.deliveryEnvelope(ctx, store.Digest([]byte("delivery.start\x00"+second.OperationID)), "operation.start", map[string]string{"operation_id": second.OperationID, "grant_id": grant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(ctx, Core, start); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.CancelPreparedDelivery(ctx, "cancel-started", second.OperationID); err == nil {
+		t.Fatal("started operation was cancelled without reconciliation")
+	}
+	if status, err := e.DeliveryStatus(ctx, second.OperationID); err != nil || status.State != "executing" {
+		t.Fatalf("started cancel changed the operation: %#v %v", status, err)
+	}
+}
+
+func TestExcludedRepositoryPathNeverEntersApprovedCommits(t *testing.T) {
+	exclusions := []string{".git", ".vigil", "nested"}
+	for _, path := range []string{".vigil", ".vigil/plans/view.json", ".git/index", "nested/src/file.go"} {
+		if !excludedRepositoryPath(path, exclusions) {
+			t.Fatalf("excluded path %q was not recognized", path)
+		}
+	}
+	for _, path := range []string{"src/new.txt", "vigil-notes.txt", "nested-thing/file.go"} {
+		if excludedRepositoryPath(path, exclusions) {
+			t.Fatalf("accepted path %q was excluded", path)
+		}
 	}
 }

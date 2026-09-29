@@ -107,8 +107,8 @@ func observeRemoteConfig(ctx context.Context, record RepositoryRecord, name, cre
 	return identity, pushURL, env, err
 }
 
-func observedRemoteRef(ctx context.Context, record RepositoryRecord, remoteName, remoteRef string, env []string) (string, error) {
-	output, err := deliveryGit(ctx, record.Root, env, nil, "ls-remote", "--refs", remoteName, remoteRef)
+func observedRemoteRef(ctx context.Context, record RepositoryRecord, remoteURL, remoteRef string, env []string) (string, error) {
+	output, err := isolatedRemoteGit(ctx, record, env, false, "ls-remote", "--refs", remoteURL, remoteRef)
 	if err != nil {
 		return "", errors.New("exact remote ref observation unavailable")
 	}
@@ -120,6 +120,25 @@ func observedRemoteRef(ctx context.Context, record RepositoryRecord, remoteName,
 		return "", errors.New("ambiguous remote ref observation")
 	}
 	return parts[0], nil
+}
+
+// Run transport commands in a fresh bare repository. Passing an approved URL
+// alone is insufficient: url.*.insteadOf in the managed repository config can
+// silently rewrite it after the approval check. The isolated repository has no
+// user remotes, URL rewrites, hooks, push refspecs or credential helpers.
+func isolatedRemoteGit(ctx context.Context, record RepositoryRecord, env []string, objects bool, args ...string) (string, error) {
+	tmp, err := os.MkdirTemp("", "vigil-remote-")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(tmp) // only this call's private temporary repository
+	if _, err := deliveryGit(ctx, tmp, nil, nil, "init", "--bare", "--quiet"); err != nil {
+		return "", err
+	}
+	if objects {
+		env = append(append([]string(nil), env...), "GIT_ALTERNATE_OBJECT_DIRECTORIES="+filepath.Join(record.Identity.CommonGitPath, "objects"))
+	}
+	return deliveryGit(ctx, tmp, env, nil, args...)
 }
 
 func (e *Engine) pushContext(ctx context.Context, intent PushIntent, needLocalHead bool) (RepositoryRecord, []string, error) {
@@ -191,7 +210,7 @@ func (e *Engine) PreparePush(ctx context.Context, request PushRequest) (Prepared
 	if err != nil || local != head {
 		return prepared, errors.New("local plan ref is not the exact app-owned commit")
 	}
-	remote, err := observedRemoteRef(ctx, record, request.RemoteName, ref, env)
+	remote, err := observedRemoteRef(ctx, record, rawURL, ref, env)
 	if err != nil {
 		return prepared, err
 	}
@@ -284,7 +303,7 @@ func (e *Engine) ExecutePush(ctx context.Context, operationID, grantID string) (
 	if err != nil {
 		return result, err
 	}
-	remote, err := observedRemoteRef(ctx, record, intent.RemoteName, intent.RemoteRef, env)
+	remote, err := observedRemoteRef(ctx, record, intent.RemoteURL, intent.RemoteRef, env)
 	if err != nil {
 		return result, err
 	}
@@ -315,8 +334,8 @@ func (e *Engine) ExecutePush(ctx context.Context, operationID, grantID string) (
 		}
 		// Explicit OID source and destination prevent configured default/mirror
 		// refspecs, tags, hooks and unrelated checkpoint refs from being sent.
-		_, pushErr := deliveryGit(ctx, record.Root, env, nil, "-c", "push.default=nothing", "push", "--porcelain", "--no-verify", "--no-follow-tags", "--recurse-submodules=no", intent.RemoteName, intent.HeadOID+":"+intent.RemoteRef)
-		remote, err = observedRemoteRef(ctx, record, intent.RemoteName, intent.RemoteRef, env)
+		_, pushErr := isolatedRemoteGit(ctx, record, env, true, "-c", "push.default=nothing", "push", "--porcelain", "--no-verify", "--no-follow-tags", "--recurse-submodules=no", intent.RemoteURL, intent.HeadOID+":"+intent.RemoteRef)
+		remote, err = observedRemoteRef(ctx, record, intent.RemoteURL, intent.RemoteRef, env)
 		if err != nil || remote != intent.HeadOID {
 			_ = e.markPushUncertain(ctx, operationID)
 			if pushErr != nil {

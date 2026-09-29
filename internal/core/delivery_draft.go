@@ -113,7 +113,7 @@ func (e *Engine) draftContext(ctx context.Context, intent DraftIntent) (Reposito
 	} else if err := e.requireFixtureArchive(ctx, intent.PlanID); err != nil {
 		return RepositoryRecord{}, nil, err
 	}
-	if intent.HeadBranch != record.PlanBranch || intent.BaseBranch == intent.HeadBranch || intent.BaseBranch == "" ||
+	if intent.HeadBranch != record.PlanBranch || intent.BaseBranch == intent.HeadBranch || intent.BaseBranch == "" || len(intent.BaseBranch) > 255 ||
 		!intent.Draft || !gitOID(intent.HeadOID) || !gitOID(intent.BaseOID) {
 		return RepositoryRecord{}, nil, errors.New("invalid exact draft branch/base/head")
 	}
@@ -132,11 +132,11 @@ func (e *Engine) draftContext(ctx context.Context, intent DraftIntent) (Reposito
 	if err := e.DB.SQL.QueryRowContext(ctx, `SELECT head_oid FROM deliveries WHERE plan_id=? AND repository_id=? AND kind='push' AND state='succeeded' AND remote_identity=? ORDER BY rowid DESC LIMIT 1`, intent.PlanID, intent.RepositoryID, intent.RemoteIdentity).Scan(&pushOID); err != nil || pushOID != intent.HeadOID {
 		return RepositoryRecord{}, nil, errors.New("draft head is not the latest observed exact push")
 	}
-	remoteHead, err := observedRemoteRef(ctx, record, intent.RemoteName, "refs/heads/"+intent.HeadBranch, env)
+	remoteHead, err := observedRemoteRef(ctx, record, rawRemote, "refs/heads/"+intent.HeadBranch, env)
 	if err != nil || remoteHead != intent.HeadOID {
 		return RepositoryRecord{}, nil, errors.New("draft remote head changed")
 	}
-	remoteBase, err := observedRemoteRef(ctx, record, intent.RemoteName, "refs/heads/"+intent.BaseBranch, env)
+	remoteBase, err := observedRemoteRef(ctx, record, rawRemote, "refs/heads/"+intent.BaseBranch, env)
 	if err != nil || remoteBase != intent.BaseOID {
 		return RepositoryRecord{}, nil, errors.New("draft destination base changed")
 	}
@@ -149,7 +149,7 @@ func (e *Engine) draftContext(ctx context.Context, intent DraftIntent) (Reposito
 func (e *Engine) PrepareDraft(ctx context.Context, request DraftRequest) (PreparedDraft, error) {
 	var prepared PreparedDraft
 	if !store.SafeID(request.CommandID) || !store.SafeID(request.PlanID) || !store.SafeID(request.RepositoryID) ||
-		(request.Provider != "github" && request.Provider != "gitlab") || request.BaseBranch == "" ||
+		(request.Provider != "github" && request.Provider != "gitlab") || request.BaseBranch == "" || len(request.BaseBranch) > 255 ||
 		strings.ContainsAny(request.BaseBranch, "\x00\r\n") || !validCommitIdentity("Draft", "draft@invalid", request.Title) || len(request.Title) > 256 || len(request.Body) > 8192 {
 		return prepared, errors.New("bounded exact draft request required")
 	}
@@ -177,6 +177,9 @@ func (e *Engine) PrepareDraft(ctx context.Context, request DraftRequest) (Prepar
 	record, err := e.Repository(ctx, request.RepositoryID)
 	if err != nil || record.PlanID != request.PlanID {
 		return prepared, errors.New("enrolled draft repository required")
+	}
+	if _, err := deliveryGit(ctx, record.Root, nil, nil, "check-ref-format", "--branch", request.BaseBranch); err != nil {
+		return prepared, errors.New("destination base is not a valid bounded Git branch name")
 	}
 	credential := ""
 	if !request.Fixture {
@@ -211,11 +214,11 @@ func (e *Engine) PrepareDraft(ctx context.Context, request DraftRequest) (Prepar
 	if err := e.DB.SQL.QueryRowContext(ctx, `SELECT head_oid FROM deliveries WHERE plan_id=? AND repository_id=? AND kind='push' AND state='succeeded' AND remote_identity=? ORDER BY rowid DESC LIMIT 1`, request.PlanID, request.RepositoryID, identity).Scan(&head); err != nil || !gitOID(head) {
 		return prepared, errors.New("observed exact push required before draft")
 	}
-	remoteHead, err := observedRemoteRef(ctx, record, record.RemoteName, "refs/heads/"+record.PlanBranch, env)
+	remoteHead, err := observedRemoteRef(ctx, record, remoteURL, "refs/heads/"+record.PlanBranch, env)
 	if err != nil || remoteHead != head {
 		return prepared, errors.New("remote draft head differs from observed push")
 	}
-	base, err := observedRemoteRef(ctx, record, record.RemoteName, "refs/heads/"+request.BaseBranch, env)
+	base, err := observedRemoteRef(ctx, record, remoteURL, "refs/heads/"+request.BaseBranch, env)
 	if err != nil || !gitOID(base) || request.BaseBranch == record.PlanBranch {
 		return prepared, errors.New("exact destination base branch unavailable")
 	}
@@ -277,6 +280,58 @@ func (e *Engine) markDraftUncertain(ctx context.Context, operationID string) err
 		return map[string]string{"state": "uncertain"}, err
 	})
 	return err
+}
+
+func (e *Engine) recordUnexpectedNonDraft(ctx context.Context, operationID string, hosted hostedDraft) error {
+	if hosted.ExternalID == "" || hosted.URL == "" {
+		return errors.New("non-draft creation lacks exact external identity")
+	}
+	args, _ := json.Marshal(map[string]string{"operation_id": operationID, "external_id": hosted.ExternalID, "url": hosted.URL})
+	_, err := e.DB.Command(ctx, store.Command{ID: store.Digest([]byte("delivery.draft.non_draft\x00" + operationID)), Actor: "core", Kind: "delivery.draft.non_draft", Args: args}, func(tx *store.Tx) (any, error) {
+		updated, err := tx.ExecContext(ctx, "UPDATE deliveries SET state='uncertain',external_id=?,url=? WHERE operation_id=? AND kind='draft_request' AND state='pending'", hosted.ExternalID, hosted.URL, operationID)
+		if err != nil {
+			return nil, err
+		}
+		if n, err := updated.RowsAffected(); err != nil || n != 1 {
+			return nil, errors.New("non-draft effect journal changed")
+		}
+		updated, err = tx.ExecContext(ctx, "UPDATE operations SET state='uncertain' WHERE id=? AND state='executing'", operationID)
+		if err != nil {
+			return nil, err
+		}
+		if n, err := updated.RowsAffected(); err != nil || n != 1 {
+			return nil, errors.New("non-draft operation changed")
+		}
+		return map[string]string{"state": "uncertain", "external_id": hosted.ExternalID, "url": hosted.URL}, nil
+	})
+	return err
+}
+
+// A concurrent operation may win the unique exact draft identity after this
+// operation consumed its grant but before it inserted a delivery row. This
+// loser has not sent a POST, so close only that operation; the winner retains
+// responsibility for observing its own external effect.
+func (e *Engine) cancelUndeliveredDraftIfSuperseded(ctx context.Context, intent DraftIntent, operationID string) (bool, error) {
+	closed := false
+	err := e.DB.Write(ctx, func(tx *store.Tx) error {
+		var own int
+		if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM deliveries WHERE operation_id=?", operationID).Scan(&own); err != nil || own != 0 {
+			return err
+		}
+		var winner int
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM deliveries WHERE plan_id=? AND repository_id=? AND remote_identity=? AND head_oid=? AND base_ref=?
+			AND kind='draft_request' AND state IN ('prepared','pending','uncertain','succeeded')`, intent.PlanID, intent.RepositoryID, intent.RemoteIdentity, intent.HeadOID, intent.BaseBranch).Scan(&winner); err != nil || winner == 0 {
+			return err
+		}
+		updated, err := tx.ExecContext(ctx, "UPDATE operations SET state='cancelled' WHERE id=? AND kind='draft_request' AND state='executing'", operationID)
+		if err != nil {
+			return err
+		}
+		count, err := updated.RowsAffected()
+		closed = err == nil && count == 1
+		return err
+	})
+	return closed, err
 }
 
 func (e *Engine) recordDraftSuccess(ctx context.Context, intent DraftIntent, operationID string, hosted hostedDraft) (DraftResult, error) {
@@ -363,6 +418,9 @@ func (e *Engine) ExecuteDraft(ctx context.Context, operationID, grantID string) 
 			VALUES(?,?,?,?,'draft_request','pending',?,?,?)`, result.DeliveryID, intent.PlanID, intent.RepositoryID, operationID, intent.RemoteIdentity, intent.HeadOID, intent.BaseBranch)
 		return map[string]string{"delivery_id": result.DeliveryID}, err
 	}); err != nil {
+		if closed, closeErr := e.cancelUndeliveredDraftIfSuperseded(ctx, intent, operationID); closeErr == nil && closed {
+			return result, errors.New("another exact draft delivery won the race; this undelivered operation was cancelled")
+		}
 		return result, err
 	}
 	hosted, found, err := adapter.List(ctx)
@@ -379,6 +437,12 @@ func (e *Engine) ExecuteDraft(ctx context.Context, operationID, grantID string) 
 	}
 	hosted, err = adapter.Create(ctx)
 	if err != nil {
+		if errors.Is(err, errNonDraftCreated) {
+			if journalErr := e.recordUnexpectedNonDraft(ctx, operationID, hosted); journalErr != nil {
+				return result, fmt.Errorf("hosting created a non-draft request, but its effect journal failed: %w", journalErr)
+			}
+			return result, fmt.Errorf("hosting created non-draft request %s at %s; manual remediation required", hosted.ExternalID, hosted.URL)
+		}
 		// The response may have been lost after remote success. Search once,
 		// but do not interpret an empty result as permission to POST again.
 		observed, found, observationErr := adapter.List(ctx)

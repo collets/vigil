@@ -95,6 +95,19 @@ func scopeCoversPath(scopes []string, name string) bool {
 	return false
 }
 
+// excludedRepositoryPath reports whether a commit path lies under a
+// fingerprint-excluded prefix: application-owned content (.git, the .vigil
+// archive view) and nested enrolled repositories never enter an approved
+// commit.
+func excludedRepositoryPath(name string, exclusions []string) bool {
+	for _, prefix := range exclusions {
+		if name == prefix || strings.HasPrefix(name, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 func (e *Engine) acceptedCommitContext(ctx context.Context, intent CommitIntent) (RepositoryRecord, workspace.Baseline, error) {
 	var state, rawDefinition, acceptanceID, scopeID, scopeManifest string
 	var taskRevision int
@@ -137,6 +150,11 @@ func (e *Engine) acceptedCommitContext(ctx context.Context, intent CommitIntent)
 			if name == boundary || strings.HasPrefix(name, boundary+"/") {
 				return RepositoryRecord{}, workspace.Baseline{}, errors.New("nested repository content cannot enter parent commit")
 			}
+		}
+		// Excluded prefixes are application-owned or nested content: the
+		// .vigil archive view and .git never enter an approved commit.
+		if excludedRepositoryPath(name, baseline.Exclusions) {
+			return RepositoryRecord{}, workspace.Baseline{}, fmt.Errorf("commit path %q is excluded repository content", name)
 		}
 	}
 	return record, baseline, nil
@@ -317,6 +335,10 @@ func (e *Engine) ExecuteCommit(ctx context.Context, operationID, grantID string)
 	record, _, err := e.acceptedCommitContext(ctx, intent)
 	if err != nil {
 		return result, err
+	}
+	checkedOut, _ := deliveryGit(ctx, record.Root, nil, nil, "symbolic-ref", "--quiet", "HEAD")
+	if checkedOut == intent.TargetRef {
+		return result, errors.New("plan ref is checked out; commit reconciliation cannot move the user's HEAD branch")
 	}
 	parent, expected, target, err := e.commitParent(ctx, record)
 	if err != nil || parent != intent.ParentOID || expected != intent.ExpectedRefOID || target != intent.TargetRef {
