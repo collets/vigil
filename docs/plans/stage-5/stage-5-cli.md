@@ -744,16 +744,16 @@ and left open, because absence is not proof of non-delivery. If the
 destination holds the approved head when reconcile re-checks it, that *is*
 proof the push landed and the operation closes as observed, so re-run
 `delivery-reconcile` rather than attesting. Reconciliation claims the operation
-while it works so no new executor starts an effect mid-decision. A blocked or
-failed reconciliation releases that claim back to `executing` — the resumable
-effect state — because every executor journals its effect before performing
-it, so a claim that finds no terminal journal proves the operation was in
-flight. Inspecting a stuck operation therefore never silently removes the
-operator's ability to re-execute it. A delivery that started but never
-journaled is never attempted: reconciliation refuses it and points at
-`push-execute`, which journals before it delivers. A committed closure is never
-reopened: reconciliation refuses any operation carrying a durable closure
-marker, so an attested operation cannot later be pushed to.
+while it works so no new executor starts an effect mid-decision. The claim
+records the state it was taken from, and a blocked or failed reconciliation
+restores exactly that state — so inspecting a stuck operation never silently
+removes the operator's ability to re-execute it, and never escalates an
+operation the application had made observation-only into a re-executable one.
+A delivery that started but never journaled is never attempted: reconciliation
+refuses it and points at `push-execute`, which journals before it delivers. A
+committed closure is never reopened: reconciliation refuses any operation
+carrying a durable closure marker, so an attested operation cannot later be
+pushed to.
 
 `delivery-close-unobserved` is the explicit **human-attested** exit for an
 operation the operator has verified externally did not take effect. The

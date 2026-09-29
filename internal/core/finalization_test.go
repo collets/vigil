@@ -876,7 +876,11 @@ func TestRevokedAndExpiredApprovalsStopTheEffectBeforeIt(t *testing.T) {
 					t.Fatal(err)
 				}
 			} else {
-				if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE grants SET expires_at=? WHERE id=?", store.Now()-1, grant); err != nil {
+				// A grant cannot be backdated past its own grant time, so age
+				// the whole record instead: the grant is genuinely in the past
+				// relative to the effect.
+				now := store.Now()
+				if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE grants SET granted_at=?,expires_at=? WHERE id=?", now-2000, now-1000, grant); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -1760,18 +1764,17 @@ func TestResumedClaimKeepsAStartedOperationExecutable(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The effect started and journaled, then a reconcile took the claim and
-	// died. A second reconcile resumes that claim.
-	if _, err := e.ExecuteCommit(ctx, prepared.OperationID, ""); err == nil {
-		t.Skip("commit completed without the intended crash window")
-	}
+	// died before its closure transaction. A second reconcile resumes it. The
+	// claim is written exactly as ReconcileDelivery writes it, including the
+	// recorded pre-claim state, so the resumed path is driven deterministically.
 	if err := e.DB.Write(ctx, func(tx *store.Tx) error {
-		_, err := tx.ExecContext(ctx, "UPDATE operations SET state='reconciled' WHERE id=?", prepared.OperationID)
+		_, err := tx.ExecContext(ctx, "UPDATE operations SET state='reconciled',claimed_from_state='executing' WHERE id=?", prepared.OperationID)
 		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
-	// A resumed claim that is blocked must restore 'executing', not
-	// 'uncertain': an operator inspecting a stuck operation must keep the
+	// A resumed claim that cannot observe the effect must restore the state it
+	// was taken from, so an operator inspecting a stuck operation keeps the
 	// ability to re-execute it.
 	if _, err := e.ReconcileDelivery(ctx, "reconcile-resumed-claim", prepared.OperationID); err == nil {
 		t.Fatal("a resumed claim closed an effect it could not observe")
@@ -1779,6 +1782,54 @@ func TestResumedClaimKeepsAStartedOperationExecutable(t *testing.T) {
 	var state string
 	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM operations WHERE id=?", prepared.OperationID).Scan(&state); err != nil || state != "executing" {
 		t.Fatalf("a resumed claim downgraded the operation to %q: %v", state, err)
+	}
+	// The recorded claim state is cleared on release, so a later claim records
+	// the state it actually finds.
+	var claimedFrom sql.NullString
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT claimed_from_state FROM operations WHERE id=?", prepared.OperationID).Scan(&claimedFrom); err != nil || claimedFrom.Valid {
+		t.Fatalf("release left a stale claim record: %v %v", claimedFrom, err)
+	}
+}
+
+// The inverse must hold: a claim taken from `uncertain` restores `uncertain`,
+// so a crashed reconcile never escalates an operation the application had
+// deliberately made observation-only into a re-executable one.
+func TestResumedClaimNeverEscalatesAnUncertainOperation(t *testing.T) {
+	_, e, _ := setup(t)
+	seedAcceptedPlanWithChange(t, e, true)
+	ctx := context.Background()
+	prepared, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "prepare-uncertain-claim", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Uncertain claim", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: prepared.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	start, err := e.deliveryEnvelope(ctx, store.Digest([]byte("delivery.start\x00"+prepared.OperationID)), "operation.start", map[string]string{"operation_id": prepared.OperationID, "grant_id": grant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(ctx, Core, start); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, `INSERT INTO deliveries(id,plan_id,repository_id,operation_id,kind,state,head_oid)
+		VALUES(?,?,?,?, 'commit','uncertain',?)`, commitDeliveryID(prepared.OperationID), "plan", "fixture-repo", prepared.OperationID, prepared.Intent.ParentOID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE operations SET state='uncertain' WHERE id=?", prepared.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.DB.Write(ctx, func(tx *store.Tx) error {
+		_, err := tx.ExecContext(ctx, "UPDATE operations SET state='reconciled',claimed_from_state='uncertain' WHERE id=?", prepared.OperationID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.ReconcileDelivery(ctx, "reconcile-uncertain-claim", prepared.OperationID); err == nil {
+		t.Fatal("a resumed claim closed an effect it could not observe")
+	}
+	var state string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM operations WHERE id=?", prepared.OperationID).Scan(&state); err != nil || state != "uncertain" {
+		t.Fatalf("a resumed claim escalated an uncertain operation to %q: %v", state, err)
 	}
 }
 

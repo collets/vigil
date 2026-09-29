@@ -224,9 +224,15 @@ func downgradeQualityFixtureToV12(t *testing.T, f *fixture) {
 	if _, err := raw.Exec("DROP INDEX one_draft_delivery_per_head_base"); err != nil {
 		t.Fatal(err)
 	}
-	// Migration 18 adds operations.closure_kind; the v12 reconstruction must
-	// remove it along with the later additions it already drops.
+	// Migrations 18 and 19 add operations columns; the v12 reconstruction must
+	// remove them along with the later additions it already drops.
 	if _, err := raw.Exec("PRAGMA ignore_check_constraints=ON"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec("DELETE FROM schema_migrations WHERE version=19"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec("ALTER TABLE operations DROP COLUMN claimed_from_state"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := raw.Exec("DELETE FROM schema_migrations WHERE version=18"); err != nil {

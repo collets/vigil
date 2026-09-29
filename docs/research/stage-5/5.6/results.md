@@ -2,13 +2,21 @@
 
 <!-- vigil-tier: evidence -->
 
-Status: implementation in progress on `task/5.6-delivery-finalization`. Six
+Status: implementation in progress on `task/5.6-delivery-finalization`. Seven
 independent antagonist reviews have run. `9777de0`, `ebf7f0f`, `0368227` and
-`7b758f8` were each rejected and remediated on this branch; `d5906ed` and
-`3ec4065` received conditional verdicts, both remediated. Exact-commit native
-macOS gates pass at `b42afe1`, having found and fixed one platform defect the
+`7b758f8` were each rejected and remediated on this branch; `d5906ed`,
+`3ec4065` and `fc2f909` received conditional verdicts, all remediated. Exact
+commit native macOS gates pass, having found and fixed one platform defect the
 Linux suite could not. The current tip is awaiting the final independent
 acceptance review, and nothing here is production-delivery qualification.
+
+The seventh review confirmed the reconciliation invariants hold under adversarial
+probing and found no P0 or P1. Its two blocking items were that the resumed-claim
+fix shipped with a test that skipped on every run, and that the fix silently
+escalated `uncertain` to `executing`; both are resolved by recording the
+pre-claim state durably rather than inferring it. It also found documentation
+obligations under `AGENTS.md` and three unpinned defence-in-depth paths, all
+recorded below.
 
 ## Native macOS validation
 
@@ -194,14 +202,14 @@ Also addressed from the same review:
   - A blocked reconcile downgraded an `executing` operation to `uncertain`.
     Since `executing` is the resumable effect state and `uncertain` is
     observation-only, a read-only `delivery-reconcile` permanently removed the
-    push the operator had been told to re-run. A blocked or failed reconcile
-    now releases the claim back to `executing`, and the error names the
-    reachable remedy. The sixth review showed the first attempt at this still
-    failed on a *resumed* claim — one taken by a reconcile that then died —
-    because it forced `uncertain` there. It now recovers the pre-claim state
-    from the delivery journal: every executor journals its effect before
-    performing it, so a journal that is not terminal proves the operation was
-    in flight. A regression test drives the crashed-claim path.
+    push the operator had been told to re-run. The claim now records the state
+    it was taken from (forward-only project migration 019,
+    `operations.claimed_from_state`), and a blocked or failed reconciliation
+    restores exactly that value. This removes the guessing in both directions:
+    the sixth review's first attempt at this still failed on a *resumed* claim,
+    and the seventh review showed that attempt also escalated an `uncertain`
+    operation into a re-executable one. A permanent test drives each direction
+    from a real claim, and a revert of the restoration fails one of them.
   - A failed closure transaction could strand a held claim; it is now released
     on that path too, and the release never clears a closure marker.
   - `DeliveryStatus` swallowed a `closure_kind` read error, which is the exact
@@ -218,11 +226,13 @@ Also addressed from the same review:
   `pre-receive` hook. That specific interleaving is coverage, not a defect —
   reconciliation closes only on positive proof — and is recorded here as an
   accepted residual rather than claimed as covered. It also noted that the
-  `closure_kind IS NULL` guard on the claim release and the release on a failed
-  closure transaction are defence-in-depth that no test can currently reach
-  (their triggers require a concurrent stale claim or a transactional failure);
-  they are retained deliberately, and are recorded here as unpinned rather than
-  claimed as covered.
+  `closure_kind IS NULL` guard on the claim release, the release on a failed
+  closure transaction, the `failed`-journal and `succeeded`-journal refusals in
+  the resumed-claim path, and the closure-kind read error in `DeliveryStatus`
+  are defence-in-depth that no test can currently reach (their triggers require
+  a concurrent stale claim, a transactional failure, or a row that cannot be in
+  that state); they are retained deliberately, and are recorded here as unpinned
+  rather than claimed as covered.
 
 - **P3.4:** the dry-run retention receipt is identified by its recorded command
   kind and human actor (via the `command_applied` event), not by the JSON shape

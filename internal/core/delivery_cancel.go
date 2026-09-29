@@ -89,7 +89,9 @@ func (e *Engine) DeliveryStatus(ctx context.Context, operationID string) (Delive
 // closure back into a resumable operation.
 func (e *Engine) releaseClaim(ctx context.Context, operationID, priorState string) error {
 	return e.DB.Write(ctx, func(tx *store.Tx) error {
-		_, err := tx.ExecContext(ctx, "UPDATE operations SET state=? WHERE id=? AND state='reconciled' AND closure_kind IS NULL", priorState, operationID)
+		// Releasing clears the recorded claim state, so a later claim records
+		// the state it finds rather than inheriting a stale one.
+		_, err := tx.ExecContext(ctx, "UPDATE operations SET state=?,claimed_from_state=NULL WHERE id=? AND state='reconciled' AND closure_kind IS NULL", priorState, operationID)
 		return err
 	})
 }
@@ -184,28 +186,27 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 	// operation would re-attempt its external effect and falsify the
 	// attestation.
 	claimed := state == "reconciled"
-	// priorState is the state the operation is restored to if this
-	// reconciliation cannot decide. 'executing' is the resumable effect state
-	// and 'uncertain' is observation-only, so a claim must never silently
-	// downgrade an executing push: the operator's ability to re-execute it is
-	// exactly as it was found.
+	// priorState is the state a blocked or failed reconciliation restores. A
+	// claim records the state it was taken from, so a resumed claim restores
+	// exactly that state rather than inferring one: inferring 'uncertain'
+	// would silently remove an executing operation's ability to re-execute
+	// its effect, and inferring 'executing' would escalate an operation the
+	// application had deliberately made observation-only back into a
+	// re-executable one.
 	priorState := state
 	if claimed {
-		var closureKind sql.NullString
-		if err := e.DB.SQL.QueryRowContext(ctx, "SELECT closure_kind FROM operations WHERE id=?", operationID).Scan(&closureKind); err != nil {
+		var closureKind, claimedFrom sql.NullString
+		if err := e.DB.SQL.QueryRowContext(ctx, "SELECT closure_kind,claimed_from_state FROM operations WHERE id=?", operationID).
+			Scan(&closureKind, &claimedFrom); err != nil {
 			return DeliveryStatus{}, err
 		}
 		if closureKind.Valid {
 			return DeliveryStatus{}, errors.New("delivery operation is closed by human attestation; a committed closure is never reopened by reconciliation")
 		}
-		// A resumed claim recovers the pre-claim state. Every executor journals
-		// its effect *before* performing it, so a journal row that is not
-		// terminal proves the operation was in flight — 'executing', which is
-		// resumable — and a missing journal row proves the effect never
-		// started, which is equally resumable. A terminal journal is refused
-		// below. So the honest restoration is 'executing' in both cases, and
-		// 'uncertain' is used only when the journal contradicts that.
-		priorState = "executing"
+		if !claimedFrom.Valid {
+			return DeliveryStatus{}, errors.New("a held claim does not record the state it was taken from; this operation cannot be reconciled safely")
+		}
+		priorState = claimedFrom.String
 		var deliveryState string
 		switch err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM deliveries WHERE operation_id=?", operationID).Scan(&deliveryState); {
 		case err != nil && !errors.Is(err, sql.ErrNoRows):
@@ -213,7 +214,7 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 		case err == nil && deliveryState == "succeeded":
 			return DeliveryStatus{}, errors.New("delivery effect is already recorded as succeeded; a completed observation is never reopened")
 		case err == nil && deliveryState == "failed":
-			return DeliveryStatus{}, errors.New("delivery effect is already recorded as failed; close the operation explicitly")
+			return DeliveryStatus{}, errors.New("delivery effect is already recorded as failed; it cannot be reconciled")
 		}
 	}
 	if !claimed && state != "executing" && state != "uncertain" {
@@ -224,7 +225,7 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 		// which only act on prepared/executing/uncertain, so no new effect can
 		// start while the external state is observed and the closure committed.
 		claim := e.DB.Write(ctx, func(tx *store.Tx) error {
-			updated, err := tx.ExecContext(ctx, "UPDATE operations SET state='reconciled' WHERE id=? AND state IN ('executing','uncertain')", operationID)
+			updated, err := tx.ExecContext(ctx, "UPDATE operations SET state='reconciled',claimed_from_state=? WHERE id=? AND state IN ('executing','uncertain') AND closure_kind IS NULL AND claimed_from_state IS NULL", priorState, operationID)
 			if err != nil {
 				return err
 			}
@@ -276,7 +277,7 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 					Scan(&closed.DeliveryID, &closed.ExternalID, &closed.URL); err != nil {
 					return nil, err
 				}
-				if _, err := tx.ExecContext(ctx, "UPDATE operations SET state='observed' WHERE id=? AND state='reconciled'", operationID); err != nil {
+				if _, err := tx.ExecContext(ctx, "UPDATE operations SET state='observed',claimed_from_state=NULL WHERE id=? AND state='reconciled'", operationID); err != nil {
 					return nil, err
 				}
 				return closed, nil
@@ -289,7 +290,7 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 			if count, err := updated.RowsAffected(); err != nil || count != 1 {
 				return nil, errors.New("delivery journal changed before reconciliation")
 			}
-			if _, err := tx.ExecContext(ctx, "UPDATE operations SET state='observed' WHERE id=?", operationID); err != nil {
+			if _, err := tx.ExecContext(ctx, "UPDATE operations SET state='observed',claimed_from_state=NULL WHERE id=?", operationID); err != nil {
 				return nil, err
 			}
 			closed := observation
@@ -363,7 +364,7 @@ func (e *Engine) CloseUnobservedDelivery(ctx context.Context, commandID, operati
 		// The closure marker is durable and written with the state change, so
 		// reconciliation can never mistake this closure for an interrupted
 		// claim and re-attempt an external effect on it.
-		updated, err := tx.ExecContext(ctx, "UPDATE operations SET state='reconciled',closure_kind='attested' WHERE id=? AND state IN ('executing','uncertain') AND closure_kind IS NULL", operationID)
+		updated, err := tx.ExecContext(ctx, "UPDATE operations SET state='reconciled',claimed_from_state=NULL,closure_kind='attested' WHERE id=? AND state IN ('executing','uncertain') AND closure_kind IS NULL", operationID)
 		if err != nil {
 			return nil, err
 		}
