@@ -238,12 +238,12 @@ func TestFixtureFinalizationValidatesManifestReferences(t *testing.T) {
 }
 
 type fixtureFinalizationProvider struct {
-	output []byte
-	err    error
-	idle   bool
-	calls  int
+	output   []byte
+	err      error
+	idle     bool
+	calls    int
 	identity *PlanningProviderIdentity
-	crash bool
+	crash    bool
 }
 
 func (p *fixtureFinalizationProvider) Identity() PlanningProviderIdentity {

@@ -86,6 +86,7 @@ internal/quality/     quality scopes, freshness, effects, budgets, manual/human 
 internal/checks/      contained check execution, supervisors and process trackers
 internal/review/      fresh read-only review
 internal/supervisor/  execution lifecycle, recovery choice, fixture driver
+internal/scenario/    Stage 5.7 disposable qualification walkthrough and evidence matrix
 internal/checkpoint/  verified checkpoint sets, clear and restore journals
 internal/coordinator/ cooperative claims, endpoint queues and crash quarantine
 internal/boundary/    runtime doctor and experimental container guardian/probes
