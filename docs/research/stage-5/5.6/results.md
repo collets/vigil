@@ -35,10 +35,10 @@ directory beneath it), asserts the export succeeds there, and still asserts
 that an alias in the *named* parent is refused. Reverting the fix fails that
 test. This is exactly the class of defect the native gate exists to find.
 
-Exact-commit native macOS gates then pass at `b42afe1` and again at `9ef3a98`,
-whose code is byte-identical to the current tip, run on macOS 26.6.2 arm64 with
-the pinned Go 1.27.1 (Homebrew) and Apple Git 2.54.0, in an agent-owned detached
-worktree under `/tmp`:
+Exact-commit native macOS gates pass at `b42afe1`, `9ef3a98` and the final
+candidate `f2d740c`, run on macOS 26.6.2 arm64 with the pinned Go 1.27.1
+(Homebrew) and Apple Git 2.54.0, in an agent-owned detached worktree under
+`/tmp`:
 
 | Gate | Result |
 | --- | --- |
@@ -57,8 +57,10 @@ confined to the identified agent worktree, and the transferred bundles and path
 markers were deleted. The Mac has no GitHub SSH credential, so each exact
 commit was transferred as a git bundle and fetched into the existing
 repository; object identity and the SHA were preserved and verified before
-validation. The validated tip is
-`9ef3a9805f3c7e7ef493c442ba81e979de658126`.
+validation. The validated candidate is
+`f2d740ccabee70fae83a77b010514d7b5f0a6168`, which includes the reconciliation
+closure assertions and every documentation correction made after acceptance was
+granted.
 
 Not exercised natively: no live model turn, no credentialed or real hosted
 remote, and no production dispatch. Those gates remain closed.
