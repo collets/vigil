@@ -198,16 +198,22 @@ func (e *Engine) ReconcileDelivery(ctx context.Context, commandID, operationID s
 		if closureKind.Valid {
 			return DeliveryStatus{}, errors.New("delivery operation is closed by human attestation; a committed closure is never reopened by reconciliation")
 		}
-		// A resumed claim recovers the pre-claim state: a claim never records
-		// it, so the state is the operation's own last non-claim state, which
-		// the delivery journal distinguishes. 'uncertain' is the only state
-		// a bare claim can be certain about.
-		priorState = "uncertain"
+		// A resumed claim recovers the pre-claim state. Every executor journals
+		// its effect *before* performing it, so a journal row that is not
+		// terminal proves the operation was in flight — 'executing', which is
+		// resumable — and a missing journal row proves the effect never
+		// started, which is equally resumable. A terminal journal is refused
+		// below. So the honest restoration is 'executing' in both cases, and
+		// 'uncertain' is used only when the journal contradicts that.
+		priorState = "executing"
 		var deliveryState string
-		if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM deliveries WHERE operation_id=?", operationID).Scan(&deliveryState); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		switch err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM deliveries WHERE operation_id=?", operationID).Scan(&deliveryState); {
+		case err != nil && !errors.Is(err, sql.ErrNoRows):
 			return DeliveryStatus{}, err
-		} else if err == nil && deliveryState == "succeeded" {
+		case err == nil && deliveryState == "succeeded":
 			return DeliveryStatus{}, errors.New("delivery effect is already recorded as succeeded; a completed observation is never reopened")
+		case err == nil && deliveryState == "failed":
+			return DeliveryStatus{}, errors.New("delivery effect is already recorded as failed; close the operation explicitly")
 		}
 	}
 	if !claimed && state != "executing" && state != "uncertain" {

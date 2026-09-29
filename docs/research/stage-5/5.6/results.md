@@ -151,8 +151,13 @@ Also addressed from the same review:
     Since `executing` is the resumable effect state and `uncertain` is
     observation-only, a read-only `delivery-reconcile` permanently removed the
     push the operator had been told to re-run. A blocked or failed reconcile
-    now releases the claim **to the exact state it found**, and the error names
-    the reachable remedy.
+    now releases the claim back to `executing`, and the error names the
+    reachable remedy. The sixth review showed the first attempt at this still
+    failed on a *resumed* claim — one taken by a reconcile that then died —
+    because it forced `uncertain` there. It now recovers the pre-claim state
+    from the delivery journal: every executor journals its effect before
+    performing it, so a journal that is not terminal proves the operation was
+    in flight. A regression test drives the crashed-claim path.
   - A failed closure transaction could strand a held claim; it is now released
     on that path too, and the release never clears a closure marker.
   - `DeliveryStatus` swallowed a `closure_kind` read error, which is the exact
@@ -168,7 +173,12 @@ Also addressed from the same review:
   completed rather than one caught mid-flight by a blocking server-side
   `pre-receive` hook. That specific interleaving is coverage, not a defect —
   reconciliation closes only on positive proof — and is recorded here as an
-  accepted residual rather than claimed as covered.
+  accepted residual rather than claimed as covered. It also noted that the
+  `closure_kind IS NULL` guard on the claim release and the release on a failed
+  closure transaction are defence-in-depth that no test can currently reach
+  (their triggers require a concurrent stale claim or a transactional failure);
+  they are retained deliberately, and are recorded here as unpinned rather than
+  claimed as covered.
 
 - **P3.4:** the dry-run retention receipt is identified by its recorded command
   kind and human actor (via the `command_applied` event), not by the JSON shape

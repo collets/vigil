@@ -713,8 +713,6 @@ remotes only; real publication needs its own exact operation grant.
 ./bin/vigil --state-dir STATE project delivery-status PROJECT_ID OPERATION_ID
 ./bin/vigil --state-dir STATE project delivery-cancel PROJECT_ID OPERATION_ID --command-id ID
 ./bin/vigil --state-dir STATE project delivery-reconcile PROJECT_ID OPERATION_ID --command-id ID
-./bin/vigil --state-dir STATE project delivery-close-unobserved PROJECT_ID OPERATION_ID \
-  --command-id ID --attest "VERIFIED_EXTERNAL_STATE"
 ```
 
 `delivery-status` inspects one exact commit/push/draft operation and any
@@ -746,11 +744,13 @@ and left open, because absence is not proof of non-delivery. If the
 destination holds the approved head when reconcile re-checks it, that *is*
 proof the push landed and the operation closes as observed, so re-run
 `delivery-reconcile` rather than attesting. Reconciliation claims the operation
-while it works so no new executor starts an effect mid-decision, and releases
-the claim **to the exact state it found** when blocked — a resumable `executing`
-operation stays resumable, so inspecting a stuck operation never silently
-removes the operator's ability to re-execute it. A delivery that started but
-never journaled is never attempted: reconciliation refuses it and points at
+while it works so no new executor starts an effect mid-decision. A blocked or
+failed reconciliation releases that claim back to `executing` — the resumable
+effect state — because every executor journals its effect before performing
+it, so a claim that finds no terminal journal proves the operation was in
+flight. Inspecting a stuck operation therefore never silently removes the
+operator's ability to re-execute it. A delivery that started but never
+journaled is never attempted: reconciliation refuses it and points at
 `push-execute`, which journals before it delivers. A committed closure is never
 reopened: reconciliation refuses any operation carrying a durable closure
 marker, so an attested operation cannot later be pushed to.
@@ -769,6 +769,9 @@ to fail and is reported as such.
 ./bin/vigil --state-dir STATE project delivery-close-unobserved PROJECT_ID OPERATION_ID \
   --command-id ID --attest "verified refs/heads/x is still at the approved predecessor"
 ```
+
+The attestation text is your own statement of what you checked. Vigil records
+it and surfaces it through `delivery-status`; it does not verify it for you.
 
 The archive controls below are local and do not create a delivery operation. `archive-build`
 requires a current independently accepted plan and task set, unchanged accepted

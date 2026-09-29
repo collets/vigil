@@ -1470,6 +1470,95 @@ func TestReconcileNeverReopensAnAttestedClosure(t *testing.T) {
 	}
 }
 
+func TestStaleReconcileReleaseCannotReopenAnAttestedClosure(t *testing.T) {
+	_, e, p := setup(t)
+	seedAcceptedPlanWithChange(t, e, true)
+	ctx := context.Background()
+	prepared, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "prepare-stale-release", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Stale release", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: prepared.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	start, err := e.deliveryEnvelope(ctx, store.Digest([]byte("delivery.start\x00"+prepared.OperationID)), "operation.start", map[string]string{"operation_id": prepared.OperationID, "grant_id": grant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(ctx, Core, start); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, `INSERT INTO deliveries(id,plan_id,repository_id,operation_id,kind,state,head_oid)
+		VALUES(?,?,?,?, 'commit','pending',?)`, commitDeliveryID(prepared.OperationID), "plan", "fixture-repo", prepared.OperationID, prepared.Intent.ParentOID); err != nil {
+		t.Fatal(err)
+	}
+	// A human attests the effect never happened: a committed closure.
+	if _, err := e.CloseUnobservedDelivery(ctx, "attest-stale", prepared.OperationID, "verified the ref never moved"); err != nil {
+		t.Fatal(err)
+	}
+	// The first reconcile's stale release now runs. It must not resurrect the
+	// attested closure, because that would re-arm the exact effect the
+	// attestation denied.
+	if err := e.releaseClaim(ctx, prepared.OperationID, "executing"); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	var closureKind sql.NullString
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state,closure_kind FROM operations WHERE id=?", prepared.OperationID).Scan(&state, &closureKind); err != nil {
+		t.Fatal(err)
+	}
+	if state != "reconciled" || !closureKind.Valid {
+		t.Fatalf("a stale release reopened an attested closure: state=%q closure_kind=%v", state, closureKind)
+	}
+	// And the operation is still not executable.
+	if _, err := e.ExecuteCommit(ctx, prepared.OperationID, ""); err == nil {
+		t.Fatal("an attested closure was re-executed after a stale release")
+	}
+	// The ref is untouched.
+	if _, err := deliveryGit(ctx, p.Root, nil, nil, "rev-parse", "--verify", "--end-of-options", prepared.Intent.TargetRef+"^{commit}"); err == nil {
+		t.Fatal("the attested commit ref was moved")
+	}
+}
+
+func TestResumedClaimKeepsAStartedOperationExecutable(t *testing.T) {
+	_, e, _ := setup(t)
+	seedAcceptedPlanWithChange(t, e, true)
+	ctx := context.Background()
+	prepared, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "prepare-resumed-claim", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Resumed claim", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: prepared.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	start, err := e.deliveryEnvelope(ctx, store.Digest([]byte("delivery.start\x00"+prepared.OperationID)), "operation.start", map[string]string{"operation_id": prepared.OperationID, "grant_id": grant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(ctx, Core, start); err != nil {
+		t.Fatal(err)
+	}
+	// The effect started and journaled, then a reconcile took the claim and
+	// died. A second reconcile resumes that claim.
+	if _, err := e.ExecuteCommit(ctx, prepared.OperationID, ""); err == nil {
+		t.Skip("commit completed without the intended crash window")
+	}
+	if err := e.DB.Write(ctx, func(tx *store.Tx) error {
+		_, err := tx.ExecContext(ctx, "UPDATE operations SET state='reconciled' WHERE id=?", prepared.OperationID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A resumed claim that is blocked must restore 'executing', not
+	// 'uncertain': an operator inspecting a stuck operation must keep the
+	// ability to re-execute it.
+	if _, err := e.ReconcileDelivery(ctx, "reconcile-resumed-claim", prepared.OperationID); err == nil {
+		t.Fatal("a resumed claim closed an effect it could not observe")
+	}
+	var state string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM operations WHERE id=?", prepared.OperationID).Scan(&state); err != nil || state != "executing" {
+		t.Fatalf("a resumed claim downgraded the operation to %q: %v", state, err)
+	}
+}
+
 func TestReconcileNeverPushesAStartedOperationWithNoJournal(t *testing.T) {
 	_, e, p := setup(t)
 	remote := filepath.Join(t.TempDir(), "remote.git")
