@@ -852,6 +852,184 @@ func TestPushRejectsChangedRemoteBeforeGrantConsumption(t *testing.T) {
 	}
 }
 
+// The Stage 5.6 plan requires testing policy revocation and a stale approval
+// before an effect. A revoked grant and an expired grant must both stop the
+// effect before any ref, push or POST, and must leave no trace of one.
+func TestRevokedAndExpiredApprovalsStopTheEffectBeforeIt(t *testing.T) {
+	for _, revoke := range []bool{true, false} {
+		name := "expired"
+		if revoke {
+			name = "revoked"
+		}
+		t.Run(name, func(t *testing.T) {
+			_, e, p := setup(t)
+			seedAcceptedPlanWithChange(t, e, true)
+			ctx := context.Background()
+			prepared, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "prepare-" + name, PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+				Paths: []string{"src/new.txt"}, Message: "Approval fixture", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: prepared.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+			if revoke {
+				if _, err := e.Apply(ctx, Human, envelope(t, e, "permission.revoke", map[string]string{"grant_id": grant})); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE grants SET expires_at=? WHERE id=?", store.Now()-1, grant); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// The effect must be refused: operation.start re-checks the grant.
+			if _, err := e.ExecuteCommit(ctx, prepared.OperationID, grant); err == nil {
+				t.Fatal("a " + name + " approval still executed the commit")
+			}
+			// Nothing moved: the plan ref does not exist and no journal was written.
+			if _, err := deliveryGit(ctx, p.Root, nil, nil, "rev-parse", "--verify", "--end-of-options", prepared.Intent.TargetRef+"^{commit}"); err == nil {
+				t.Fatal("a " + name + " approval moved the plan ref")
+			}
+			var state string
+			if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM operations WHERE id=?", prepared.OperationID).Scan(&state); err != nil || state != "prepared" {
+				t.Fatalf("operation left %q after a %s approval: %v", state, name, err)
+			}
+			var rows int
+			if err := e.DB.SQL.QueryRowContext(ctx, "SELECT count(*) FROM deliveries WHERE operation_id=?", prepared.OperationID).Scan(&rows); err != nil || rows != 0 {
+				t.Fatalf("a %s approval left a delivery journal: %d %v", name, rows, err)
+			}
+		})
+	}
+}
+
+// The plan requires testing a wrong destination base. A base branch that moves
+// after draft approval must block the request before any POST.
+func TestDraftRejectsChangedDestinationBaseBeforePosting(t *testing.T) {
+	e, head := seededPushedArchive(t)
+	ctx := context.Background()
+	var posts int
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			posts++
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]any{})
+	}))
+	defer server.Close()
+	prepared, err := e.PrepareDraft(ctx, DraftRequest{CommandID: "prepare-base-drift", PlanID: "plan", RepositoryID: "fixture-repo",
+		Provider: "github", Project: "fixture/project", APIBase: server.URL, BaseBranch: "main", Title: "Base drift", Fixture: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: prepared.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	// The destination base advances after approval, so the bound base OID no
+	// longer describes the remote.
+	record, err := e.Repository(ctx, "fixture-repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := deliveryGit(ctx, record.Root, nil, nil, "rev-parse", fmt.Sprintf("%s^{tree}", record.BaseOID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved, err := deliveryGit(ctx, record.Root, nil, nil, "-c", "user.name=Fixture", "-c", "user.email=fixture@invalid", "commit-tree", tree, "-p", record.BaseOID, "-m", "base moved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := exec.Command("git", "-C", record.Root, "push", "-q", "origin", moved+":refs/heads/main").CombinedOutput(); err != nil {
+		t.Fatalf("move the destination base: %v %s", err, b)
+	}
+	if _, err := e.ExecuteDraft(ctx, prepared.OperationID, grant); err == nil {
+		t.Fatal("draft executed against a changed destination base")
+	}
+	if posts != 0 {
+		t.Fatalf("a changed destination base still produced %d POST(s)", posts)
+	}
+	// The approval is single-use: it was consumed by the refused attempt, so
+	// the stale intent cannot be re-driven with a fresh grant either.
+	var resolved string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM requests WHERE operation_id=?", prepared.OperationID).Scan(&resolved); err != nil {
+		t.Fatal(err)
+	}
+	if resolved != "resolved" {
+		t.Fatalf("the refused draft left its approval request %q", resolved)
+	}
+	if posts != 0 {
+		t.Fatalf("a changed destination base produced %d POST(s)", posts)
+	}
+	_ = head
+}
+
+// R67 and the 5.6 plan require that an explicitly authorized draft delivery
+// stays possible while the narrative is still pending, and that its URL is
+// appended as a new factual archive revision without disturbing the pending
+// narrative or the accepted work.
+func TestDraftDeliveryIsPermittedWhileNarrativeIsPending(t *testing.T) {
+	e, head := seededPushedArchive(t)
+	ctx := context.Background()
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost {
+			// GitHub creates a pull request with 201 Created.
+			w.WriteHeader(http.StatusCreated)
+			raw, _ := io.ReadAll(r.Body)
+			var input map[string]any
+			_ = json.Unmarshal(raw, &input)
+			marker, _ := input["body"].(string)
+			item := fakeHostedItem("github", server.URL, marker, true)
+			item["head"] = map[string]any{"ref": "vigil/fixture", "sha": head, "repo": map[string]string{"full_name": "fixture/project"}}
+			_ = json.NewEncoder(w).Encode(item)
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]any{})
+	}))
+	defer server.Close()
+	// The plan is finalization_pending with a factual archive and no narrative.
+	archive, err := e.BuildFactualArchive(ctx, "archive-pending-delivery", "plan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var planState string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM plans WHERE id='plan'").Scan(&planState); err != nil || planState != "finalization_pending" {
+		t.Fatalf("plan is not awaiting finalization: %q %v", planState, err)
+	}
+	if archive.State != "factual_ready" {
+		t.Fatalf("archive is not awaiting a narrative: %q", archive.State)
+	}
+	prepared, err := e.PrepareDraft(ctx, DraftRequest{CommandID: "pending-delivery-draft", PlanID: "plan", RepositoryID: "fixture-repo",
+		Provider: "github", Project: "fixture/project", APIBase: server.URL, BaseBranch: "main", Title: "Pending narrative delivery",
+		Body: "Accepted work", Fixture: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: prepared.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	result, err := e.ExecuteDraft(ctx, prepared.OperationID, grant)
+	if err != nil || result.State != "succeeded" || result.URL == "" {
+		t.Fatalf("draft delivery while narrative pending: %#v %v", result, err)
+	}
+	// The delivery is a new archive revision, still awaiting its narrative, and
+	// the accepted plan is untouched.
+	next, manifest, err := e.Archive(ctx, "plan", archive.Revision+1)
+	if err != nil || next.State != "factual_ready" || next.NarrativeID != "" {
+		t.Fatalf("delivery revision: %#v %v", next, err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, delivery := range manifest.Deliveries {
+		if delivery.URL == result.URL && delivery.State == "succeeded" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the delivered URL was not appended to the factual archive: %#v", manifest.Deliveries)
+	}
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT state FROM plans WHERE id='plan'").Scan(&planState); err != nil || planState != "finalization_pending" {
+		t.Fatalf("delivery changed the accepted plan state to %q: %v", planState, err)
+	}
+}
+
 func TestPushTransportIgnoresManagedRepositoryURLRewrite(t *testing.T) {
 	_, e, p := setup(t)
 	approved := filepath.Join(t.TempDir(), "approved.git")

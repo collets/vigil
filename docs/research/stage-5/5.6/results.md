@@ -439,7 +439,17 @@ reuses the Stage 5.5 contained qualification route under an explicit
 
 ## Remaining Stage 5.6 work
 
-The exact candidate needs a fresh independent antagonist review of the
-remediation commit, then native macOS validation. No real publication is
-authorized; every production dispatch, real-approval and real-delivery gate
-remains closed.
+Three validation cases the plan requires explicitly and that the suite did not
+originally carry are now permanent tests: a revoked and an expired approval
+both stop the effect before any ref movement, push or POST, and leave the
+operation `prepared` with no delivery journal; a destination base that moves
+after draft approval blocks the request before any POST, and the single-use
+approval cannot be re-driven into a second attempt; and an explicitly
+authorized draft delivery is permitted while the narrative is still pending,
+appending its URL as a new factual archive revision that is itself still
+awaiting its narrative, with the accepted plan left `finalization_pending`.
+
+No real publication is authorized; every production dispatch, real-approval and
+real-delivery gate remains closed. The final independent acceptance review of
+the current tip, and the user decisions recorded in
+[pending decisions](../../../process/pending-decisions.md), remain outstanding.
