@@ -164,7 +164,13 @@ func (e *Engine) commitParent(ctx context.Context, record RepositoryRecord) (str
 	target := "refs/heads/" + record.PlanBranch
 	checkedOut, _ := deliveryGit(ctx, record.Root, nil, nil, "symbolic-ref", "--quiet", "HEAD")
 	if checkedOut == target {
-		return "", "", "", errors.New("plan ref is checked out; commit would disturb the user's HEAD")
+		owned, err := e.applicationOwnsPlanCheckout(ctx, record, target)
+		if err != nil {
+			return "", "", "", err
+		}
+		if !owned {
+			return "", "", "", errors.New("plan ref is checked out by something other than this application's own branch preparation; commit would move the user's HEAD")
+		}
 	}
 	var last sql.NullString
 	err := e.DB.SQL.QueryRowContext(ctx, `SELECT head_oid FROM deliveries WHERE plan_id=? AND repository_id=? AND kind='commit' AND state='succeeded' ORDER BY rowid DESC LIMIT 1`, record.PlanID, record.ID).Scan(&last)
@@ -338,7 +344,13 @@ func (e *Engine) ExecuteCommit(ctx context.Context, operationID, grantID string)
 	}
 	checkedOut, _ := deliveryGit(ctx, record.Root, nil, nil, "symbolic-ref", "--quiet", "HEAD")
 	if checkedOut == intent.TargetRef {
-		return result, errors.New("plan ref is checked out; commit reconciliation cannot move the user's HEAD branch")
+		owned, err := e.applicationOwnsPlanCheckout(ctx, record, intent.TargetRef)
+		if err != nil {
+			return result, err
+		}
+		if !owned {
+			return result, errors.New("plan ref is checked out by something other than this application's own branch preparation; commit reconciliation cannot move the user's HEAD branch")
+		}
 	}
 	parent, expected, target, err := e.commitParent(ctx, record)
 	if err != nil || parent != intent.ParentOID || expected != intent.ExpectedRefOID || target != intent.TargetRef {
@@ -410,6 +422,27 @@ func (e *Engine) ExecuteCommit(ctx context.Context, operationID, grantID string)
 		if _, err := deliveryGit(ctx, record.Root, nil, nil, "update-ref", "-m", "vigil exact task commit", intent.TargetRef, commitOID, old); err != nil {
 			_ = e.markCommitUncertain(ctx, operationID)
 			return result, fmt.Errorf("commit ref update uncertain; inspect exact ref: %w", err)
+		}
+		// The commit tree is built in a private temporary index, so the operator's
+		// real index is deliberately never written. That is the right containment
+		// default, and it is what leaves the checkout byte-identical when HEAD is
+		// not the ref being moved.
+		//
+		// It is wrong in exactly one case: when the application is the reason HEAD
+		// points at the ref it just advanced. Advancing the ref under a live HEAD
+		// makes the operator's index describe the previous commit, so every
+		// committed path shows as both staged and unstaged modified, and the next
+		// `git commit -a` would revert the work Vigil just recorded. That is not a
+		// cosmetic difference: it is a footgun created by the application.
+		//
+		// So the index is refreshed for exactly the committed paths, and only when
+		// HEAD is the ref this application prepared and has just moved. No other
+		// index entry is touched, no working file is written, and the containment
+		// property that the accepted checkout-preservation test relies on is
+		// untouched because that test commits with HEAD on the base branch.
+		if err := e.refreshIndexForMovedHead(ctx, record, intent, commitOID, checkedOut); err != nil {
+			_ = e.markCommitUncertain(ctx, operationID)
+			return result, fmt.Errorf("commit ref advanced but the index could not be refreshed; the checkout now shows the committed paths as modified: %w", err)
 		}
 	}
 	_, err = e.DB.Command(ctx, store.Command{ID: store.Digest([]byte("delivery.observed\x00" + operationID)), Actor: "core", Kind: "delivery.commit.observed", Args: objectArgs}, func(tx *store.Tx) (any, error) {

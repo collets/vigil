@@ -31,8 +31,15 @@ func (w *walkthrough) stageB(ctx context.Context) {
 	w.explicitlyRejectAutomaticDispatch(ctx)
 	w.executeAndRepair(ctx)
 	w.recordQualityEvidence(ctx)
-	w.finalizeFactually(ctx)
-	w.rehearseDelivery(ctx)
+	// The product's own order is commit, push, factual archive, draft, narrative.
+	// The archive must observe the committed repository and must exist before a
+	// draft may be created, so it runs between the push and the draft rather than
+	// before the delivery rehearsal or after it.
+	archive, cited := ArchiveRecord{}, []string(nil)
+	w.rehearseDelivery(ctx, func(inner context.Context) {
+		archive, cited = w.buildFactualArchive(inner)
+	})
+	w.publishCitedNarrative(ctx, archive, cited)
 	w.closeMilestoneMatrix()
 }
 
@@ -215,7 +222,7 @@ func (w *walkthrough) enrollRepository(ctx context.Context) {
 	if err != nil {
 		panic(&ScenarioAbort{Step: "repository enrollment", Err: err})
 	}
-	w.driver.MustApply(ctx, "repository.enroll", "repository-001", "repository.enroll", RepositoryEnrollment(w.fixtureBase))
+	w.driver.MustApply(ctx, "repository.enroll", "repository-001", "repository.enroll", RepositoryEnrollmentWithRemote(w.fixtureBase, FixtureRemoteName))
 	_, err = w.driver.RefreshRevision(ctx)
 	if err != nil {
 		panic(&ScenarioAbort{Step: "repository.enroll", Err: err})
@@ -629,9 +636,16 @@ type AcceptanceResult struct {
 	Status  string `json:"status"`
 }
 
-// finalizeFactually persists the factual archive and demonstrates that a
-// narrative failure retries only the narrative, never the accepted development.
-func (w *walkthrough) finalizeFactually(ctx context.Context) {
+// buildFactualArchive persists and re-verifies the factual manifest, and
+// demonstrates that a narrative failure retries only the narrative.
+//
+// It stops short of publishing a valid narrative on purpose. Publishing one moves
+// the plan to `completed`, and the draft-delivery contract requires the plan to be
+// awaiting finalization — so the product's own order is: factual archive, then
+// commit/push/draft, then the narrative that completes the plan. Publishing the
+// narrative first would make delivery unreachable for the same reason 5.7-F1 did:
+// a precondition the rehearsal itself had already consumed.
+func (w *walkthrough) buildFactualArchive(ctx context.Context) (ArchiveRecord, []string) {
 	built := w.driver.MustInvoke(ctx, "archive-build", "project", "archive-build", w.projectID, PlanID,
 		"--command-id", "archive-001")
 	var archive ArchiveRecord
@@ -668,7 +682,7 @@ func (w *walkthrough) finalizeFactually(ctx context.Context) {
 	if _, err := w.driver.Invoke(ctx, "archive-narrative (malformed)", "project", "archive-narrative", w.projectID, PlanID,
 		"--synthetic-fixture", "--file", badFile); err == nil {
 		w.assert("narrative-failure-does-not-rerun-development", false, "accepted", "an uncited narrative was accepted")
-		return
+		return archive, cited
 	}
 	status, _, err := w.driver.Status(ctx)
 	if err != nil {
@@ -682,14 +696,47 @@ func (w *walkthrough) finalizeFactually(ctx context.Context) {
 		w.assert("narrative-failure-does-not-rerun-development", false,
 			fmt.Sprintf("scenario task is %q after an uncited narrative was refused; tasks: %+v", state, status.Tasks),
 			"a narrative failure must not invalidate accepted development")
-		return
+		return archive, cited
 	}
 	w.assert("narrative-failure-does-not-rerun-development", true,
 		fmt.Sprintf("the scenario task is still %s after an uncited narrative was refused, and the finalization task is visible as %s",
 			state, finalizationTaskStates(status)),
 		"a narrative failure leaves finalization pending and never invalidates accepted development")
 
-	// A correctly cited narrative completes the plan.
+	// A correctly cited narrative completes the plan. This is deliberately after
+	// the delivery rehearsal, because completing the plan is the last step and
+	// draft delivery must happen while the plan still awaits finalization.
+	return archive, cited
+}
+
+// publishCitedNarrative completes the plan with a correctly cited narrative.
+// publishCitedNarrative completes the plan with a correctly cited narrative.
+//
+// It rebuilds the factual manifest first, rather than reusing the one built before
+// delivery. Observing the draft creates a new archive revision, because the
+// delivery facts are part of the archive; publishing against the superseded
+// revision is correctly refused. Rebuilding here is the product's own answer —
+// the narrative always describes the current facts.
+func (w *walkthrough) publishCitedNarrative(ctx context.Context, _ ArchiveRecord, cited []string) {
+	rebuilt := w.driver.MustInvoke(ctx, "archive-build (current facts)", "project", "archive-build", w.projectID, PlanID,
+		"--command-id", "archive-002")
+	var archive ArchiveRecord
+	if err := Decode(rebuilt, &archive); err != nil {
+		panic(&ScenarioAbort{Step: "archive-build", Err: err})
+	}
+	if archive.Revision < 1 || archive.ManifestDigest == "" {
+		panic(&ScenarioAbort{Step: "archive-build", Err: fmt.Errorf("unexpected archive record %+v", archive)})
+	}
+	// The citations are read from the manifest that is actually being published,
+	// not from the earlier one.
+	shown := w.driver.MustInvoke(ctx, "archive-show (current facts)", "project", "archive-show", w.projectID, PlanID, fmt.Sprint(archive.Revision))
+	var verified struct {
+		Manifest FactualArchive `json:"manifest"`
+	}
+	if err := Decode(shown, &verified); err != nil {
+		panic(&ScenarioAbort{Step: "archive-show", Err: err})
+	}
+	cited = requiredCitations(verified.Manifest)
 	goodNarrative := map[string]any{
 		"command_id": "narrative-002", "plan_id": PlanID, "manifest_revision": archive.Revision,
 		"manifest_digest": archive.ManifestDigest,

@@ -55,6 +55,22 @@ func (w *walkthrough) stageA(ctx context.Context) {
 		panic(&ScenarioAbort{Step: "stage-a-committed-check-fails", Err: err})
 	}
 	w.bareRemote = bare
+	// The remote is registered here, before the repository is enrolled, because
+	// enrollment records the remote's identity as part of the accepted baseline.
+	// Adding it afterwards would leave the enrolled identity describing a
+	// repository with no remote, and the push path would then correctly refuse a
+	// destination it had never verified.
+	if err := AddRemote(ctx, w.fixtureBase, FixtureRemoteName, w.bareRemote); err != nil {
+		panic(&ScenarioAbort{Step: "stage-a-fixture-remote", Err: err})
+	}
+	// The bare remote is seeded with the base branch, because every real hosting
+	// destination already has one and the draft path must resolve the base it
+	// proposes to merge into. An empty bare repository would make draft delivery
+	// fail for a reason that has nothing to do with the product: a destination
+	// with no base branch is not a destination a pull request can target.
+	if _, err := git(ctx, w.fixtureBase, "push", "-q", FixtureRemoteName, baseCommit+":refs/heads/main"); err != nil {
+		panic(&ScenarioAbort{Step: "stage-a-remote-seed", Err: err})
+	}
 	w.report.Project = ProjectIdentity{Root: w.fixtureBase, StateDir: state, BaseOIDs: map[string]string{"fixture_base": baseCommit}}
 	w.note("The committed fixture fails its own check, and the implementation attempt writes the specified greeting with a trailing space. The automated check judges the specified text and passes; the fresh reviewer reports the formatting defect, and the bounded repair removes it.")
 }

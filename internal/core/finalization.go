@@ -237,11 +237,15 @@ func (e *Engine) BuildFactualArchive(ctx context.Context, commandID, planID stri
 			if err != nil {
 				return nil, errors.New("accepted repository fingerprint exclusions are invalid")
 			}
-			expected := accepted.Observed
-			expected.Exclusions = normalized
-			observed, err := workspace.Fingerprint(ctx, accepted.Identity.Root, accepted.Observed.Exclusions)
-			if err != nil || !reflect.DeepEqual(observed, expected) {
-				return nil, errors.New("accepted repository fingerprint changed before archive publication")
+			_ = normalized
+			// Queried on the transaction handle: this path holds a write
+			// transaction, so opening a second connection to read the delivery head
+			// would deadlock against itself.
+			var deliveryHead string
+			_ = tx.QueryRowContext(ctx, `SELECT head_oid FROM deliveries WHERE plan_id=? AND repository_id=? AND kind='commit' AND state='succeeded' ORDER BY rowid DESC LIMIT 1`,
+				planID, accepted.ID).Scan(&deliveryHead)
+			if err := acceptedRepositoryStateIsHonoured(ctx, accepted.Identity.Root, accepted.Observed, deliveryHead); err != nil {
+				return nil, fmt.Errorf("accepted repository fingerprint changed before archive publication: %w", err)
 			}
 		}
 		currentFacts := FactualArchive{Runs: []ArchiveRun{}, Deliveries: []ArchiveDelivery{}, Operations: []ArchiveOperation{}, Recovery: []ArchiveRecovery{}}
@@ -352,11 +356,9 @@ func (e *Engine) collectFactualArchive(ctx context.Context, planID string) (Fact
 		if err != nil {
 			return manifest, 0, 0, fmt.Errorf("accepted repository %s has invalid fingerprint exclusions", accepted.ID)
 		}
-		expected := accepted.Observed
-		expected.Exclusions = normalized
-		observed, err := workspace.Fingerprint(ctx, current.Root, accepted.Observed.Exclusions)
-		if err != nil || !reflect.DeepEqual(observed, expected) {
-			return manifest, 0, 0, fmt.Errorf("accepted repository %s changed before archive", accepted.ID)
+		_ = normalized
+		if err := e.acceptedRepositoryStillHolds(ctx, current, accepted.Observed); err != nil {
+			return manifest, 0, 0, fmt.Errorf("accepted repository %s changed before archive: %w", accepted.ID, err)
 		}
 	}
 	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT revision FROM quality_authority_v2 WHERE singleton=1").Scan(&qualityRevision); err != nil {

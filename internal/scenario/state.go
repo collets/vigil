@@ -183,14 +183,31 @@ func ScenarioPlan(specification string) Plan {
 	}
 }
 
-// RepositoryEnrollment is the explicit disposable repository enrollment.
+// RepositoryEnrollment is the explicit disposable repository enrollment for a
+// repository with no remote — the shape every probe project uses.
 func RepositoryEnrollment(root string) map[string]any {
+	return repositoryEnrollment(root, "")
+}
+
+// RepositoryEnrollmentWithRemote enrolls a repository that has a named remote
+// already registered on it.
+//
+// The remote must be named at enrollment, because enrollment records the remote's
+// identity as part of the accepted baseline. Enrolling without one and adding it
+// later would leave the enrolled identity describing a repository with no remote,
+// and the push path would then correctly refuse a destination it never verified.
+func RepositoryEnrollmentWithRemote(root, remote string) map[string]any {
+	return repositoryEnrollment(root, remote)
+}
+
+func repositoryEnrollment(root, remote string) map[string]any {
 	return map[string]any{
 		"id":                RepositoryID,
 		"plan_id":           PlanID,
 		"root":              root,
 		"base_ref":          "refs/heads/main",
 		"plan_branch":       PlanBranch,
+		"remote":            remote,
 		"dirty_choice":      "clean",
 		"nested_boundaries": []any{},
 	}

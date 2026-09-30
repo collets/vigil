@@ -238,12 +238,12 @@ func TestFixtureFinalizationValidatesManifestReferences(t *testing.T) {
 }
 
 type fixtureFinalizationProvider struct {
-	output []byte
-	err    error
-	idle   bool
-	calls  int
+	output   []byte
+	err      error
+	idle     bool
+	calls    int
 	identity *PlanningProviderIdentity
-	crash bool
+	crash    bool
 }
 
 func (p *fixtureFinalizationProvider) Identity() PlanningProviderIdentity {
@@ -752,6 +752,274 @@ func TestCommitReconciliationRefusesNewlyCheckedOutPlanBranch(t *testing.T) {
 	}
 	if _, err := deliveryGit(ctx, p.Root, nil, nil, "rev-parse", "--verify", prepared.Intent.TargetRef); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// preparePlanBranchForFixture runs the application's own branch preparation, which
+// is the documented, journaled step that moves HEAD onto the plan ref.
+//
+// It requires a clean enrolled baseline, so it models the real ordering: prepare
+// first, while the repository is untouched, and only then let a task change it.
+func preparePlanBranchForFixture(t *testing.T, e *Engine, commandID string) {
+	t.Helper()
+	ctx := context.Background()
+	// The expected revision is the project's, which enrollment advances.
+	var projectRevision int
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT revision FROM project WHERE id=?", e.ProjectID).Scan(&projectRevision); err != nil {
+		t.Fatal(err)
+	}
+	operation, err := e.PrepareRepository(ctx, commandID, "fixture-repo", projectRevision)
+	if err != nil {
+		t.Fatalf("prepare-repository: %v", err)
+	}
+	if operation.State != "observed" || operation.ObservedHeadRef != "refs/heads/vigil/fixture" {
+		t.Fatalf("branch preparation did not record the checkout: %+v", operation)
+	}
+}
+
+// applyAcceptedChangeAndRebind writes the accepted change after branch preparation
+// and re-accepts the resulting state, which is what the real workflow does: a
+// quality scope is immutable, so a changed repository means a new scope and a new
+// acceptance, never an edit to the old one. The seeded acceptances are invalidated
+// first, because a target may have only one current acceptance.
+func applyAcceptedChangeAndRebind(t *testing.T, e *Engine, root string) workspace.Baseline {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "src", "new.txt"), []byte("accepted change\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	observed, err := workspace.Fingerprint(ctx, root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := e.Repository(ctx, "fixture-repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := json.Marshal([]map[string]any{{"id": record.ID, "revision": record.Revision, "identity": record.Identity, "observed": observed}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, `UPDATE quality_acceptances_v2 SET invalidated_at=?,invalidation_reason='repository changed by the accepted task'
+		WHERE invalidated_at IS NULL AND plan_id='plan'`, store.Now()); err != nil {
+		t.Fatal(err)
+	}
+	artifacts, err := artifacts.New(e.DB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var configDigest string
+	if err := e.DB.SQL.QueryRowContext(ctx, `SELECT s.digest FROM project_configurations c JOIN config_snapshots s ON s.id=c.config_id ORDER BY c.revision DESC LIMIT 1`).Scan(&configDigest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE plans SET state='finalizing' WHERE id='plan'"); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"first", "second", "plan"} {
+		artifact, err := artifacts.PutCore(ctx, "prepared-acceptance-"+id, "acceptance-manifest", "durable", bytes.NewBufferString(`{"accepted":true}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		scopeID := store.Digest([]byte("prepared-scope:" + id))
+		targetKind, taskID, taskRevision := "task", any(id), any(1)
+		if id == "plan" {
+			targetKind, taskID, taskRevision = "plan", nil, nil
+		} else if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE tasks SET state='accepted' WHERE id=?", id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.DB.SQL.ExecContext(ctx, `INSERT INTO quality_scopes_v2(id,target_kind,plan_id,plan_revision,task_id,task_revision,repository_set_digest,repository_manifest_json,criteria_digest,definition_digest,config_digest,check_set_digest,reviewer_profile_id,reviewer_profile_revision,reviewer_profile_digest,instruction_digest,created_at)
+			VALUES(?,?, 'plan',1,?,?,?,?,?,?,?,?, 'local',1,?,?,?)`, scopeID, targetKind, taskID, taskRevision, store.Digest(manifest), string(manifest), strings.Repeat("b", 64), strings.Repeat("c", 64), configDigest, strings.Repeat("e", 64), strings.Repeat("f", 64), strings.Repeat("0", 64), store.Now()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.DB.SQL.ExecContext(ctx, `INSERT INTO quality_acceptances_v2(id,scope_id,target_kind,plan_id,task_id,evidence_manifest_id,evidence_manifest_digest,actor,accepted_at)
+			VALUES(?,?,?,'plan',?,?,?,?,?)`, "prepared-accept-"+id, scopeID, targetKind, taskID, artifact.ID, artifact.Digest, "fixture_core", store.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return observed
+}
+
+// seedPreparedPlanWithAcceptedChange builds the state the documented workflow
+// leaves behind: the application prepared the plan branch, a task changed the
+// repository on it, and that state was accepted.
+func seedPreparedPlanWithAcceptedChange(t *testing.T, e *Engine, root, commandID string) workspace.Baseline {
+	t.Helper()
+	seedAcceptedPlanWithChange(t, e, false)
+	preparePlanBranchForFixture(t, e, commandID)
+	return applyAcceptedChangeAndRebind(t, e, root)
+}
+
+// TestCommitProceedsWhenApplicationOwnsThePlanCheckout is the fix for Stage 5.7
+// finding 5.7-F1: the commit path must act on a plan ref the application itself
+// prepared and recorded, because preparing that branch is a required step of the
+// documented workflow.
+func TestCommitProceedsWhenApplicationOwnsThePlanCheckout(t *testing.T) {
+	_, e, p := setup(t)
+	before := seedPreparedPlanWithAcceptedChange(t, e, p.Root, "branch-owned")
+	ctx := context.Background()
+	checkedOut, err := deliveryGit(ctx, p.Root, nil, nil, "symbolic-ref", "--quiet", "HEAD")
+	if err != nil || checkedOut != "refs/heads/vigil/fixture" {
+		t.Fatalf("precondition: HEAD is %q %v", checkedOut, err)
+	}
+	if before.HeadRef != "refs/heads/vigil/fixture" || !before.Dirty {
+		t.Fatalf("precondition: HEAD on the plan ref with the accepted change pending: %+v", before)
+	}
+	prepared, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "commit-owned", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Add accepted change", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatalf("commit-prepare refused a checkout the application itself prepared: %v", err)
+	}
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: prepared.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	result, err := e.ExecuteCommit(ctx, prepared.OperationID, grant)
+	if err != nil || result.State != "succeeded" || !gitOID(result.CommitOID) {
+		t.Fatalf("commit on an application-prepared checkout: %#v %v", result, err)
+	}
+	// The operator's files must be byte-identical.
+	after, err := workspace.Fingerprint(ctx, p.Root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.ContentDigest != before.ContentDigest {
+		t.Fatalf("commit changed the working tree: %s -> %s", before.ContentDigest, after.ContentDigest)
+	}
+	// HEAD is the plan ref, so it must now name the commit, not the previous one.
+	if after.HeadOID != result.CommitOID || after.HeadRef != before.HeadRef {
+		t.Fatalf("HEAD does not name the delivery commit: %+v", after)
+	}
+	// And the checkout must be clean, so the operator's next commit cannot revert
+	// the work Vigil just recorded. A stale index here is the footgun the refresh
+	// exists to prevent.
+	if after.Dirty || len(after.DirtyPaths) != 0 {
+		t.Fatalf("the checkout is still dirty after recording the accepted change: %+v", after.DirtyPaths)
+	}
+	// The ref advanced by exactly one commit on top of the accepted head.
+	parent, err := deliveryGit(ctx, p.Root, nil, nil, "rev-parse", "--verify", result.CommitOID+"^")
+	if err != nil || strings.TrimSpace(parent) != before.HeadOID {
+		t.Fatalf("the delivery commit is not on top of the accepted head: %q %v", parent, err)
+	}
+}
+
+// TestArchiveAcceptsTheAcceptedContentAlreadyRecordedByDelivery is the fix for the
+// second half of finding 5.7-F1: the factual archive re-verifies the accepted
+// baseline, so before this it had to be built before the commit, while draft
+// delivery requires an archive revision and so had to come after it. Delivery was
+// therefore unreachable in every ordering.
+func TestArchiveAcceptsTheAcceptedContentAlreadyRecordedByDelivery(t *testing.T) {
+	_, e, p := setup(t)
+	seedPreparedPlanWithAcceptedChange(t, e, p.Root, "branch-owned")
+	ctx := context.Background()
+	prepared, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "commit-then-archive", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Add accepted change", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: prepared.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	if _, err := e.ExecuteCommit(ctx, prepared.OperationID, grant); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.BuildFactualArchive(ctx, "archive-after-commit", "plan"); err != nil {
+		t.Fatalf("the archive refused the accepted content after delivery recorded it: %v", err)
+	}
+}
+
+// TestArchiveStillRefusesContentThatIsNotTheAcceptedContent is the safeguard on
+// that relaxation: a different content digest, an unrelated head, or a dirty
+// checkout must still fail exactly as before.
+func TestArchiveStillRefusesContentThatIsNotTheAcceptedContent(t *testing.T) {
+	for name, mutate := range map[string]func(t *testing.T, e *Engine, root string){
+		"changed content": func(t *testing.T, e *Engine, root string) {
+			if err := os.WriteFile(filepath.Join(root, "src", "new.txt"), []byte("unaccepted edit\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"unrelated head": func(t *testing.T, e *Engine, root string) {
+			if b, err := exec.Command("git", "-C", root, "commit", "-q", "--allow-empty", "-m", "unrelated").CombinedOutput(); err != nil {
+				t.Fatalf("%v %s", err, b)
+			}
+		},
+		"dirty after delivery": func(t *testing.T, e *Engine, root string) {
+			if err := os.WriteFile(filepath.Join(root, "src", "new.txt"), []byte("late edit\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, e, p := setup(t)
+			seedPreparedPlanWithAcceptedChange(t, e, p.Root, "branch-owned")
+			ctx := context.Background()
+			prepared, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "commit-then-mutate", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+				Paths: []string{"src/new.txt"}, Message: "Add accepted change", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: prepared.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+			if _, err := e.ExecuteCommit(ctx, prepared.OperationID, grant); err != nil {
+				t.Fatal(err)
+			}
+			mutate(t, e, p.Root)
+			if _, err := e.BuildFactualArchive(ctx, "archive-after-mutation", "plan"); err == nil {
+				t.Fatalf("the archive accepted a repository that is no longer the accepted content (%s)", name)
+			}
+		})
+	}
+}
+
+// TestCommitStillRefusesWhenTheApplicationDoesNotOwnTheCheckout is the
+// complementary safeguard: ownership is required, not assumed.
+func TestCommitStillRefusesWhenTheApplicationDoesNotOwnTheCheckout(t *testing.T) {
+	_, e, p := setup(t)
+	seedPreparedPlanWithAcceptedChange(t, e, p.Root, "branch-owned-then-abandoned")
+	ctx := context.Background()
+	prepared, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "commit-abandoned", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Must be refused", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The recorded preparation no longer describes the current checkout: HEAD has
+	// been moved elsewhere and back by a person, so the application can no longer
+	// claim the checkout as its own.
+	for _, ref := range []string{"main", "vigil/fixture"} {
+		if _, err := exec.Command("git", "-C", p.Root, "checkout", "-q", ref).CombinedOutput(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE repository_branch_operations SET observed_head_ref='refs/heads/other'"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.ExecuteCommit(ctx, prepared.OperationID, ""); err == nil {
+		t.Fatal("commit moved a plan ref whose recorded preparation no longer describes the checkout")
+	}
+}
+
+// TestBranchOperationMustBeObservedToEstablishOwnership pins that a merely
+// prepared operation cannot establish ownership: its symbolic-ref mutation may not
+// have happened, so it cannot prove the application put HEAD on the ref.
+func TestBranchOperationMustBeObservedToEstablishOwnership(t *testing.T) {
+	_, e, p := setup(t)
+	seedPreparedPlanWithAcceptedChange(t, e, p.Root, "branch-still-prepared")
+	ctx := context.Background()
+	record, err := e.Repository(ctx, "fixture-repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE repository_branch_operations SET state='prepared'"); err != nil {
+		t.Fatal(err)
+	}
+	owned, err := e.applicationOwnsPlanCheckout(ctx, record, "refs/heads/vigil/fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if owned {
+		t.Fatal("a merely prepared branch operation established ownership of the checkout")
+	}
+	// The refusal happens at prepare, before any approval could be requested, which
+	// is stronger than refusing at execution.
+	if _, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "commit-prepared-only", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Must be refused", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"}); err == nil {
+		t.Fatal("commit was prepared on a checkout owned only by a prepared operation")
 	}
 }
 

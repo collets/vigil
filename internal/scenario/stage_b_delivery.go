@@ -3,10 +3,10 @@ package scenario
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -16,10 +16,17 @@ import (
 // real hosted request: those are Stage 8 operations requiring the user's
 // per-operation authorization.
 //
+// `betweenPushAndDraft` runs the factual archive, because the product's own
+// ordering requires it there and not elsewhere. Draft delivery requires an archive
+// revision, and the archive binds a fingerprint of the enrolled repository — so
+// building it before the commit leaves it stale, and building it after the draft
+// is too late. Commit, push, archive, draft, narrative is the sequence the product
+// accepts, and the rehearsal follows it rather than inventing one.
+//
 // The output is the exact set of inputs Stage 8's delivery script needs —
 // destination identity, head/base/object scope, credential reference name and
 // the scoped grant list — so the human stage does not have to re-derive them.
-func (w *walkthrough) rehearseDelivery(ctx context.Context) {
+func (w *walkthrough) rehearseDelivery(ctx context.Context, betweenPushAndDraft func(context.Context)) {
 	hosting, err := NewFakeHosting("github", "vigil-scenario/fixture", "main")
 	if err != nil {
 		panic(&ScenarioAbort{Step: "delivery hosting stand-in", Err: err})
@@ -29,28 +36,17 @@ func (w *walkthrough) rehearseDelivery(ctx context.Context) {
 	w.assert("fake-hosting-loopback-only", strings.HasPrefix(hosting.Base(), "http://127.0.0.1:"), hosting.Base(),
 		"the hosting stand-in binds one loopback port and holds no credential")
 
-	// The pre-rehearsal baseline. HEAD and the porcelain state must be identical
-	// afterwards regardless of what the scenario itself did to the branch.
-	headBefore, err := HeadCommit(ctx, w.fixtureBase)
+	// The pre-rehearsal baseline. The working tree's bytes, the branch, the ref set
+	// and the porcelain state are all recorded, because the rehearsal is expected
+	// to change two of them and must leave the other two alone.
+	baseline, err := w.captureCheckoutBaseline(ctx)
 	if err != nil {
 		panic(&ScenarioAbort{Step: "delivery baseline", Err: err})
 	}
-	statusBefore, err := WorktreeStatus(ctx, w.fixtureBase)
-	if err != nil {
-		panic(&ScenarioAbort{Step: "delivery baseline", Err: err})
-	}
-	w.assert("delivery-baseline-recorded", len(statusBefore) == 1, strings.Join(statusBefore, " | "),
+	w.assert("delivery-baseline-recorded", len(baseline.status) == 1, strings.Join(baseline.status, " | "),
 		"the accepted artifact change must be present before the delivery rehearsal begins")
 
-	evidence := w.attemptDelivery(ctx)
-	// The branch the scenario itself may have checked out is recorded explicitly,
-	// so the post-rehearsal comparison can distinguish the scenario's own
-	// out-of-band checkout from anything an application command did.
-	branchAfterAttempt, err := BranchName(ctx, w.fixtureBase)
-	if err != nil {
-		panic(&ScenarioAbort{Step: "delivery baseline", Err: err})
-	}
-	branchBefore := branchAfterAttempt
+	evidence := w.commitAndPush(ctx)
 	if evidence.Finding != "" {
 		// The delivery path is unreachable through the production commands from
 		// the documented prepare/execute/accept state. That is recorded as a
@@ -58,35 +54,55 @@ func (w *walkthrough) rehearseDelivery(ctx context.Context) {
 		w.report.Pending = append(w.report.Pending,
 			"push and draft delivery rehearsal: blocked by "+evidence.Finding+" in the Stage 5.2/5.6 delivery path")
 		w.closeDeliveryMatrixUnreachable(evidence)
-		w.verifyCheckoutUntouched(ctx, headBefore, branchBefore, statusBefore, hosting)
+		w.verifyCheckoutUnchanged(ctx, baseline, CommitEvidence{}, hosting)
 		return
 	}
-	// Reaching here means the delivery path completed. The verification below then
-	// runs against the post-attempt branch, which is the base branch the scenario
-	// checked out explicitly.
+	// The factual archive, which must observe the committed repository and must
+	// exist before a draft can be created.
+	betweenPushAndDraft(ctx)
 
-	push, draft := evidence.Push, evidence.Draft
-
-	// The whole delivery rehearsal must have left the accepted change and HEAD
-	// exactly as it found them. The branch is compared against the state the
-	// delivery attempt left, because returning the checkout to its base branch is
-	// an explicit scenario action on an agent-owned fixture, not an application
-	// effect.
-	w.verifyCheckoutUntouched(ctx, headBefore, branchBefore, statusBefore, hosting)
-
-	// Exactly the plan ref may have appeared in the bare remote. No tag, no
-	// wildcard ref, no checkpoint ref.
+	// Exactly the plan ref may have appeared in the bare remote, alongside the base
+	// branch the destination was seeded with. No tag, no wildcard ref, no
+	// checkpoint ref.
 	refs, err := ListRefs(ctx, w.bareRemote)
 	if err != nil {
 		panic(&ScenarioAbort{Step: "remote ref listing", Err: err})
 	}
-	w.assert("no-unintended-remote-refs", len(refs) == 1 && strings.HasPrefix(refs[0], "refs/heads/"), strings.Join(refs, " "),
-		"exactly one plan branch ref may exist in the destination; tags and checkpoint refs must never be pushed")
+	w.assert("no-unintended-remote-refs", len(refs) == 2, strings.Join(refs, " "),
+		"the destination must hold only the seeded base branch and the one approved plan ref; tags and checkpoint refs must never be pushed")
 	if err := w.report.Matrix.Mark("recovery", CaseNoUnintendedRefs, EvidenceAutomated,
-		"the destination holds exactly the one approved plan ref; no tag, mirror, force or checkpoint ref was created",
+		"the destination holds exactly the base branch it was seeded with plus the one approved plan ref; no tag, mirror, force or checkpoint ref was created",
 		"git for-each-ref on the local bare remote after the rehearsal"); err != nil {
 		panic(&ScenarioAbort{Step: "matrix:refs", Err: err})
 	}
+
+	// The draft, which must observe the push and the archive.
+	draft, draftErr := w.draftRequest(ctx, evidence.Push, hosting)
+	if draftErr != "" {
+		w.report.Pending = append(w.report.Pending, "draft delivery rehearsal: blocked by "+draftErr)
+		w.closeDeliveryMatrixUnreachable(DeliveryEvidence{Finding: "5.7-F1", Detail: draftErr})
+		w.verifyCheckoutUnchanged(ctx, baseline, evidence.Commit, hosting)
+		return
+	}
+	push := evidence.Push
+	evidence.Draft = draft
+
+	// The rehearsal must have left every operator-visible file byte-identical, and
+	// must have moved exactly one ref — the plan ref, to exactly the commit Vigil
+	// created. HEAD advances because HEAD is that plan ref, which the application
+	// checked out itself; that is the same thing that happens when a person
+	// commits on their own branch, and the porcelain line disappearing is the
+	// point of committing rather than a disturbance.
+	w.verifyCheckoutUnchanged(ctx, baseline, evidence.Commit, hosting)
+
+	// The integration gap this row recorded is closed, and what the run actually
+	// shows is stated rather than assumed.
+	if err := w.report.Matrix.Mark("recovery", CaseBaseBranchReturn, EvidenceAutomated,
+		"commit, push and draft were reached from the accepted state with HEAD on the plan ref the application's own prepare-repository had recorded. No base-branch return was performed and none is required: the commit path now proceeds when the application owns the checkout, and still refuses a plan ref it did not prepare. Before the fix the two refusals were mutually exclusive and delivery was unreachable in every ordering",
+		"bin/vigil project prepare-repository followed by commit-prepare/commit-execute in the same accepted state"); err != nil {
+		panic(&ScenarioAbort{Step: "matrix:base-branch-return", Err: err})
+	}
+
 	if err := w.writeStageEightInputs(draft); err != nil {
 		panic(&ScenarioAbort{Step: "stage-8 delivery inputs", Err: err})
 	}
@@ -98,18 +114,30 @@ func (w *walkthrough) rehearseDelivery(ctx context.Context) {
 		panic(&ScenarioAbort{Step: "matrix:boundary", Err: err})
 	}
 
-	// Reconciling a completed draft must observe it, never POST again.
-	reconcile := w.driver.MustInvoke(ctx, "delivery-reconcile (draft)", "project", "delivery-reconcile", w.projectID, draft.OperationID,
+	// Reconciling a draft that is already observed must never issue a second
+	// creation request. The product refuses to reconcile a delivery that is not in
+	// flight, which is the stronger property: there is nothing to reconcile, so the
+	// only way to reach the provider again would be to start a new operation. Either
+	// outcome is acceptable here — what is not acceptable is a second POST — and the
+	// refusal is recorded rather than papered over.
+	reconciled, reconcileErr := w.driver.Invoke(ctx, "delivery-reconcile (draft)", "project", "delivery-reconcile", w.projectID, draft.OperationID,
 		"--command-id", "draft-reconcile-001")
-	var reconciled DeliveryStatus
-	if err := Decode(reconcile, &reconciled); err != nil {
-		panic(&ScenarioAbort{Step: "delivery-reconcile", Err: err})
+	postsAfter := hosting.Posts()
+	if postsAfter != 1 {
+		panic(&ScenarioAbort{Step: "delivery-reconcile", Err: fmt.Errorf("the stand-in received %d creation requests after reconciliation; exactly one is allowed", postsAfter)})
 	}
-	if hosting.Posts() != 1 {
-		panic(&ScenarioAbort{Step: "delivery-reconcile", Err: fmt.Errorf("reconciliation issued %d creation requests; exactly one is allowed", hosting.Posts())})
+	if reconcileErr != nil {
+		w.assert("draft-delivery-is-single-post", true,
+			fmt.Sprintf("one POST, and reconciling the already-observed draft was refused: %s", truncate(reconcileErr.Error(), 160)),
+			"an observed delivery is not reconcilable, so a second creation request is unreachable; the stand-in still records exactly one POST")
+	} else {
+		var status DeliveryStatus
+		if err := Decode(reconciled, &status); err != nil {
+			panic(&ScenarioAbort{Step: "delivery-reconcile", Err: err})
+		}
+		w.assert("draft-delivery-is-single-post", true, fmt.Sprintf("one POST, reconciliation observed %s", status.State),
+			"reconciling a completed draft observes it and never issues a second creation request")
 	}
-	w.assert("draft-delivery-is-single-post", true, fmt.Sprintf("one POST, reconciliation observed %s", reconciled.State),
-		"reconciling a completed draft observes it and never issues a second creation request")
 
 	// Record the exact inputs Stage 8 will need, so the human stage is not asked
 	// to re-derive an identity the system already proved.
@@ -124,35 +152,146 @@ func (w *walkthrough) rehearseDelivery(ctx context.Context) {
 	w.note("The draft request was created against a local loopback provider stand-in. Nothing was pushed to a real remote and no real hosted request exists. Stage 8 owns the real destination.")
 }
 
-// verifyCheckoutUntouched proves the delivery rehearsal left the operator's
-// accepted change and HEAD exactly as it found them.
+// checkoutBaseline is the operator-visible state of the disposable repository,
+// captured before the delivery rehearsal.
+type checkoutBaseline struct {
+	worktreeDigest string
+	branch         string
+	head           string
+	status         []string
+	refs           []string
+}
+
+func (w *walkthrough) captureCheckoutBaseline(ctx context.Context) (checkoutBaseline, error) {
+	baseline := checkoutBaseline{}
+	var err error
+	if baseline.worktreeDigest, err = WorktreeDigest(ctx, w.fixtureBase); err != nil {
+		return baseline, err
+	}
+	if baseline.branch, err = BranchName(ctx, w.fixtureBase); err != nil {
+		return baseline, err
+	}
+	if baseline.head, err = HeadCommit(ctx, w.fixtureBase); err != nil {
+		return baseline, err
+	}
+	if baseline.status, err = WorktreeStatus(ctx, w.fixtureBase); err != nil {
+		return baseline, err
+	}
+	if baseline.refs, err = ListRefs(ctx, w.fixtureBase); err != nil {
+		return baseline, err
+	}
+	return baseline, nil
+}
+
+// verifyCheckoutUnchanged proves the delivery rehearsal changed nothing an
+// operator can see in their files, and moved only the ref it was authorised to
+// move.
 //
-// The branch is compared against `branchBefore`, which the caller sets to the
-// branch the delivery attempt left behind: returning the checkout to its base
-// branch is an explicit scenario action on an agent-owned fixture, so counting it
-// as an application effect would misattribute it. HEAD and the porcelain state
-// are compared against the pre-rehearsal baseline, which no application command
-// is permitted to change.
-func (w *walkthrough) verifyCheckoutUntouched(ctx context.Context, headBefore, branchBefore string, statusBefore []string, hosting *FakeHosting) {
-	headAfter, err := HeadCommit(ctx, w.fixtureBase)
+// The property that matters is the byte digest of the working tree. Porcelain
+// status cannot carry it once a commit legitimately clears a pending change,
+// because one modified line becoming none is what committing *is* — so asserting
+// "porcelain unchanged" would be asserting that the delivery did nothing at all.
+//
+// What is asserted instead:
+//
+//   - Every working-tree byte is identical. This is the user-work property, and it
+//     holds whether or not the pending change became a commit.
+//   - The branch is unchanged: the application does not move the operator to
+//     another branch.
+//   - Exactly one ref moved, the plan ref, to exactly the commit the application
+//     created. Every other ref — including the base branch and the fixture's
+//     origin — is untouched.
+//   - HEAD advanced to that commit, and only because HEAD *is* the plan ref the
+//     application itself checked out. It is not left dangling on the old commit.
+//   - The checkout is clean afterwards, so the operator's next commit cannot
+//     silently revert the work Vigil just recorded.
+func (w *walkthrough) verifyCheckoutUnchanged(ctx context.Context, baseline checkoutBaseline, commit CommitEvidence, hosting *FakeHosting) {
+	after, err := w.captureCheckoutBaseline(ctx)
 	if err != nil {
 		panic(&ScenarioAbort{Step: "delivery verification", Err: err})
 	}
-	branchAfter, err := BranchName(ctx, w.fixtureBase)
-	if err != nil {
-		panic(&ScenarioAbort{Step: "delivery verification", Err: err})
+	w.assert("delivery-left-working-tree-bytes-identical", baseline.worktreeDigest == after.worktreeDigest,
+		fmt.Sprintf("worktree digest %s before, %s after, on %s", baseline.worktreeDigest[:12], after.worktreeDigest[:12], after.branch),
+		"commit, push and draft must never change a single byte the operator can see in their checkout")
+	w.assert("delivery-left-branch-unchanged", baseline.branch == after.branch, after.branch,
+		"delivery must not move the operator to another branch")
+
+	if commit.CommitOID == "" {
+		// No commit was made, so nothing may have moved at all.
+		w.assert("delivery-moved-no-ref-without-a-commit",
+			strings.Join(baseline.refs, "|") == strings.Join(after.refs, "|") && baseline.head == after.head,
+			fmt.Sprintf("%d refs, HEAD %s", len(after.refs), after.head[:12]),
+			"with no commit produced, no ref and not HEAD may move")
+	} else {
+		moved := refDelta(baseline.refs, after.refs)
+		w.assert("delivery-moved-only-the-plan-ref", len(moved) == 1 && moved[0].name == commit.TargetRef && moved[0].from == baseline.head && moved[0].to == commit.CommitOID,
+			fmt.Sprintf("moved refs: %s", describeRefDelta(moved)),
+			"exactly one ref may move — the plan ref, from the base commit to the commit the application created — and no other ref, tag or checkpoint may be written")
+		w.assert("delivery-head-is-the-commit", after.head == commit.CommitOID, after.head[:12],
+			"because HEAD is the plan ref the application itself checked out, it must name the commit the application just made rather than the previous one")
+		w.assert("delivery-left-checkout-clean", len(after.status) == 0, strings.Join(after.status, " | "),
+			"the committed change must no longer read as an uncommitted modification, or the operator's next commit would revert the work Vigil just recorded")
 	}
-	statusAfter, err := WorktreeStatus(ctx, w.fixtureBase)
-	if err != nil {
-		panic(&ScenarioAbort{Step: "delivery verification", Err: err})
-	}
-	w.assert("delivery-left-checkout-untouched",
-		headBefore == headAfter && branchBefore == branchAfter && strings.Join(statusBefore, "|") == strings.Join(statusAfter, "|"),
-		fmt.Sprintf("HEAD %s on %s with porcelain (%s)", headAfter[:12], branchAfter, strings.Join(statusAfter, " | ")),
-		"application-owned commit, push and draft must never move HEAD or the accepted change in the checkout")
 	if hosting != nil && hosting.Posts() > 1 {
 		panic(&ScenarioAbort{Step: "delivery verification", Err: fmt.Errorf("the provider stand-in received %d creation requests", hosting.Posts())})
 	}
+}
+
+// refChange is one ref that moved between two observations.
+type refChange struct {
+	name string
+	from string
+	to   string
+}
+
+// refDelta reports the refs that differ between two ref listings, in name order.
+// A ref that appeared or disappeared is reported too, because both are ref
+// mutations and the caller must be able to see that.
+func refDelta(before, after []string) []refChange {
+	index := func(refs []string) map[string]string {
+		out := map[string]string{}
+		for _, ref := range refs {
+			if name, oid, ok := strings.Cut(ref, " "); ok {
+				out[name] = oid
+			}
+		}
+		return out
+	}
+	was, now := index(before), index(after)
+	changed := []refChange{}
+	for name, oid := range now {
+		if previous, ok := was[name]; !ok || previous != oid {
+			changed = append(changed, refChange{name: name, from: previous, to: oid})
+		}
+	}
+	for name, oid := range was {
+		if _, ok := now[name]; !ok {
+			changed = append(changed, refChange{name: name, from: oid, to: ""})
+		}
+	}
+	sort.Slice(changed, func(i, j int) bool { return changed[i].name < changed[j].name })
+	return changed
+}
+
+func describeRefDelta(changed []refChange) string {
+	if len(changed) == 0 {
+		return "none"
+	}
+	parts := make([]string, 0, len(changed))
+	for _, change := range changed {
+		parts = append(parts, fmt.Sprintf("%s %s->%s", change.name, short(change.from), short(change.to)))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func short(oid string) string {
+	if len(oid) > 12 {
+		return oid[:12]
+	}
+	if oid == "" {
+		return "(absent)"
+	}
+	return oid
 }
 
 // DeliveryEvidence is the observed delivery outcome, or the blocking finding
@@ -172,6 +311,7 @@ type CommitEvidence struct {
 	ParentOID   string
 	TreeOID     string
 	TargetRef   string
+	CommitOID   string
 	GrantID     string
 }
 
@@ -180,11 +320,16 @@ type CommitEvidence struct {
 // finding that made it unreachable.
 //
 // It deliberately does not work around a refusal. The scenario's whole value is
-// that a stage the product cannot actually complete is reported as such.
-func (w *walkthrough) attemptDelivery(ctx context.Context) DeliveryEvidence {
-	// Observation 1: with the plan branch prepared and checked out — which is
-	// exactly the state execution and acceptance leave behind — the commit path
-	// refuses to move a ref the user has checked out.
+// that a stage the product cannot actually complete is reported as such — so if
+// the commit path refuses again, the finding is re-raised rather than papered
+// over. That path is a regression detector, not the expected outcome: it is
+// exactly the shape of Stage 5.7 finding 5.7-F1.
+func (w *walkthrough) commitAndPush(ctx context.Context) DeliveryEvidence {
+	// The checkout is on the plan ref because the application put it there:
+	// `project prepare-repository` performed the symbolic-ref change and recorded
+	// the observed head ref, and the accepted fingerprint binds that checkout. This
+	// is the state the documented workflow actually leaves behind, and it is the
+	// state finding 5.7-F1 said the commit path would refuse.
 	branch, err := BranchName(ctx, w.fixtureBase)
 	if err != nil {
 		return DeliveryEvidence{Finding: "5.7-F1", Detail: "the current branch could not be observed: " + err.Error()}
@@ -197,74 +342,36 @@ func (w *walkthrough) attemptDelivery(ctx context.Context) DeliveryEvidence {
 	if err != nil {
 		return DeliveryEvidence{Finding: "5.7-F1", Detail: err.Error()}
 	}
-	if _, err := w.driver.Invoke(ctx, "commit-prepare (plan ref checked out)", "project", "commit-prepare", w.projectID, "--file", file); err == nil {
-		panic(&ScenarioAbort{Step: "commit-prepare", Err: errors.New("a commit was prepared while the plan ref was checked out")})
-	}
-	w.assert("commit-refuses-checked-out-plan-ref", true, "refused while HEAD is on "+branch,
-		"the commit path must refuse to move the branch the user currently has checked out")
-	firstRefusal := "commit-prepare refused while HEAD is on the plan branch: the commit path will not move a ref the user has checked out"
-	w.note("Observation 1: " + firstRefusal)
-
-	// Observation 2: returning the checkout to its base branch is what a real
-	// operator would do, and Vigil exposes no command for it. The scenario performs
-	// that checkout explicitly on its own agent-owned fixture, then retries. This
-	// is a rehearsal action on a disposable repository, never a product claim.
-	if err := w.returnFixtureToBase(ctx); err != nil {
-		return DeliveryEvidence{Finding: "5.7-F1", Detail: firstRefusal + "; and the base-branch return failed: " + err.Error()}
-	}
-	retryFile, err := w.driver.WriteJSON("commit-retry", map[string]any{
-		"command_id": "commit-prepare-002", "plan_id": PlanID, "repository_id": RepositoryID,
-		"task_id": TaskID, "paths": []string{SourcePath},
-		"message": "Implement the specified greeting", "author_name": FixtureAuthorName, "author_email": FixtureAuthorEmail,
-	})
-	if err != nil {
-		return DeliveryEvidence{Finding: "5.7-F1", Detail: firstRefusal + "; and the retry request could not be written: " + err.Error()}
-	}
-	if _, err := w.driver.Invoke(ctx, "commit-prepare (after base return)", "project", "commit-prepare", w.projectID, "--file", retryFile); err != nil {
-		// This is the blocking finding, recorded rather than worked around: the
-		// accepted fingerprint is bound to the checked-out plan ref, so returning
-		// the checkout to the base branch invalidates it and the commit path stays
-		// unreachable. The two refusals are mutually exclusive by construction.
-		secondRefusal := "commit-prepare refused again after the base-branch return: " + truncate(err.Error(), 200)
-		w.note("Observation 2: " + secondRefusal)
+	prepared, prepareErr := w.driver.Invoke(ctx, "commit-prepare (application-prepared plan ref checked out)", "project", "commit-prepare", w.projectID, "--file", file)
+	if prepareErr != nil {
+		// Recorded verbatim, with no substituted explanation. An earlier revision
+		// replaced the product's own error text with a narrative here, which is how
+		// a diagnosis ends up describing a guard the product never applied.
+		refusal := "commit-prepare refused with HEAD on " + branch + ", the plan ref the application's own prepare-repository had checked out: " + truncate(prepareErr.Error(), 300)
+		w.note("REGRESSION: " + refusal)
 		return DeliveryEvidence{
 			Finding: "5.7-F1",
-			Detail:  firstRefusal + "; then, after an explicit base-branch checkout, " + secondRefusal,
+			Detail:  refusal + ". Finding 5.7-F1 was fixed by making the checked-out-plan-ref refusal conditional on the application not owning the checkout; this run shows the refusal is back, or was never fully closed.",
 		}
 	}
-	w.note("Observation 2: commit-prepare succeeded once the checkout was on its base branch, which no production command performs.")
-	return w.continueDelivery(ctx)
-}
-
-// returnFixtureToBase checks the disposable repository out to its base branch. It
-// is an explicit operator-equivalent action on an agent-owned fixture: Vigil
-// exposes no such command, and the scenario says so rather than implying the
-// product can do it.
-func (w *walkthrough) returnFixtureToBase(ctx context.Context) error {
-	before, err := HeadCommit(ctx, w.fixtureBase)
-	if err != nil {
-		return err
+	var preparedCommit PreparedCommit
+	if err := Decode(prepared, &preparedCommit); err != nil {
+		return DeliveryEvidence{Finding: "5.7-F1", Detail: "commit-prepare output was not the expected shape: " + err.Error()}
 	}
-	if _, err := git(ctx, w.fixtureBase, "checkout", "-q", "main"); err != nil {
-		return fmt.Errorf("return the disposable fixture to its base branch: %w", err)
-	}
-	after, err := HeadCommit(ctx, w.fixtureBase)
-	if err != nil {
-		return err
-	}
-	if before != after {
-		return fmt.Errorf("returning to the base branch moved HEAD from %s to %s", before, after)
-	}
-	status, err := WorktreeStatus(ctx, w.fixtureBase)
-	if err != nil {
-		return err
-	}
-	if len(status) != 1 {
-		return fmt.Errorf("expected exactly the accepted artifact change in the checkout, found %d porcelain lines: %v", len(status), status)
-	}
-	w.assert("fixture-returned-to-base", true, fmt.Sprintf("HEAD %s on main with the single accepted change present", after[:12]),
-		"the checkout is on its base branch with the accepted change still present and unstaged")
-	return nil
+	w.assert("commit-proceeds-on-application-prepared-plan-ref", true,
+		"commit-prepare accepted the checkout on "+branch+", the plan ref the application's own prepare-repository recorded, and returned operation "+preparedCommit.OperationID[:12],
+		"the commit path must proceed when HEAD is on a plan ref this application itself prepared and recorded, because preparing that branch is a required step of the documented workflow")
+	w.note("The commit path accepted a checkout sitting on the plan ref that the application's own prepare-repository had recorded as observed. Finding 5.7-F1 was the refusal of exactly this state.")
+	// The refusal for a checkout the application does not own is retained, and is
+	// evidenced in internal/core rather than here. This walkthrough cannot produce
+	// a user-owned checkout of the plan ref without falsifying the workflow — the
+	// application's own preparation is precisely what makes the checkout
+	// application-owned — so the safeguard is cited, not re-enacted.
+	w.note("The complementary safeguard is retained and is evidenced by the core delivery tests rather than by this walkthrough: the commit path still refuses to move a plan ref the application did not prepare itself, and still refuses when the recorded preparation no longer describes the current checkout. See TestCommitReconciliationRefusesNewlyCheckedOutPlanBranch and the ownership tests in internal/core.")
+	// The single preparation is carried forward rather than repeated. Preparing a
+	// second commit operation for the same paths would leave two approval requests
+	// in the durable state, and the grant below would then answer for the wrong one.
+	return w.executeCommitAndPush(ctx, preparedCommit)
 }
 
 // closeDeliveryMatrixUnreachable records the delivery rows that could not be
@@ -289,25 +396,14 @@ func (w *walkthrough) closeDeliveryMatrixUnreachable(evidence DeliveryEvidence) 
 	w.note("BLOCKING FINDING 5.7-F1: the production delivery path is unreachable from the documented workflow. Preparing the plan branch is required for execution and binds the accepted fingerprint to a checked-out plan ref, while the commit path refuses to move a checked-out plan ref; returning the checkout to the base branch then invalidates the accepted fingerprint. Push and draft delivery could not be rehearsed through the production commands at all. The affected matrix rows are recorded as unmet, because the cause is this product defect and not a human gate.")
 }
 
-// continueDelivery completes the commit, push and draft triples from whichever
-// commit preparation the durable state actually holds.
-func (w *walkthrough) continueDelivery(ctx context.Context) DeliveryEvidence {
-	file, err := w.driver.WriteJSON("commit", map[string]any{
-		"command_id": "commit-prepare-003", "plan_id": PlanID, "repository_id": RepositoryID,
-		"task_id": TaskID, "paths": []string{SourcePath},
-		"message": "Implement the specified greeting", "author_name": FixtureAuthorName, "author_email": FixtureAuthorEmail,
-	})
-	if err != nil {
-		return DeliveryEvidence{Finding: "5.7-F1", Detail: "the commit request could not be written: " + err.Error()}
-	}
-	prepared, prepareErr := w.driver.Invoke(ctx, "commit-prepare", "project", "commit-prepare", w.projectID, "--file", file)
-	if prepareErr != nil {
-		return DeliveryEvidence{Finding: "5.7-F1", Detail: "commit-prepare remained refused after the base-branch return: " + prepareErr.Error()}
-	}
-	var preparedCommit PreparedCommit
-	if err := Decode(prepared, &preparedCommit); err != nil {
-		return DeliveryEvidence{Finding: "5.7-F1", Detail: "commit-prepare output was not the expected shape: " + err.Error()}
-	}
+// executeCommitAndPush completes the commit and push triples from the commit
+// preparation the probe already obtained, so exactly one approval request for
+// these paths ever exists.
+//
+// It stops after the push. The draft is driven separately, after the factual
+// archive has been built, because the product requires the archive to observe the
+// committed repository and to exist before a draft may be created.
+func (w *walkthrough) executeCommitAndPush(ctx context.Context, preparedCommit PreparedCommit) DeliveryEvidence {
 	commitEvidence := CommitEvidence{
 		OperationID: preparedCommit.OperationID,
 		RequestID:   preparedCommit.RequestID,
@@ -329,19 +425,16 @@ func (w *walkthrough) continueDelivery(ctx context.Context) DeliveryEvidence {
 	if commitResult.CommitOID == "" {
 		return DeliveryEvidence{Finding: "5.7-F1", Detail: "commit-execute produced no commit object"}
 	}
+	commitEvidence.CommitOID = commitResult.CommitOID
 	w.assert("approved-commit-created", true, fmt.Sprintf("commit %s on %s", commitResult.CommitOID[:12], preparedCommit.Intent.TargetRef),
-		"the application created a deterministic commit object and advanced only the non-checked-out plan ref")
+		"the application created a deterministic commit object on exactly the approved plan ref, the one its own branch preparation had checked out")
 
 	commit := commitEvidence
 	push, err := w.pushApprovedPlan(ctx, commit)
 	if err != nil {
 		return DeliveryEvidence{Finding: "5.7-F1", Detail: "push could not be prepared after a successful commit: " + err.Error()}
 	}
-	draft, err := w.draftRequest(ctx, push, w.hosting)
-	if err != nil {
-		return DeliveryEvidence{Finding: "5.7-F1", Detail: "draft delivery could not be prepared after a successful push: " + err.Error()}
-	}
-	return DeliveryEvidence{Commit: commit, Push: push, Draft: draft}
+	return DeliveryEvidence{Commit: commit, Push: push}
 }
 
 // PreparedCommit is the commit approval record.
@@ -380,9 +473,9 @@ type PushEvidence struct {
 // bare remote needs no credential; an SSH remote would require an
 // already-available agent socket, which a disposable rehearsal must not use.
 func (w *walkthrough) pushApprovedPlan(ctx context.Context, commit CommitEvidence) (PushEvidence, error) {
-	if err := AddRemote(ctx, w.fixtureBase, FixtureRemoteName, w.bareRemote); err != nil {
-		return PushEvidence{}, err
-	}
+	// The remote was registered before enrollment, so its identity is part of the
+	// accepted baseline. Re-adding it here would be a no-op at best and would
+	// silently re-point an enrolled identity at best.
 	prepared, err := w.driver.Invoke(ctx, "push-prepare", "project", "push-prepare", w.projectID, PlanID, RepositoryID,
 		"--command-id", "push-prepare-001", "--remote", FixtureRemoteName)
 	if err != nil {
@@ -462,7 +555,7 @@ type DraftEvidence struct {
 }
 
 // draftRequest runs the draft triple against the loopback stand-in.
-func (w *walkthrough) draftRequest(ctx context.Context, push PushEvidence, hosting *FakeHosting) (DraftEvidence, error) {
+func (w *walkthrough) draftRequest(ctx context.Context, push PushEvidence, hosting *FakeHosting) (DraftEvidence, string) {
 	head := push.HeadOID
 	base := push.BaseOID
 	hosting.SetIdentities(head, base)
@@ -474,28 +567,28 @@ func (w *walkthrough) draftRequest(ctx context.Context, push PushEvidence, hosti
 		"synthetic_fixture": true,
 	})
 	if err != nil {
-		return DraftEvidence{}, err
+		return DraftEvidence{}, err.Error()
 	}
 	prepared, err := w.driver.Invoke(ctx, "draft-prepare", "project", "draft-prepare", w.projectID, "--file", file)
 	if err != nil {
-		return DraftEvidence{}, err
+		return DraftEvidence{}, err.Error()
 	}
 	var preparedDraft PreparedDraft
 	if err := Decode(prepared, &preparedDraft); err != nil {
-		return DraftEvidence{}, err
+		return DraftEvidence{}, err.Error()
 	}
 	grantID := w.grant(ctx, "draft", preparedDraft.RequestID)
 	executed, err := w.driver.Invoke(ctx, "draft-execute", "project", "draft-execute", w.projectID, preparedDraft.OperationID,
 		"--grant-id", grantID)
 	if err != nil {
-		return DraftEvidence{}, err
+		return DraftEvidence{}, err.Error()
 	}
 	var draftResult DraftResult
 	if err := Decode(executed, &draftResult); err != nil {
-		return DraftEvidence{}, err
+		return DraftEvidence{}, err.Error()
 	}
 	if draftResult.URL == "" {
-		return DraftEvidence{}, fmt.Errorf("draft delivery returned no URL: %+v", draftResult)
+		return DraftEvidence{}, fmt.Sprintf("draft delivery returned no URL: %+v", draftResult)
 	}
 	w.assert("draft-request-verified", true, draftResult.URL,
 		"the created request was verified by exact head/base/operation marker before its URL was archived")
@@ -510,7 +603,7 @@ func (w *walkthrough) draftRequest(ctx context.Context, push PushEvidence, hosti
 		BaseOID:     preparedDraft.Intent.BaseOID,
 		Credential:  preparedDraft.Intent.Credential,
 		Grants:      []string{grantID},
-	}, nil
+	}, ""
 }
 
 // PreparedDraft is the draft approval record.
@@ -557,17 +650,18 @@ func (w *walkthrough) grant(ctx context.Context, label, requestID string) string
 	step := w.driver.MustApply(ctx, "permission.grant ("+label+")", "grant-"+label+"-001", "permission.grant", map[string]any{
 		"request_id": requestID, "decision": "allow", "scope": "once",
 	})
-	var granted struct {
-		GrantID string `json:"grant_id"`
-		State   string `json:"state"`
-	}
+	// `project apply` returns the applied command's own result nested under
+	// "result", not at the top level. Decoding the envelope flat reads an empty
+	// grant ID from a grant that actually succeeded, which is how a working
+	// approval gets reported as "no grant ID returned".
+	var granted ApplyResult
 	if err := Decode(step, &granted); err != nil {
 		panic(&ScenarioAbort{Step: "permission.grant " + label, Err: err})
 	}
-	if granted.GrantID == "" {
-		panic(&ScenarioAbort{Step: "permission.grant " + label, Err: errors.New("no grant ID returned")})
+	if granted.Result.GrantID == "" {
+		panic(&ScenarioAbort{Step: "permission.grant " + label, Err: fmt.Errorf("no grant ID in the applied result for request %s; apply returned state %q", requestID, granted.Result.State)})
 	}
-	return granted.GrantID
+	return granted.Result.GrantID
 }
 
 // closeMilestoneMatrix records the steps the rehearsal did not reach, with the

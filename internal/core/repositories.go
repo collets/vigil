@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -444,4 +445,203 @@ func (e *Engine) BranchOperation(ctx context.Context, operationID string) (Branc
 	var result BranchOperation
 	err := e.DB.SQL.QueryRowContext(ctx, `SELECT id,repository_id,repository_revision,state,branch_ref,expected_base_oid,coalesce(observed_oid,''),coalesce(observed_head_ref,'') FROM repository_branch_operations WHERE id=?`, operationID).Scan(&result.OperationID, &result.RepositoryID, &result.RepositoryRevision, &result.State, &result.BranchRef, &result.BaseOID, &result.ObservedOID, &result.ObservedHeadRef)
 	return result, err
+}
+
+// refreshIndexForMovedHead brings the operator's index in line with a commit the
+// application made on the ref HEAD already points at.
+//
+// It is a no-op unless HEAD is the target ref this application prepared. Each
+// committed path's index entry is set to the mode and blob recorded in the commit
+// that was just written — read back out of that commit, not out of the working
+// tree and not through Git's clean filters — so the index cannot acquire content
+// the approved commit does not already contain. It writes no working-tree file and
+// touches no other index entry.
+func (e *Engine) refreshIndexForMovedHead(ctx context.Context, record RepositoryRecord, intent CommitIntent, commitOID, checkedOut string) error {
+	if checkedOut != intent.TargetRef {
+		return nil
+	}
+	// Re-read HEAD rather than trusting the value observed before the effect: the
+	// ref has moved since, and the index must be refreshed against the commit that
+	// is actually checked out.
+	head, err := deliveryGit(ctx, record.Root, nil, nil, "symbolic-ref", "--quiet", "HEAD")
+	if err != nil || head != intent.TargetRef {
+		return errors.New("HEAD no longer names the committed plan ref, so the index was left untouched")
+	}
+	for _, name := range intent.Paths {
+		entry, err := deliveryGit(ctx, record.Root, nil, nil, "ls-tree", "-z", commitOID, "--", name)
+		if err != nil {
+			return err
+		}
+		record_ := strings.TrimSuffix(entry, "\x00")
+		head, path, ok := strings.Cut(record_, "\t")
+		if !ok {
+			// The path is absent from the commit: the commit removed it, so the
+			// index entry goes with it.
+			if _, err := deliveryGit(ctx, record.Root, nil, nil, "update-index", "--force-remove", "--", name); err != nil {
+				return err
+			}
+			continue
+		}
+		// `ls-tree` prints "<mode> <type> <oid>\t<path>"; the mode and object are
+		// fields 0 and 2, not 0 and 1.
+		parts := strings.Fields(head)
+		if len(parts) != 3 || path != name || !gitOID(parts[2]) {
+			return fmt.Errorf("commit tree entry for %s is not an exact path mode pair", name)
+		}
+		if _, err := deliveryGit(ctx, record.Root, nil, nil, "update-index", "--add", "--cacheinfo", parts[0]+","+parts[2]+","+name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// applicationOwnsPlanCheckout reports whether the application itself put HEAD on
+// the given plan ref, as opposed to a person having checked it out.
+//
+// The distinction is the whole point, and it is durably recorded rather than
+// inferred. `PrepareBranch` performs `git symbolic-ref HEAD <plan ref>`, and the
+// operation that journaled that intent records the head ref it observed
+// afterwards. A delivery that finds HEAD on the plan ref can therefore tell two
+// situations apart that look identical to `git symbolic-ref`:
+//
+//   - The application parked HEAD there as a documented, journaled step of the
+//     prepare/execute/accept workflow, and the accepted fingerprint binds that
+//     checkout. Refusing to move the ref would make delivery unreachable, because
+//     preparing the plan branch is itself required for execution.
+//   - A person checked the ref out, possibly after a commit was prepared.
+//     Advancing the ref under them would move their branch, so the commit path
+//     refuses.
+//
+// Without this predicate the two refusals are mutually exclusive: the application
+// leaves the checkout in the one state its own commit path will not act on, and
+// the only way out — returning the checkout to the base branch — invalidates the
+// accepted fingerprint, because acceptance binds the whole baseline including the
+// head ref. That deadlock was Stage 5.7 finding 5.7-F1.
+//
+// The state requirement mirrors `internal/supervisor/preparation.go`: a branch
+// operation is authoritative only once it has been observed or reconciled, never
+// while merely prepared. A `prepared` row means the symbolic-ref mutation may not
+// have happened, so it cannot establish that the application owns the checkout.
+// Requiring `branch_ref` to equal the target and `observed_head_ref` to equal the
+// target also means a repository whose HEAD the user later moved elsewhere and
+// back is no longer treated as application-owned by accident: the recorded
+// observation no longer describes the current checkout.
+// applicationOwnsPlanCheckout reports whether the application itself put HEAD on
+// the given plan ref, as opposed to a person having checked it out.
+//
+// The distinction is the whole point, and it is durably recorded rather than
+// inferred. `PrepareBranch` performs `git symbolic-ref HEAD <plan ref>`, and the
+// operation that journaled that intent records the head ref it observed
+// afterwards. A delivery that finds HEAD on the plan ref can therefore tell two
+// situations apart that look identical to `git symbolic-ref`:
+//
+//   - The application parked HEAD there as a documented, journaled step of the
+//     prepare/execute/accept workflow, and the accepted fingerprint binds that
+//     checkout. Refusing to move the ref would make delivery unreachable, because
+//     preparing the plan branch is itself required for execution.
+//   - A person checked the ref out, possibly after a commit was prepared.
+//     Advancing the ref under them would move their branch, so the commit path
+//     refuses.
+//
+// Without this predicate the two refusals are mutually exclusive: the application
+// leaves the checkout in the one state its own commit path will not act on, and
+// the only way out — returning the checkout to the base branch — invalidates the
+// accepted fingerprint, because acceptance binds the whole baseline including the
+// head ref. That deadlock was Stage 5.7 finding 5.7-F1.
+//
+// The state requirement mirrors `internal/supervisor/preparation.go`: a branch
+// operation is authoritative only once it has been observed or reconciled, never
+// while merely prepared. A `prepared` row means the symbolic-ref mutation may not
+// have happened, so it cannot establish that the application owns the checkout.
+// Requiring `branch_ref` to equal the target and `observed_head_ref` to equal the
+// target also means a repository whose HEAD the user later moved elsewhere and
+// back is no longer treated as application-owned by accident: the recorded
+// observation no longer describes the current checkout.
+// acceptedRepositoryStillHolds reports whether the enrolled repository still shows
+// exactly what the plan's acceptance approved.
+//
+// It accepts two states, and only two:
+//
+//   - the accepted baseline exactly, uncommitted; or
+//   - the accepted content, already recorded by this plan's own verified delivery
+//     commit: the same content digest, the same head ref, a HEAD equal to
+//     `deliveryHead`, that commit's parent equal to the accepted head, and a clean
+//     checkout.
+//
+// `deliveryHead` is supplied by the caller rather than looked up here, because the
+// publication path runs inside a write transaction and must not open a second
+// database handle. An empty value means no delivery commit is recorded, so only
+// the exact accepted state is accepted.
+//
+// The second state is not a relaxation of the acceptance. It is the same acceptance
+// after the application has done the one thing the acceptance approved. Without it
+// the two states were mutually exclusive in the same way finding 5.7-F1 was:
+// `BuildFactualArchive` re-verified the accepted baseline, so it had to run before
+// the commit, while draft delivery requires an archive revision, so it had to run
+// after it. Delivery was unreachable in every ordering.
+//
+// Everything the acceptance protects is still enforced. A different content digest, a
+// different head ref, a dirty checkout, a head that is not this plan's own recorded
+// delivery, or a delivery commit that is not directly on top of the accepted head
+// all fail here, exactly as before.
+func (e *Engine) acceptedRepositoryStillHolds(ctx context.Context, record RepositoryRecord, accepted workspace.Baseline) error {
+	var deliveryHead string
+	_ = e.DB.SQL.QueryRowContext(ctx, `SELECT head_oid FROM deliveries WHERE plan_id=? AND repository_id=? AND kind='commit' AND state='succeeded' ORDER BY rowid DESC LIMIT 1`,
+		record.PlanID, record.ID).Scan(&deliveryHead)
+	return acceptedRepositoryStateIsHonoured(ctx, record.Root, accepted, deliveryHead)
+}
+
+// acceptedRepositoryStateIsHonoured reports whether the repository at `root` still
+// shows the accepted baseline, either uncommitted or as this plan's own recorded
+// delivery of that same content.
+func acceptedRepositoryStateIsHonoured(ctx context.Context, root string, accepted workspace.Baseline, deliveryHead string) error {
+	normalized, err := workspace.NormalizeExclusions(root, accepted.Exclusions)
+	if err != nil {
+		return errors.New("accepted repository fingerprint exclusions are invalid")
+	}
+	expected := accepted
+	expected.Exclusions = normalized
+	observed, err := workspace.Fingerprint(ctx, root, accepted.Exclusions)
+	if err != nil {
+		return err
+	}
+	if reflect.DeepEqual(observed, expected) {
+		return nil
+	}
+	if !gitOID(deliveryHead) {
+		return errors.New("accepted repository no longer matches the accepted task fingerprint")
+	}
+	// The content digest walks the working tree, so recording that content in a
+	// commit does not change it. If it differs, nothing below can apply.
+	if observed.ContentDigest != expected.ContentDigest || observed.HeadRef != expected.HeadRef || observed.Dirty {
+		return errors.New("accepted repository no longer matches the accepted task fingerprint")
+	}
+	if observed.HeadOID != deliveryHead {
+		return errors.New("accepted repository head is not this plan's own recorded delivery commit")
+	}
+	// The delivery commit must sit directly on the accepted head, so this state can
+	// only be reached by recording the accepted content once.
+	parent, err := deliveryGit(ctx, root, nil, nil, "rev-parse", "--verify", "--end-of-options", deliveryHead+"^")
+	if err != nil || strings.TrimSpace(parent) != expected.HeadOID {
+		return errors.New("accepted repository head is not this plan's own recorded delivery commit")
+	}
+	return nil
+}
+
+// applicationOwnsPlanCheckout reports whether the application itself put HEAD on
+// the given plan ref, as opposed to a person having checked it out.
+func (e *Engine) applicationOwnsPlanCheckout(ctx context.Context, record RepositoryRecord, target string) (bool, error) {
+	var state, branchRef, observedHeadRef string
+	err := e.DB.SQL.QueryRowContext(ctx, `SELECT state,branch_ref,coalesce(observed_head_ref,'') FROM repository_branch_operations WHERE repository_id=? AND repository_revision=? ORDER BY rowid DESC LIMIT 1`,
+		record.ID, record.Revision).Scan(&state, &branchRef, &observedHeadRef)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if state != "observed" && state != "reconciled" {
+		return false, nil
+	}
+	return branchRef == target && observedHeadRef == target, nil
 }

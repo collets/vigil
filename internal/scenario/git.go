@@ -2,11 +2,14 @@ package scenario
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -122,6 +125,40 @@ func WorktreeStatus(ctx context.Context, root string) ([]string, error) {
 		}
 	}
 	return lines, nil
+}
+
+// WorktreeDigest returns a stable digest of the working tree's file contents,
+// excluding `.git` and the in-repository `.vigil` view.
+//
+// This is the observation that actually answers "did the delivery rehearsal change
+// anything the operator can see in their files". Porcelain status cannot answer it
+// once a commit legitimately clears a pending change, because the status going
+// from one modified line to none is the point of committing rather than a
+// disturbance — but a digest of the bytes is unchanged either way, and that is the
+// property worth asserting.
+func WorktreeDigest(ctx context.Context, root string) (string, error) {
+	output, err := git(ctx, root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	if err != nil {
+		return "", err
+	}
+	names := []string{}
+	for _, name := range strings.Split(output, "\x00") {
+		if name == "" || strings.HasPrefix(name, ".git/") || strings.HasPrefix(name, ".vigil/") {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	digest := sha256.New()
+	for _, name := range names {
+		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(digest, "%s\x00%d\x00", name, len(raw))
+		digest.Write(raw)
+	}
+	return hex.EncodeToString(digest.Sum(nil)), nil
 }
 
 // HeadCommit reads the current HEAD of the disposable repository.
