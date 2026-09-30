@@ -85,6 +85,42 @@ func TestCountLineNamesAnUnprintedClass(t *testing.T) {
 // TestSummaryLinesShowsEveryGap checks that nothing the report holds as a gap is
 // omitted from the rendered summary, across all four of the report's own gap-like
 // lists.
+// TestUndecidedClassIsPrintedAsUndecided pins the class the aborted-run path
+// depends on.
+//
+// A row the run never reached carries no evidence class at all, so the undecided
+// count is the only thing distinguishing a line that reads as a set of passes from
+// one that reads as a set of blanks. It is the one class the other tests cannot
+// catch being dropped, because a count of zero contributes nothing to the
+// arithmetic — which is exactly how its removal passed the suite once already.
+func TestUndecidedClassIsPrintedAsUndecided(t *testing.T) {
+	// The state a genuinely aborted run leaves: rows present, no class assigned.
+	aborted := map[string]int{"": 14, scenario.EvidenceAutomated: 6}
+	line := countLine("recovery", aborted)
+	if !strings.Contains(line, "undecided=14") {
+		t.Fatalf("a run with 14 undecided rows does not report them as undecided: %q", line)
+	}
+	// It must not be folded into the "unknown class" counter, which is reserved
+	// for a class the renderer genuinely does not recognise.
+	if strings.Contains(line, "UNPRINTED=") {
+		t.Fatalf("the undecided class is being reported as an unrecognised class: %q", line)
+	}
+	// And the number must reconcile, so an aborted line still adds up.
+	summed := 0
+	for _, value := range aborted {
+		summed += value
+	}
+	if !strings.Contains(line, "total="+strconv.Itoa(summed)) {
+		t.Fatalf("the aborted line's total does not add up: %q", line)
+	}
+	// A healthy run reports zero rather than omitting the field, so the class list
+	// is the same shape in both cases and a reader learns it once.
+	healthy := countLine("recovery", map[string]int{scenario.EvidenceAutomated: 11, scenario.Partial: 4})
+	if !strings.Contains(healthy, "undecided=0") {
+		t.Fatalf("a healthy run does not report the undecided class at all: %q", healthy)
+	}
+}
+
 func TestSummaryLinesShowsEveryGap(t *testing.T) {
 	report := &scenario.Report{
 		ScenarioID: "stage-5.7-test",

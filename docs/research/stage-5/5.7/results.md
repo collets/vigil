@@ -182,8 +182,12 @@ verified by mutating `reconcile.go` and confirming each mutation fails the test.
 `TestSchemaEnumerationsMatchMigrations` does the same for the run states and
 submission states the harness enumerates: it reads the `CHECK` constraints out of
 the migrations and fails if the enumeration and the schema disagree in either
-direction, so a widening of either constraint cannot silently leave the
-replay-safety check unexercised for a state the product can hold.
+direction. It also handles the shape these migrations actually use to widen a
+constraint — SQLite cannot `ALTER TABLE ... ADD CONSTRAINT`, so a widening can
+only ship as `CREATE TABLE runs_v<N> (…wider…)` followed by
+`ALTER TABLE runs_v<N> RENAME TO runs` — and it ignores a versioned table that is
+never renamed onto the name, so an abandoned rebuild does not report states the
+product cannot hold. Both directions were verified by mutating a migration.
 
 Also observed in full: pause refusing five
 distinct dispatch commands and `continue` restoring them; a bounded stop

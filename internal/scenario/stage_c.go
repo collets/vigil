@@ -1250,9 +1250,13 @@ func (v ExecutionView) offersCommand(cmd string) bool {
 //     resubmit. Production's own `Inspect` offers both `start` and `reconcile` for
 //     a `writing` run, so requiring `start` to be absent would assert a property
 //     the product does not have. The check that cannot false-positive is the
-//     narrower one: `reconcile` must be offered on any run that has not finished,
-//     because that is how an unresolved submission is resolved. A `completed` run
-//     offers only `inspect` and has nothing left to reconcile, so it is exempt.
+//     narrower one: `reconcile` must be offered on a run the inspection would let
+//     a caller submit to, because that is the only run where an unproven replay is
+//     possible. A run offering no submit path has nothing to replay and nothing
+//     left to reconcile, so it is exempt — production offers only `inspect` for a
+//     completed run. This is deliberately one-directional: a regression that
+//     withheld `reconcile` from a run that offers no `start` would not be caught
+//     here, and that trade is recorded rather than left to be discovered.
 //   - a resolved state — `not_attempted`, `delivered`, `proven_not_delivered` —
 //     resolves the outcome, so offering `start` is the documented safe path.
 //

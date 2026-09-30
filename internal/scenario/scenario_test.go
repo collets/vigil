@@ -337,16 +337,18 @@ func TestControllerKillLandingReportsOnlyObservedState(t *testing.T) {
 // previous revision of this check shipped.
 //
 // Be honest about what this is. It is a second hand-written copy of production's
-// switch, so it cannot detect production changing underneath it — if `Inspect`
-// were changed to withhold `start` for `writing` as well, this table would be
-// stale and the test below would still pass. Its value is that a *human* reading
-// the harness check has the product's rule beside it in executable form, which is
-// what caught the defect. It is not an enforcement mechanism, and the results
-// document says so rather than crediting it with more.
+// switch, so it cannot by itself detect production changing underneath it. Its
+// value is that a *human* reading the harness check has the product's rule beside
+// it in executable form, which is what caught the defect.
 //
-// `TestProductionTranscriptionMatchesSource` guards the copy against the
-// remaining risk: it re-reads the production source and fails if the predicates
-// transcribed here have drifted from it.
+// `TestProductionTranscriptionMatchesSource` is what makes the copy safe: it
+// parses the arms production actually has — every arm, including one that assigns
+// nothing, and from every switch that assigns `AllowedNext` — and fails if the
+// count, order, conditions or command lists differ. It was verified by mutating
+// `reconcile.go` and confirming each mutation fails it. It is still a guard on a
+// copy, not an integration test against a running product, and it does not read
+// `runner.go` at all — so a regression in `Runner.submit`, the function the
+// emitted report cites as enforcing replay safety, is outside what it covers.
 func productionAllowedNext(runState, submissionState string) []string {
 	switch {
 	case submissionState == "uncertain":
@@ -415,9 +417,16 @@ func TestSchemaEnumerationsMatchMigrations(t *testing.T) {
 	assertSameSet(t, "submission_state", productionSubmissionStates, submissionStates)
 }
 
-// createTableBlocks returns the bodies of every `CREATE TABLE <name>` definition
-// in a migration, so a column constraint is read from the table that owns it
+// createTableBlocks returns the bodies of every definition that ends up being the
+// table named `name`, so a column constraint is read from the table that owns it
 // rather than from every table in the file.
+//
+// It deliberately also matches the versioned rebuild idiom these migrations use:
+// SQLite cannot `ALTER TABLE ... ADD CONSTRAINT`, so a widened `CHECK` can only be
+// shipped as `CREATE TABLE runs_v<N> (… wider …)` followed by
+// `ALTER TABLE runs_v<N> RENAME TO runs`. Anchoring on the literal name `runs`
+// alone would read only the original definition and miss the rebuild — a hole
+// adversarial review found by mutating the migration.
 //
 // The table name is matched as a whole word, and the body ends at the first line
 // that closes the statement — which these migrations write as `) STRICT;` or
@@ -425,10 +434,28 @@ func TestSchemaEnumerationsMatchMigrations(t *testing.T) {
 func createTableBlocks(source, name string) []string {
 	blocks := []string{}
 	lines := strings.Split(source, "\n")
-	pattern := regexp.MustCompile(`^CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?` + regexp.QuoteMeta(name) + `\s*\($`)
+	// `runs`, or a rebuild of it: `runs_v3`, `runs_new`, and so on.
+	pattern := regexp.MustCompile(`^CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?` + regexp.QuoteMeta(name) + `(_[A-Za-z0-9]+)?\s*\($`)
+	// A versioned table only *becomes* the named table if it is renamed to it.
+	renamed := regexp.MustCompile(`ALTER\s+TABLE\s+` + regexp.QuoteMeta(name) + `(_[A-Za-z0-9]+)?\s+RENAME\s+TO\s+` + regexp.QuoteMeta(name) + `\b`)
 	for index, line := range lines {
-		if !pattern.MatchString(strings.TrimSpace(line)) {
+		match := pattern.FindStringSubmatch(strings.TrimSpace(line))
+		if match == nil {
 			continue
+		}
+		// Group 1 is the optional IF NOT EXISTS; group 2 is the version suffix.
+		version := ""
+		if len(match) > 2 {
+			version = match[2]
+		}
+		if version != "" {
+			// Only a rebuild that is actually renamed onto the name counts. A
+			// `runs_v2` that was abandoned mid-migration is not the live table,
+			// and treating it as one would report states the product cannot hold.
+			target := regexp.MustCompile(`ALTER\s+TABLE\s+` + regexp.QuoteMeta(name+version) + `\s+RENAME\s+TO\s+` + regexp.QuoteMeta(name) + `\b`)
+			if !target.MatchString(source) && !renamed.MatchString(source) {
+				continue
+			}
 		}
 		body := []string{strings.TrimSpace(line)}
 		for _, following := range lines[index+1:] {
@@ -556,32 +583,53 @@ type inspectBranch struct {
 // view.AllowedNext, with their conditions normalised to a single line and their
 // command lists parsed.
 //
-// It is a deliberately narrow parser: it reads the shape the code has today, and
-// it fails loudly rather than guessing if that shape changes, because a silently
+// It is a deliberately narrow parser reading the shape the code has today. It
+// fails loudly rather than guessing if that shape changes, because a silently
 // empty result would turn the guard into a no-op.
+//
+// Two shapes it must not silently accept, both found by adversarial review:
+//
+//   - an arm that assigns nothing, because it returns or breaks. Only arms that
+//     assign were collected, so such an arm was invisible. Every arm is now
+//     recorded, with a nil command list, so the count comparison catches it.
+//   - a second switch in the same function that also assigns AllowedNext. The
+//     parser used to bind to the first `switch {` in the file, so only the first
+//     was read. Every such switch is now parsed and the arm lists concatenated, so
+//     a second one changes the count.
 func parseInspectBranches(source string) []inspectBranch {
 	branches := []inspectBranch{}
 	lines := strings.Split(source, "\n")
 	pending := ""
-	// Find the switch that assigns AllowedNext, then walk its arms.
 	inside := false
-	for _, line := range lines {
+	for index, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if !inside {
-			if strings.HasPrefix(trimmed, "switch {") && strings.Contains(strings.Join(lines, "\n"), "view.AllowedNext") {
-				// Only enter a switch if an AllowedNext assignment follows before
-				// the switch closes; a cheap scan of the following lines.
+			// Only enter a switch that actually assigns AllowedNext inside itself.
+			if strings.HasPrefix(trimmed, "switch {") && switchAssignsAllowedNext(lines[index:]) {
 				inside = true
 			}
 			continue
 		}
 		if trimmed == "}" {
-			break
+			// Close the switch. A case arm that assigned nothing is recorded here
+			// rather than dropped, so an early-returning arm cannot hide.
+			if pending != "" {
+				branches = append(branches, inspectBranch{condition: normaliseCondition(pending)})
+				pending = ""
+			}
+			inside = false
+			continue
 		}
 		switch {
 		case strings.HasPrefix(trimmed, "case "):
+			if pending != "" {
+				branches = append(branches, inspectBranch{condition: normaliseCondition(pending)})
+			}
 			pending = strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(trimmed, "case ")), ":")
 		case trimmed == "default:":
+			if pending != "" {
+				branches = append(branches, inspectBranch{condition: normaliseCondition(pending)})
+			}
 			pending = "default"
 		case strings.HasPrefix(trimmed, "view.AllowedNext = []string{"):
 			inner := strings.TrimSuffix(strings.TrimPrefix(trimmed, "view.AllowedNext = []string{"), "}")
@@ -593,7 +641,29 @@ func parseInspectBranches(source string) []inspectBranch {
 			pending = ""
 		}
 	}
+	if pending != "" {
+		branches = append(branches, inspectBranch{condition: normaliseCondition(pending)})
+	}
 	return branches
+}
+
+// switchAssignsAllowedNext reports whether the switch statement that starts at
+// `start` assigns view.AllowedNext before it closes. Without this the parser would
+// bind to an unrelated earlier switch in the file and read the wrong arms.
+func switchAssignsAllowedNext(lines []string) bool {
+	// The caller has already matched `switch {`; the next `}` at this nesting
+	// depth closes it. This is a narrow shape, which is the point: when the shape
+	// is not met the caller simply does not enter, and the arm count still has to
+	// match, so a mis-read shows up as a failure rather than a silent pass.
+	for _, line := range lines[1:] {
+		if strings.HasPrefix(strings.TrimSpace(line), "view.AllowedNext") {
+			return true
+		}
+		if strings.TrimSpace(line) == "}" {
+			return false
+		}
+	}
+	return false
 }
 
 // normaliseCondition collapses the multi-line `case` conditions the source uses
@@ -653,12 +723,16 @@ func TestPartialRequirementIsAGapAndReachesTheReport(t *testing.T) {
 	}
 }
 
-// TestFailedReplayBoundaryIsRecordedPartial pins the wiring the controller-kill
-// case depends on when its replay-boundary check does not hold.
+// TestFailedReplayBoundaryIsRecordedPartial pins what a controller kill whose
+// replay-boundary check did not hold records, when it is marked partial.
 //
-// The branch is unreachable without a real race, so without this test reverting
-// it to an `automated` mark would leave the suite green — and a genuine
-// replay-safety regression would then read as a demonstrated case.
+// Be precise about the scope. It exercises `Matrix.MarkPartial` and asserts the
+// marking reaches `Gap()`, `Counts()` and passes `RequireComplete()` — the three
+// things the case's outcome depends on. It does **not** exercise the
+// `if safe { mark } else { markPartial }` branch itself, which needs a real
+// racy kill to reach. Reverting that branch to an automated mark would leave this
+// test green; what pins it is that the class it would have used does not accept
+// the row, which is why the branch cannot simply be swapped for `mark`.
 func TestFailedReplayBoundaryIsRecordedPartial(t *testing.T) {
 	// The exact chain the case uses: a mark that fails validation is what makes
 	// `partial` different from a note in prose.
