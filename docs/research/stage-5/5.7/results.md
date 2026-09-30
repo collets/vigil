@@ -370,21 +370,75 @@ budget are implemented and tested, but no stage calls the live execution path, s
 own notes and in the target's comment rather than implied otherwise, and it is
 recorded as pending work.
 
+## Native macOS validation
+
+Validated natively at exact commit `1146230` on **macOS 26.6.2 arm64**, Go 1.27.1
+(darwin/arm64), over SSH. This is the first native macOS evidence for this stage,
+and it earned its place: the walkthrough did not run there at all until two
+host-portability defects were fixed.
+
+| Check | Result |
+| --- | --- |
+| `make check` | pass |
+| `make docs-check` | pass |
+| `make check-race` | pass |
+| `make scenario-guard-check` | pass |
+| `make scenario` | **333 steps, 50 assertions, 0 failed, `aborted: false`, no `unmet` row** |
+
+Section totals are identical to Linux: milestone 8 (6 automated, 2 pending),
+recovery 20 (14 automated, 4 partial, 2 reused), requirements 71 (48 automated,
+1 partial, 14 carried, 8 gates).
+
+The delivery assertions were read back from the native report rather than assumed,
+and they hold on Darwin exactly as on Linux — including the index refresh, which was
+the one part of the fix that depended on Git behaviour rather than on Go:
+
+```
+delivery-left-working-tree-bytes-identical  digest 6eb2afd75516 before, 6eb2afd75516 after
+delivery-moved-only-the-plan-ref            refs/heads/vigil/scenario-plan 2ed9eeadc0bb -> 32a63ff178f9
+delivery-head-is-the-commit                 32a63ff178f9
+delivery-left-checkout-clean                (no porcelain output)
+no-unintended-remote-refs                   refs/heads/main and refs/heads/vigil/scenario-plan only
+```
+
+### What native validation caught that Linux could not
+
+**The `SCENARIO_ROOT` guard refused every macOS host.** It resolved a not-yet-created
+root with `realpath -m`, and macOS `realpath` has no `-m`, so the resolution produced
+an empty string and the guard failed closed on the correct path. Fail-closed is the
+right default, but it made `make scenario` unusable on the one platform where native
+validation is required. Resolution now uses `cd`/`pwd -P` on the parent directory,
+which is POSIX, and the documented constant goes through the same resolution so a
+platform where `/tmp` is a symlink to `/private/tmp` compares like with like. The
+guard battery gained three probes that catch a comparison weakened to a prefix or
+basename match.
+
+**The walkthrough depended on an ambient environment variable.** The endpoint was
+registered against the inherited `OPENAI_BASE_URL`, and the Mac has neither
+`OPENAI_BASE_URL` nor `OPENAI_API_KEY`, so the registration failed with
+`invalid credential-free endpoint URL`. The endpoint is an identity the application
+reserves capacity against, and with the synthetic driver nothing connects to it, so
+it need not be reachable. A configured loopback route is still used when there is
+one — so the report's recorded route identity stays meaningful — and a documented
+placeholder is used otherwise, with the report saying so rather than passing a
+placeholder off as a probed route. Verified on Linux both with the route configured
+and with both variables unset: identical totals, no `unmet` row, no abort.
+
+Both are the kind of defect only a second operating system finds, and both would have
+made the stage's native validation claim impossible to make honestly.
+
 ## What was not verified
 
 - Any real harness turn. Zero model turns ran; every execution used the labelled
   synthetic fixture driver.
-- Native macOS validation and the cross-build matrix, for the 5.7-F1 fix as well as
-  for the harness. The fix touches `internal/core` delivery and the fork-accounting
-  exception at `internal/checks/runner.go:459` is a separate, still-open Darwin
-  observation.
 - `scenario-clean` and the `--keep=false` removal path, though the guard both share
   is exercised by `make scenario-guard-check`.
 - The Docker opt-in, which this environment did not exercise.
-- The commit path's index refresh was exercised on Linux only, and only in the
-  walkthrough and the three new core tests. The behaviour it depends on —
-  `git ls-tree` and `git update-index --cacheinfo` against a live HEAD — has not
-  been checked natively on macOS.
+- The `internal/checks/runner.go:459` Darwin fork-accounting exception, which remains
+  a distinct open observation from Stage 5.4 and is not touched by this slice.
+- The commit path's index refresh was validated natively on macOS as part of the
+  walkthrough and the core suite, but not against a repository using SHA-256 object
+  format, symlinked worktrees, or a submodule.
 
 ## Pending Stage 8 inputs
 
