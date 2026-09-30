@@ -333,10 +333,19 @@ func TestControllerKillLandingReportsOnlyObservedState(t *testing.T) {
 // is only meaningful if it is checked against what the product actually returns,
 // and a test that only exercises the harness's own rule cannot catch the harness
 // asserting a property the product does not have. That is precisely the defect a
-// previous revision of this check shipped, so the correspondence is pinned here.
+// previous revision of this check shipped.
 //
-// If production's switch changes, this table is wrong and the test must be
-// updated with it — that is the intended failure mode.
+// Be honest about what this is. It is a second hand-written copy of production's
+// switch, so it cannot detect production changing underneath it — if `Inspect`
+// were changed to withhold `start` for `writing` as well, this table would be
+// stale and the test below would still pass. Its value is that a *human* reading
+// the harness check has the product's rule beside it in executable form, which is
+// what caught the defect. It is not an enforcement mechanism, and the results
+// document says so rather than crediting it with more.
+//
+// `TestProductionTranscriptionMatchesSource` guards the copy against the
+// remaining risk: it re-reads the production source and fails if the predicates
+// transcribed here have drifted from it.
 func productionAllowedNext(runState, submissionState string) []string {
 	switch {
 	case submissionState == "uncertain":
@@ -347,6 +356,59 @@ func productionAllowedNext(runState, submissionState string) []string {
 		return []string{"inspect", "start", "reconcile", "stop"}
 	default:
 		return []string{"inspect", "reconcile"}
+	}
+}
+
+// productionRunStates are the run states the `runs.state` column admits, from the
+// schema that constrains it. The harness's check must hold for all of them, not
+// only the ones a particular run happened to visit.
+var productionRunStates = []string{
+	"queued", "prepared", "starting", "active", "waiting_input",
+	"stopping", "completed", "failed", "interrupted", "unknown",
+}
+
+// productionSubmissionStates are the `submission_state` values the column's CHECK
+// constraint admits, from the migration that added it.
+var productionSubmissionStates = []string{
+	"not_attempted", "writing", "uncertain", "delivered", "proven_not_delivered",
+}
+
+// TestProductionTranscriptionMatchesSource fails if the transcription above has
+// drifted from the production switch it claims to copy.
+//
+// It reads the production source and checks the two facts the transcription
+// encodes: that `uncertain` is the only submission state special-cased ahead of
+// the run-state switch, and that every non-completed branch offers `reconcile`.
+// Those are the two properties the harness's check leans on, so a change to either
+// is a change the transcription must be re-checked against.
+func TestProductionTranscriptionMatchesSource(t *testing.T) {
+	source, err := readRepoFile("../supervisor/reconcile.go")
+	if err != nil {
+		t.Skipf("production source is not readable from here: %v", err)
+	}
+	// The uncertain case must appear before the run-state switch, and it must be
+	// the only submission_state test in the block that fills AllowedNext.
+	const marker = "AllowedNext = []string{"
+	idx := strings.Index(source, marker)
+	if idx < 0 {
+		t.Fatalf("production no longer assigns AllowedNext in the expected form; re-check the transcription")
+	}
+	window := source[:idx]
+	if !strings.Contains(window, `view.SubmissionState == "uncertain"`) {
+		t.Error("production no longer special-cases the uncertain submission state; the transcription must be re-checked")
+	}
+	if count := strings.Count(window, "SubmissionState =="); count != 1 {
+		t.Errorf("production now tests %d submission states ahead of the run-state switch, but the transcription special-cases exactly one", count)
+	}
+	// Every branch that offers commands other than the completed one must include
+	// reconcile, because that is what the harness's writing check relies on.
+	for _, line := range strings.Split(source, "\n") {
+		if !strings.Contains(line, marker) {
+			continue
+		}
+		if strings.Contains(line, `"inspect"`) && !strings.Contains(line, "reconcile") && !strings.Contains(line, `{"inspect"}`) {
+			t.Errorf("production offers commands without reconcile on this branch, so the writing check may false-positive: %s", strings.TrimSpace(line))
+		}
 	}
 }
 
@@ -406,8 +468,8 @@ func TestReplayBoundaryAgreesWithProductionInspect(t *testing.T) {
 	// check. A combination the product genuinely produces and the harness
 	// rejects would mean the harness is asserting a property the product lacks,
 	// which is a defect in the evidence rather than in the product.
-	runStates := []string{"prepared", "starting", "active", "completed", "paused", "failed"}
-	submissionStates := []string{"not_attempted", "writing", "uncertain", "delivered", "proven_not_delivered"}
+	runStates := productionRunStates
+	submissionStates := productionSubmissionStates
 	for _, runState := range runStates {
 		for _, submissionState := range submissionStates {
 			view := ExecutionView{

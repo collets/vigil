@@ -122,9 +122,11 @@ type Matrix struct {
 	Recovery     []MatrixEntry `json:"recovery"`
 	Requirements []MatrixEntry `json:"requirements"`
 	// RequirementGapList is the recorded set of requirement rows that are not
-	// fully demonstrated. It is a field rather than a derived value so the report
-	// carries it: a gap that exists only in a function nobody called is not a gap
-	// the report can be said to have reported.
+	// fully demonstrated. It is a field in the serialized report so the gaps are
+	// in the document a reader actually has, but it is recomputed from the rows
+	// when the run finishes rather than stored at the moment a stage fills them
+	// in — otherwise a stage added later would emit a list contradicting its own
+	// requirements.
 	RequirementGapList []string `json:"requirement_gaps"`
 }
 

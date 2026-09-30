@@ -139,53 +139,97 @@ func writeReport(path string, report *scenario.Report) error {
 }
 
 func printSummary(report *scenario.Report, destination string, started time.Time) {
-	fmt.Printf("Stage 5.7 autonomous qualification\n")
-	fmt.Printf("  scenario     %s (stage %s)\n", report.ScenarioID, report.Stage)
-	fmt.Printf("  binary       %s sha256=%s\n", report.Binary.Path, report.Binary.SHA256[:16])
-	fmt.Printf("  platform     %s/%s\n", report.Platform.OS, report.Platform.Arch)
-	fmt.Printf("  steps        %d recorded, %d live model turns\n", len(report.Steps), report.LiveTurn.Attempted)
-	fmt.Printf("  assertions   %d\n", countAssertions(report))
+	fmt.Print(summaryLines(report, destination, time.Since(started).Round(time.Millisecond)))
+}
+
+// summaryLines renders the human-facing summary.
+//
+// It is a separate function returning a string rather than a sequence of
+// `fmt.Printf` calls because this is the one place the report's central property —
+// that a gap can never be quietly omitted — is rendered for a human reader, and
+// the previous revision silently dropped a whole evidence class from the counts
+// line while the suite stayed green. A renderer with no test is how that happens
+// again; `TestSummaryLinesReconcileEveryClass` pins it.
+func summaryLines(report *scenario.Report, destination string, elapsed time.Duration) string {
+	lines := []string{
+		"Stage 5.7 autonomous qualification",
+		fmt.Sprintf("  scenario     %s (stage %s)", report.ScenarioID, report.Stage),
+		fmt.Sprintf("  binary       %s sha256=%s", report.Binary.Path, report.Binary.SHA256[:16]),
+		fmt.Sprintf("  platform     %s/%s", report.Platform.OS, report.Platform.Arch),
+		fmt.Sprintf("  steps        %d recorded, %d live model turns", len(report.Steps), report.LiveTurn.Attempted),
+		fmt.Sprintf("  assertions   %d", countAssertions(report)),
+	}
 	// Each section is counted separately: a milestone step, a recovery case and a
 	// requirement are different claims, and a combined total would let one
 	// section's passes disguise another's gaps.
 	//
-	// Every class the report can hold is printed, including `partial`. Omitting
-	// one would leave the line's own arithmetic unreconciled — a total that
-	// silently does not add up is worse than a longer line, because the reader
-	// cannot tell which reading is correct.
+	// Every class the report can hold is printed, including `partial`, and the
+	// line is built so the printed numbers must add up to the printed total. A
+	// total that silently does not reconcile is worse than a longer line, because
+	// the reader cannot tell which reading is correct.
 	for _, section := range []string{"milestone", "recovery", "requirements"} {
-		counts := report.Matrix.Counts(section)
-		total := 0
-		for _, count := range counts {
-			total += count
-		}
-		fmt.Printf("  %-12s total=%d automated=%d partial=%d reused=%d pending=%d unmet=%d\n", section, total,
-			counts[scenario.EvidenceAutomated], counts[scenario.Partial],
-			counts[scenario.EvidenceReused],
-			counts[scenario.EvidencePendingStage8], counts[scenario.EvidenceUnmet])
+		lines = append(lines, countLine(section, report.Matrix.Counts(section)))
 	}
-	fmt.Printf("  report       %s\n", destination)
+	lines = append(lines, fmt.Sprintf("  report       %s", destination))
 	// An aborted run leaves rows undecided. Saying so up front stops an empty
 	// evidence column from being read as a set of passes.
 	if report.Aborted {
-		fmt.Printf("  state        ABORTED: the rows below were never decided, and none of them is a result\n")
+		lines = append(lines, "  state        ABORTED: the rows below were never decided, and none of them is a result")
 	}
 	for _, gap := range report.Gaps {
-		fmt.Printf("  gap          %s\n", gap)
+		lines = append(lines, "  gap          "+gap)
 	}
 	// Requirement gaps are printed under their own label rather than folded into
 	// the list above, so a partial requirement is not mistaken for a recovery case
 	// that failed.
 	for _, gap := range report.Matrix.RequirementGapList {
-		fmt.Printf("  req gap      %s\n", gap)
+		lines = append(lines, "  req gap      "+gap)
 	}
 	for _, pending := range report.Pending {
-		fmt.Printf("  pending      %s\n", pending)
+		lines = append(lines, "  pending      "+pending)
 	}
 	for _, limitation := range report.Limits {
-		fmt.Printf("  limitation   %s\n", limitation)
+		lines = append(lines, "  limitation   "+limitation)
 	}
-	fmt.Printf("  elapsed      %s\n", time.Since(started).Round(time.Millisecond))
+	lines = append(lines, fmt.Sprintf("  elapsed      %s", elapsed))
+	return strings.Join(lines, "\n") + "\n"
+}
+
+// evidenceClasses lists every class a matrix row can hold, in print order.
+//
+// It is a declared list rather than an inline set of arguments at the call site
+// because a new class added to the matrix but not here would be silently omitted
+// from the rendered summary — the exact defect this refactor exists to prevent.
+var evidenceClasses = []struct{ label, class string }{
+	{"automated", scenario.EvidenceAutomated},
+	{"partial", scenario.Partial},
+	{"reused", scenario.EvidenceReused},
+	{"pending", scenario.EvidencePendingStage8},
+	{"unmet", scenario.EvidenceUnmet},
+}
+
+// countLine renders one section's counts. The total is the sum of the rows, and
+// the printed per-class numbers are the only way to reconstruct it, so a class
+// that is counted but not printed would make the line unreconcilable.
+func countLine(section string, counts map[string]int) string {
+	printed := 0
+	fields := make([]string, 0, len(evidenceClasses))
+	for _, entry := range evidenceClasses {
+		count := counts[entry.class]
+		fields = append(fields, fmt.Sprintf("%s=%d", entry.label, count))
+		printed += count
+	}
+	total := 0
+	for _, count := range counts {
+		total += count
+	}
+	if printed != total {
+		// A class the report holds that the renderer does not print. Rendering
+		// an explicit contradiction beats rendering a summary that quietly does
+		// not add up.
+		fields = append(fields, fmt.Sprintf("UNPRINTED=%d", total-printed))
+	}
+	return fmt.Sprintf("  %-12s total=%d %s", section, total, strings.Join(fields, " "))
 }
 
 func countAssertions(report *scenario.Report) int {

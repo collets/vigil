@@ -203,7 +203,13 @@ func Run(ctx context.Context, config Config) (report *Report, failure error) {
 				panic(recovered)
 			}
 		}
+		// Both gap lists are derived here, in the deferred function, rather than
+		// stored at the moment a stage fills them in. Deriving both at the same
+		// point is what keeps a report's own gap lists from contradicting its own
+		// rows: a stage added later that marked a requirement would otherwise
+		// emit a `requirement_gaps` list computed before that mark.
 		report.Gaps = report.Matrix.Gap()
+		report.Matrix.RequirementGapList = report.Matrix.RequirementGaps()
 		report.Digest = reportDigest(report)
 	}()
 

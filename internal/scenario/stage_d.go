@@ -123,7 +123,6 @@ func (w *walkthrough) auditRequirements() {
 	w.note(fmt.Sprintf("Requirement coverage recorded: %d requirements, of which %d carry this run's full automated evidence, %d are partial (a narrower observation was made and the detail says what was not observed), %d are carried from an accepted predecessor record, and %d remain owned gates.",
 		len(coverage), counts[EvidenceAutomated], counts[Partial], counts[EvidenceReused],
 		counts[EvidencePendingStage8]+counts[EvidenceUnmet]))
-	// The requirement gaps are recorded in the report so they cannot be omitted
-	// from a reading of it.
-	w.report.Matrix.RequirementGapList = w.report.Matrix.RequirementGaps()
+	// The requirement gap list is derived from these rows when the run finishes,
+	// in the same place the case gap list is derived, so the two cannot disagree.
 }

@@ -23,7 +23,8 @@ and the real receipt and revision checks.
 ## How to reproduce
 
 ```sh
-make check          # vet + full suite + the documentation gate
+make check          # vet + the full test suite
+make docs-check     # the documentation consistency gate (a separate target)
 make scenario       # the offline autonomous walkthrough, into /tmp/vigil-stage-5.7-scenario
 ```
 
@@ -139,18 +140,38 @@ production's own `Inspect` actually guarantees:
   production.
 
 The refusal to resubmit an unproven generation is enforced in production in
-`Submit` and `Reconcile`, deterministically and independently of where a kill
-lands; the accepted Stage 5.2 crash matrix covers it. Asserting it from a racy kill
-landing instead was a defect an earlier revision of this harness shipped, and it
-aborted the qualification on a majority of runs while reporting a replay-safety
-defect in the product that does not exist. The check is now also non-fatal: a
-landing that does not satisfy it is recorded as a limitation, never asserted.
+`Runner.submit` and `Runner.Reconcile`, deterministically and independently of
+where a kill lands; the accepted Stage 5.2 crash matrix covers it. Asserting it
+from a racy kill landing instead was a defect an earlier revision of this harness
+shipped, and it aborted the qualification on a majority of runs while reporting a
+replay-safety defect in the product that does not exist. The check is now also
+non-fatal: a landing that does not satisfy it is recorded as a `partial` case
+rather than asserted, so it appears in the gap list instead of only in the
+limitations text.
+
+**A limit of the `writing` landing: the walkthrough demonstrates no replay-safety
+property on its own.** In the sampled runs the kill never landed in `uncertain`,
+which is the only state the hard check covers, so the qualification shows that the
+reopened inspection is readable and accurately described — not that the product
+refuses an unproven replay. That property is carried by the accepted Stage 5.2
+crash matrix, and it is stated here rather than left to be inferred from a case
+name.
 
 `TestReplayBoundaryAgreesWithProductionInspect` pins the correspondence by
 transcribing production's `Inspect` switch and requiring the harness to accept every
 combination the product can emit. That test exists because a check which only
 exercises the harness's own rule cannot catch the harness asserting something the
 product does not do.
+
+Be precise about what it is worth. The transcription is a second hand-written copy
+of production's switch, so it **cannot** detect production changing underneath it —
+a stale table would still pass. Its value is that a reviewer reading the harness
+check has the product's rule beside it in executable form, and that is what caught
+the defect. `TestProductionTranscriptionMatchesSource` re-reads the production
+source and fails if the two properties the transcription encodes — that `uncertain`
+is the only submission state special-cased, and that every non-completed branch
+offers `reconcile` — have drifted. It is a drift guard on a copy, not an
+integration test against the product.
 
 Also observed in full: pause refusing five
 distinct dispatch commands and `continue` restoring them; a bounded stop

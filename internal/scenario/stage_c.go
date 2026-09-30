@@ -465,13 +465,19 @@ func (w *walkthrough) controllerKillLeavesUnknown(ctx context.Context) {
 	// against the synthetic driver's speed, so a run may land in either the
 	// pre-submission or the in-flight state, and both are legitimate
 	// observations of the same production behaviour. A racy observation that did
-	// not hold must be recorded as a limitation, never asserted — asserting it
-	// both aborted the whole qualification on a majority of runs and, because the
-	// check would have been derived from the wrong layer, reported a replay-safety
-	// defect in the product that does not exist.
+	// not hold must be recorded, never asserted — asserting it both aborted the
+	// whole qualification on a majority of runs and, because the check had been
+	// derived from the wrong layer, reported a replay-safety defect in the
+	// product that does not exist.
+	//
+	// A run that fails it is recorded as `partial`, not as a pass. Recording it
+	// only in the limitations text would leave the matrix row reading as a
+	// demonstrated case and absent from the gap list, which is the same
+	// disclosure-in-prose-instead-of-a-class mistake the requirement audit had
+	// made.
 	safe, detail := view.verifiesReplayBoundary()
 	if !safe {
-		w.note("The reopened inspection after the controller kill did not satisfy the replay-safety property, so no conclusion is recorded from it: " + detail)
+		w.note("The reopened inspection after the controller kill did not satisfy the replay-safety property, so that property is not claimed from this run: " + detail)
 	}
 	status, err := reopened.Invoke(ctx, "resources status after kill", "resources", "status")
 	if err != nil {
@@ -504,11 +510,16 @@ func (w *walkthrough) controllerKillLeavesUnknown(ctx context.Context) {
 	// database. Where the kill landed is a race against the synthetic driver's own
 	// speed, so it is reported as observed rather than asserted.
 	landing := controllerKillLanding(view)
-	w.mark(CaseControllerKillUnknown,
-		fmt.Sprintf("a controller was SIGKILLed %s; the reopened database reports run_state=%q, generation_state=%q, submission_state=%q, writer_state=%q and offers %s; retained resource state: %s",
-			landing, view.RunState, view.GenerationState, view.SubmissionState, view.WriterState, detail,
-			strings.Join(held, ", ")),
-		"a real SIGKILLed vigil process, then bin/vigil project execution-inspect and resources status on the reopened database")
+	row := fmt.Sprintf("a controller was SIGKILLed %s; the reopened database reports run_state=%q, generation_state=%q, submission_state=%q, writer_state=%q and offers %s; retained resource state: %s",
+		landing, view.RunState, view.GenerationState, view.SubmissionState, view.WriterState, detail,
+		strings.Join(held, ", "))
+	source := "a real SIGKILLed vigil process, then bin/vigil project execution-inspect and resources status on the reopened database"
+	if safe {
+		w.mark(CaseControllerKillUnknown, row, source)
+		return
+	}
+	w.markPartial(CaseControllerKillUnknown, row+". NOT observed: the replay-safety property could not be established from this run's landing, so the case is recorded as partially observed rather than demonstrated. The reason is recorded as a limitation on this run",
+		source)
 }
 
 // controllerKillLanding describes, from the observed durable state, where the
@@ -1262,10 +1273,18 @@ func (v ExecutionView) verifiesReplayBoundary() (bool, string) {
 		// A completed run offers only `inspect` — there is nothing left to
 		// reconcile, and the submission cannot still be in flight on a run that
 		// has finished. Any other run state is offered `reconcile` by production.
-		if v.RunState != "completed" && !v.offersCommand("reconcile") {
+		finished := v.RunState == "completed"
+		if !finished && !v.offersCommand("reconcile") {
 			return false, fmt.Sprintf("submission_state=%q means the submission is in flight with no recorded outcome, yet the inspection does not offer reconcile; commands offered: %s", v.SubmissionState, detail)
 		}
-		return true, fmt.Sprintf("%s (submission_state=%q: the submission was in flight with no recorded outcome. This inspection offers start, which is what production's own Inspect does for a %s run; the refusal to resubmit an unproven generation is enforced in Submit and Reconcile, not by withholding start, and that is exercised by the accepted Stage 5.2 crash matrix rather than asserted from this racy landing)", detail, v.SubmissionState, v.RunState)
+		// The claim about what production offers is derived, not assumed: a
+		// finished run offers no start, and saying otherwise would put a false
+		// sentence in the rendered report beside the command list itself.
+		offered := fmt.Sprintf("This inspection %s", strings.Join(v.AllowedNext, ", "))
+		if !finished {
+			offered += ", which includes start — what production's own Inspect does for a " + v.RunState + " run"
+		}
+		return true, fmt.Sprintf("%s (submission_state=%q: the submission was in flight with no recorded outcome. %s. The refusal to resubmit an unproven generation is enforced in the supervisor's submit and reconcile paths, not by withholding start, and that is exercised by the accepted Stage 5.2 crash matrix rather than asserted from this racy landing)", detail, v.SubmissionState, offered)
 	}
 	switch v.SubmissionState {
 	case "delivered", "proven_not_delivered", "not_attempted":
@@ -1295,6 +1314,17 @@ func errText(err error) string {
 // mark records an automated observation for a recovery case.
 func (w *walkthrough) mark(id, detail, source string) {
 	if err := w.report.Matrix.Mark("recovery", id, EvidenceAutomated, detail, source); err != nil {
+		panic(&ScenarioAbort{Step: "matrix:" + id, Err: err})
+	}
+}
+
+// markPartial records a recovery case this run only partially observed. It is used
+// where a check failed on an observation the harness cannot control, so the case
+// is neither a demonstrated pass nor a defect: recording it as a pass would let a
+// real regression read as a demonstrated case, and recording it in prose only
+// would leave it out of the gap list.
+func (w *walkthrough) markPartial(id, detail, source string) {
+	if err := w.report.Matrix.MarkPartial("recovery", id, detail, source); err != nil {
 		panic(&ScenarioAbort{Step: "matrix:" + id, Err: err})
 	}
 }
