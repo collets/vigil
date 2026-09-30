@@ -21,7 +21,7 @@ The application owns reliable coordination and state; existing harnesses execute
 | R08 | Mix paid frontier models and local models to reduce token use and monetary cost |
 | R09 | Consider Jev as an optional aid to model/task selection |
 | R10 | Implement Codex and Hermes first; retain Claude Code, pi, and OpenCode as subsequent integration targets |
-| R11 | Make the terminal dashboard the primary application interface: every persisted product capability has a reachable path from it, except capabilities the Stage 6 exclusion register records with a reason, and every human decision point has a distinct revision-bound action in it rather than a fallback to the command line |
+| R11 | Make the terminal dashboard the primary application interface: every persisted product capability has a reachable path from it, except the capabilities in the closed exclusion list below, and every human decision point has a distinct revision-bound action in it rather than a fallback to the command line |
 | R12 | Default to approval-first operation, with granular configuration of increased autonomy |
 | R13 | Support starting application sessions in different folders, with folder/project discovery behavior to be defined |
 | R14 | Support completing complex feature or component plans with human quality validation and high-risk decision gates |
@@ -56,8 +56,24 @@ The application owns reliable coordination and state; existing harnesses execute
 | R43 | Use one dedicated branch per plan per affected repository, reusing it when resuming the plan |
 | R44 | Support GitHub and GitLab delivery with draft requests as the default |
 | R45 | Prioritize task progression and actionable user requests on the main dashboard: one screen shows the active plan, the current task and its blocker, the queue position, the live run and session state, the compact per-task quality status, and the actionable request list, all without navigating away. Agent activity is a bounded, sanitized view of persisted run, session and event state, never raw harness output |
-| R46 | Put change records (paths, artifact references and commit references), quality results, and cost or usage information in secondary views that are navigable from a visible focus; a quantity the application does not observe renders as explicitly unavailable, never as zero |
+| R46 | Put change records (paths, artifact references and commit references), quality results, and cost or usage information in secondary views that are navigable from a visible focus |
 | R47 | Show in the human review screen each reviewer finding's severity, blocking status and text, the implementation summary for the current attempt, and each check result's status, exit state and evidence reference; state where to inspect code and diffs, which stay in external IDE tools |
+
+R46 and R47 keep their original force on cost/usage and implementation summary.
+Both are **satisfied from data the application already persists**: token usage
+and cost live in `usage_observations` with `observed`/`estimated` provenance,
+and the per-attempt implementation summary and changed-path record live in
+`execution_results_v11`. The gap is that no read model or interface screen
+surfaces either, which is an interface gap owned by
+[Stage 6.5](../plans/stage-6/6.5-quality-review-and-evidence-views.md) — not a
+missing capability, and not grounds for excluding either clause. An earlier
+draft of the 6.1 analysis claimed both capabilities were absent; that claim was
+false, and the correction is recorded in
+[6.1 §6](../plans/stage-6/6.1-parity-gap-analysis.md#6-correcting-two-claims-this-analysis-originally-got-wrong).
+
+The honesty obligation — an unobserved quantity renders as explicitly
+unavailable, never as zero — lives in P07 and P16, not inside R46 or R47. It
+governs the **view**; it must never be used to excuse a missing **capability**.
 | R48 | Show human verification checklists only for task requirements that need manual functional verification |
 | R49 | Automatically save and clear agent-owned changes while preserving pre-existing user work; request approval to bring a saved attempt back |
 | R50 | Produce commits per task, allowing multiple commits where they improve clarity, subject to commit authorization |
@@ -106,12 +122,37 @@ P13–P18 were added by [Stage 6.1](../plans/stage-6/6.1-parity-gap-analysis.md)
 
 | ID | Requirement | Observable acceptance condition |
 | --- | --- | --- |
-| P13 | R11 interface parity | Every leaf command in the `vigil` command tree and every `apply` envelope kind is classified in the Stage 6 parity register as expressible, expressible with a documented compromise, or not expressible with a reason. A mechanical check walks the real command tree and fails when an entry is missing, duplicated or unclassified |
+| P13 | R11 interface parity | Every leaf command in the `vigil` command tree and every `apply` envelope kind is classified in the Stage 6 parity register as expressible, expressible with a documented compromise, or excluded with a reason. A mechanical check walks the **real** command tree via `cli.NewCommand()` and the **real** envelope-kind list exported by `internal/core`, and fails when an entry is missing, duplicated or unclassified |
 | P14 | R11, R51 distinct decision actions | Every persisted human decision class has its own interface action, bound to the visibly displayed exact revision or request ID, and two decision classes never issue the same command. A test drives each class against a seeded request and asserts the exact command and the exact persisted effect |
 | P15 | R45 main dashboard | From a cold start with no navigation, one screen shows the active plan, the current task and its blocker, the queue position, the live run and session state, the compact per-task quality roll-up, and the actionable request list with each request's kind, age and blocking state |
-| P16 | R46 secondary views and honest absence | Quality and review detail is reachable from a visible focus, and a quantity the application does not observe renders as explicitly unavailable with a reason. A test fails if an unobserved quantity renders as zero |
-| P17 | R47 human review content | Against a fixture with a recorded review carrying a blocking finding, a suggestion, two check results and a manual outcome, the human review screen's rendered content contains the blocking finding's severity, blocking status and text; the suggestion's distinct classification; each check's status, exit state and evidence reference; and the statement of where to inspect code and diffs |
+| P16 | R46 navigation, and honest absence | Quality and review detail is reachable from a visible focus. Separately, and **without** this condition being counted as satisfying R46's cost clause: a quantity the application does not observe renders as explicitly unavailable with a reason, and a test fails if it renders as zero |
+| P17 | R47 human review content | Against a fixture with a recorded review carrying a blocking finding, a suggestion, two check results and a manual outcome, and a completed attempt carrying an implementation summary, the human review screen's rendered content contains the blocking finding's severity, blocking status and text; the suggestion's distinct classification; each check's status, exit state and evidence reference; **the implementation summary for the current attempt, read from `execution_results_v11`**; and the statement of where to inspect code and diffs |
 | P18 | R70 terminal-only, completeness measured | No repository process serves a browser or network UI, and the interface's completeness claim is backed by the complete Stage 6 feature list rather than by the absence of a browser |
+
+### The closed exclusion list R11 depends on
+
+R11 makes interface parity conditional on an exclusion list. That list is
+**fixed here**, in the requirements baseline, so that the agent executing Stage
+6 cannot satisfy the condition by writing down its own exclusions:
+
+| Excluded capability | Reason class | Reason |
+| --- | --- | --- |
+| `vigil tool-server` | mechanism | A stdio JSON-RPC server for a native harness subprocess, spawned by the application with a pre-opened session. Not an operator action; a human surface would widen authority. |
+| `apply` kind `operation.start` | mechanism | Accepted only for the `Core` authority and issued by the trusted coordinator at effect start. Not a human decision, and unreachable from the CLI too. |
+| `vigil completion` | mechanism | Cobra shell-completion generation; shell scaffolding with no Vigil state. |
+| `vigil help` | mechanism | Documents the CLI surface that Stage 6 replaces as primary. The interface's own help screen supersedes it. |
+| `vigil hello` | scope | A SQLite connectivity smoke test with no project state. Not a product capability. |
+| `vigil spike` | scope | A development-only Stage 1–3 experiment runner outside the persisted core. Stage 6 must not add product capability. |
+| Code and diff inspection | scope, accepted | R47 places this in external IDE tools. Not a product gap. |
+| Automatic merge | scope, accepted | R41 excludes merging entirely. |
+
+**Adding an entry to this list is a user scope decision**, not a Stage 6
+deliverable. Two items that an earlier draft of the Stage 6.1 analysis tried to
+add — cost/usage observation and the persisted implementation summary — are
+deliberately **not** on it, because both capabilities exist and are persisted;
+only the interface's failure to surface them is a gap, and that gap is owned by
+6.5. Excluding them would have converted an implementation gap into an accepted
+limitation.
 
 Local inference may have no per-token vendor charge, but still consumes hardware, energy, and time. Evaluate savings using total attempts and review effort, not only the worker model's token price. Exact billing may be unavailable for some subscription-based harnesses.
 

@@ -161,18 +161,19 @@ view, with no confirmation.
 ### 2.7 Narrow-terminal behaviour
 
 Same binary, same project, narrower pseudo-terminals. The full 110-column footer
-is 100 characters:
+is 98 characters:
 
 ```text
  60| p/c/s control · a/u plan · inbox g/v/x/f/b/i/y/n · h/m/t qu…
  40| p/c/s control · a/u plan · inbox g/v/x/…
- 76| Vigil  [1 Overview]  2 Tasks  3 Inbox   …      (tab bar, 40 columns)
+ 40| Vigil  [1 Overview]  2 Tasks  3 Inbox  …
 ```
 
 The footer is the interface's only in-application key documentation, and it is
-truncated before the binding list ends. At 40×12 the
-`2 tasks · 1 pending/expired decisions` line is pushed out of the view
-entirely by height. This is defect 6.1-F16.
+truncated before the binding list ends. The tab bar is cut at 40 columns. At
+40×12 the `2 tasks · 1 pending/expired decisions` line is pushed out of the view
+entirely by height. This is defect 6.1-F16. The `NN|` prefixes are the measured
+line widths.
 
 ## 3. Product surface measured
 
@@ -189,9 +190,10 @@ Envelope kinds: `repository.enroll`, `project.configure`, `profile.put`,
 `planning.proposal.decide`, `input.resolve`, `operation.request`,
 `permission.grant`, `permission.revoke`, `operation.start`, `retention.expire`.
 
-`operation.start` is accepted by `Apply` only for the `Core` authority and has
-no CLI command and no human path; `vigil project apply` submits as `Human`, so
-this kind is unreachable from the command line as well as from the interface.
+`operation.start` is rejected for the `Human` authority inside
+`Engine.permission` (`internal/core/permissions.go:203-205`), and it has no CLI
+command of its own. `vigil project apply` submits as `Human`, so this kind is
+unreachable from the command line as well as from the interface.
 
 ## 4. Parity register
 
@@ -199,14 +201,16 @@ Classification rule, from
 [6.1 §2.2](../../plans/stage-6/6.1-parity-gap-analysis.md#22-classification-rule):
 
 - **E** expressible — the same capability with the same information, selected
-  from what the interface displays. A bounded free-text field is not a
-  compromise.
+  from what the interface displays. **A bounded free-text field is not a
+  compromise**, and neither is restricting what the operator may supply.
 - **C** expressible with a documented compromise — reachable, but the operator
   must supply a filesystem path outside the interface's own state, a large
   nested closed document built through a guided editor, or a private key file.
-  Each C row names its compromise.
-- **X** not expressible — unreachable in a terminal interface, or deliberately
-  outside Stage 6's scope. Each X row says which, and why.
+  Each C row names which of those three it is.
+- **X** excluded, with reason — not reachable from a terminal interface, or
+  deliberately outside Stage 6's scope. Each X row says which, and why. **No
+  row is excluded for technical impossibility**; all six are shell/subprocess
+  mechanics or scope decisions.
 
 `Today` is the measured state of the interface at `27182de`.
 
@@ -227,7 +231,7 @@ Classification rule, from
 | --- | --- | --- | --- | --- |
 | `vigil resources endpoint` | E | absent | URLs and capacity are entered as bounded fields; `--single-host` is one explicit choice | 6.8 |
 | `vigil resources status` | E | absent | owner IDs, fencing generations, claims, slots and quarantine become a coordination view | 6.8 |
-| `vigil resources reconcile` | C | absent | **Compromise:** the observation is typed into a bounded prompt that cannot be shell-quoted, and the attestation is shown as irreversible before it is accepted | 6.8 |
+| `vigil resources reconcile` | E | absent | The observation is a bounded attestation typed into a prompt the shell cannot quote, and is shown as an operator assertion — never as an automatic cleanup — before it is accepted. Bounded free text is `E` under the rule, not `C` | 6.8 |
 
 ### 4.3 Project commands, part 1 — definitions and lifecycle
 
@@ -297,11 +301,11 @@ Classification rule, from
 | `delivery-status` | E | absent | the approved comparison operands are shown alongside the observation | 6.7 |
 | `delivery-cancel` | E | absent | — | 6.7 |
 | `delivery-reconcile` | E | absent | — | 6.7 |
-| `delivery-close-unobserved` | C | absent | **Compromise:** the attestation is typed into a bounded prompt that cannot be shell-quoted, and is shown as final and irreversible before acceptance | 6.7 |
+| `delivery-close-unobserved` | E | absent | The attestation is bounded free text typed into a prompt the shell cannot quote, shown as final and irreversible before acceptance, and read back by `delivery-status`. Bounded free text is `E` under the rule, not `C` | 6.7 |
 | `archive-build` | E | absent | — | 6.7 |
 | `archive-show` | E | absent | — | 6.7 |
 | `archive-export` | C | absent | **Compromise:** the destination directory is typed and its non-symbolic-link parent is checked and stated in the confirmation; there is no directory browser | 6.7 |
-| `archive-narrative` | C | absent | **Compromise:** citations are selected from the validated manifest's own reference set rather than typed, so a citation outside the manifest cannot be submitted | 6.7 |
+| `archive-narrative` | E | absent | Citations are **selected from the validated manifest's own reference set** rather than typed, so a citation outside the manifest cannot be submitted. Restricting the operator's input is `E` under the rule, not `C` | 6.7 |
 | `finalization-run` | C | absent | **Compromise:** the prepared manifest path and the optional private key path are typed; the interface cannot browse the operator's filesystem or verify a prepared credential-free home | 6.7 |
 | `finalization-quarantine` | E | absent | — | 6.7 |
 | `retention-inspect` | E | absent | — | 6.7 |
@@ -339,20 +343,20 @@ Classification rule, from
 
 | Class | Count |
 | --- | --- |
-| E — expressible | 64 |
-| C — expressible with a documented compromise | 15 |
-| X — not expressible, with reason | 6 |
+| E — expressible | 67 |
+| C — expressible with a documented compromise | 12 |
+| X — excluded, with reason | 6 |
 | **Total** | **85** |
 
-**How these four numbers are counted**, so they can be checked rather than
-believed. The unit is the **distinct capability**, not the register row: five
-register rows describe four capabilities, because three capabilities are exposed
-on both surfaces — `input-resolve` and `input.resolve` are the same
-capability, as are `proposal-apply`/`planning.proposal.apply` and
-`proposal-decide`/`planning.proposal.decide`. A capability counts as *reached*
-only if the interface can **act** on it; a read-only command the interface
-merely renders a subset of is neither reached nor unreached, and is reported
-separately below.
+**How these numbers are counted**, so they can be checked rather than believed.
+The unit is the **distinct capability**, not the register row: six rows describe
+three capabilities, because three capabilities are exposed on both the command
+and the envelope surface — `input-resolve`/`input.resolve`,
+`proposal-apply`/`planning.proposal.apply` and
+`proposal-decide`/`planning.proposal.decide`. So 85 rows describe 82
+capabilities. A capability counts as *reached* only if the interface can **act**
+on it; a read-only command the interface merely renders a subset of is neither
+reached nor unreached, and is reported separately below.
 
 | Measure | Count | Which |
 | --- | --- | --- |
@@ -362,7 +366,10 @@ separately below.
 | Not reachable by any action | 66 | every other capability |
 | Read-only commands the interface partially renders, with no action | 3 | `status`, `inbox`, `events` |
 
-3 + 66 + 4 + 9 = 82. The owner-routed native clarification path
+3 + 66 + 4 + 9 = 82. **Always quote 66 against the base 82, never a bare
+"72" against 85** — 82 − 4 − 9 = 69, and 66 additionally excludes the three
+read-only commands the interface renders without acting on. The owner-routed
+native clarification path
 (`answer-clarification`, `cancel-clarification`) is complete for its request
 type but is not a register entry, because no CLI command exposes it: the
 clarification is delivered through `supervisor.InteractiveOwner`, not through a
@@ -457,7 +464,7 @@ conditions in [`core/requirements.md`](../../core/requirements.md).
 | 4.15 | Cancel a native clarification | `n` | owner `AnswerClarification` | P10 | present and exact | **done** |
 | 4.16 | Recovery: exact resume | `x` | `execution-recovery-choose` | R16, P12 | present, observations missing | planned (6.4) |
 | 4.17 | Recovery: fresh context | `f` | `execution-recovery-choose` | R16, R25 | present, observations missing | planned (6.4) |
-| 4.18 | Recovery: remain blocked | `b` | `execution-recovery-choose` | R25, P12 | present and exact | **done** |
+| 4.18 | Recovery: remain blocked | `b` | `execution-recovery-choose` | R25, P12 | present, but the history observation is per-session, not per-mode, so `b` cannot express it either | planned (6.4) |
 | 4.19 | Explicit history-state / class / automatic-work observation form | — | `execution-recovery-choose` | R16, P12 | CLI flags only | planned (6.4) |
 | 4.20 | Blocked-field suppression: empty identity fields are not rendered as bindings | — | — | R51 | 6.1-F19 | planned (6.4) |
 
@@ -490,6 +497,9 @@ conditions in [`core/requirements.md`](../../core/requirements.md).
 | 5.23 | Resource reservation journal view | — | `reservation` | R60, P08 | absent | planned (6.5) |
 | 5.24 | Budget detail: remaining, charged, unknown, and excluded wait time | — | `status` | R61, P08 | remaining ms only | planned (6.5) |
 | 5.25 | Statement of where to inspect code and diffs | — | — | R47 | present | **done** |
+| 5.26 | Observed/estimated token usage and cost with provenance, per attempt and cumulatively | — | — | R46, P07 | absent — `usage_observations` is persisted and read by the archive but selected by no read model | planned (6.5) |
+| 5.27 | Explicit "unavailable" state for a run with no usage observation, never zero | — | — | R46, P07 | absent | planned (6.5) |
+| 5.28 | Change record per attempt: changed paths, repository fingerprints, result status | — | — | R46 | absent — `execution_results_v11.changed_paths_json` is persisted and read by the reconciler, never by the interface | planned (6.5) |
 
 ### 5.6 Execution, recovery and checkpoints
 
@@ -564,21 +574,32 @@ conditions in [`core/requirements.md`](../../core/requirements.md).
 
 ### 5.9 Deliberate exclusions
 
-Recorded so a reader can tell an exclusion from an oversight. Final wording is
-fixed by 6.9.
+Recorded so a reader can tell an exclusion from an oversight. This list is
+**closed**: it is mirrored in the requirements baseline so that the agent
+executing Stage 6 cannot satisfy R11 by writing down its own exclusions, and
+adding an entry is a user scope decision. 6.9 fixes the final wording.
 
 | Excluded | Reason class | Reason |
 | --- | --- | --- |
 | `vigil tool-server` | mechanism | A stdio JSON-RPC server for a native harness subprocess, spawned by the application with a pre-opened session. Not an operator action; a human surface would widen authority. |
-| `apply` kind `operation.start` | mechanism | Accepted only for the `Core` authority and issued by the trusted coordinator at effect start. Not a human decision, and unreachable from the CLI too. |
+| `apply` kind `operation.start` | mechanism | Rejected for the `Human` authority inside `Engine.permission`; issued by the trusted coordinator at effect start. Not a human decision, and unreachable from the CLI too. |
 | `vigil hello` | scope | A SQLite connectivity smoke test with no project state. Not a product capability. |
 | `vigil spike` | scope | A development-only Stage 1–3 experiment runner outside the persisted core. Stage 6 must not add product capability. |
 | `vigil completion` | mechanism | Cobra shell-completion generation; shell scaffolding with no Vigil state. |
 | `vigil help` | mechanism | Documents the CLI surface that Stage 6 replaces as primary. The interface's own help screen supersedes it. |
 | Code and diff inspection | scope, deliberate | R47 places this in an external IDE. The interface states where to look rather than embedding a diff viewer. |
-| Cost and token figures | product gap | The application observes no usage; there is no usage table in the installed schema. R46/P16 and P07 require the absence to render as explicitly unavailable, never as zero. |
-| Implementation summaries | product gap | No summary is persisted. R47/P17 name the requirement; Stage 6 must not invent a product capability to satisfy it. Recorded for a later scope decision. |
 | Automatic merge | scope, accepted | R41 excludes merging entirely. The interface states that no merge endpoint exists. |
+
+**Nothing else is excluded, and in particular two items an earlier draft of this
+analysis wrongly excluded are ordinary interface gaps.** The application *does*
+observe cost and usage (`usage_observations`, written at
+`internal/supervisor/runner.go:993`, read at `internal/core/finalization.go:532`)
+and *does* persist an implementation summary (`execution_results_v11.summary`,
+written at `internal/supervisor/runner.go:1120`). The interface reads neither.
+Excluding them would have converted an implementation gap into an accepted
+limitation. The correction is kept in the record at
+[6.1 §6](../../plans/stage-6/6.1-parity-gap-analysis.md#6-correcting-two-claims-this-analysis-originally-got-wrong)
+rather than quietly edited away.
 
 ## 6. Validation
 
@@ -603,6 +624,13 @@ planning slice are `make check`, `make docs-check` and `git diff --check`; the
 wider gates above were run anyway and are recorded as evidence, and
 `make scenario` is run here specifically to show the Stage 5.7 walkthrough still
 reaches commit, push and draft delivery end to end after this change.
+
+**These gates were re-run after the remediation** of the rejected first review
+(see [`6.1-review.md`](6.1-review.md)), not only before it. `make check`,
+`make check-race`, `make docs-check`, `make build`, `make cross-build` and
+`make build-boundary` all pass at the remediation SHA, and `git diff --check` is
+clean. The remediation is also documentation-only, so the same
+`internal/`-unchanged argument holds.
 
 ### A pre-existing race flake observed, and how it was attributed
 

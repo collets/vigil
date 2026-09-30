@@ -126,13 +126,13 @@ implementation into itself. Its output is decisions and plans.
 interface code. It measured the gap from the code and the built binary rather
 than from prose, and found that of the 85 register rows — 82 distinct
 capabilities — the interface fully expresses **4**, partially expresses **9**
-and cannot reach **66** by any action; that 3 of 20 human decision classes are
-fully expressed, 5 are partial and 12 are absent; and that all five audited
+and cannot reach **66** by any action; that 6 of the 25 human decision classes
+are fully expressed, 6 are partial and 13 are absent; and that all five audited
 requirements were unmeasurable as written, which is why the interface could sit
 at four expressed capabilities through two accepted stages unnoticed. It
-recorded 21 measured defects, 6 documented compromises, 6 exclusions with
-reasons, and 8 sub-stages (6.2–6.9), and it wrote the exclusion and product-gap
-register that keeps Stage 6 from adding capability. The evidence is in
+recorded 21 measured defects, 12 documented compromises, 6 exclusions with
+reasons, and 8 sub-stages (6.2–6.9), and it wrote the **closed** exclusion register that
+stops Stage 6 from excusing itself out of R11. The evidence is in
 [`research/stage-6/results.md`](../../research/stage-6/results.md) and the
 derivation of every number is in
 [§4.9](../../research/stage-6/results.md#49-register-totals) so a reviewer can

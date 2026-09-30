@@ -10,7 +10,7 @@ scope, and production
 check, model and reviewer dispatch are deliberately disabled. This page tells you
 which documents to read, and — more importantly — which ones you can skip.
 
-**Stage 6.1 is implemented and under independent review.** It is the terminal
+**Stage 6.1 is implemented; its first independent review rejected it and the remediation awaits a narrow follow-up.** It is the terminal
 interface parity gap analysis, so it wrote no interface code: it measured the
 interface and the product surface from the code and the built binary, found that
 the interface fully expresses 4 of the 82 distinct capabilities the 85-row register classifies, and 3 of

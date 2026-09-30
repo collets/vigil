@@ -7,8 +7,9 @@ Instructions for any agent working in this repository. Read this before changing
 Vigil is a local control panel that runs existing agent harnesses (Codex, Hermes)
 through a Go core with SQLite state. It is **pre-release**: the offline core through
 Stage 5.7 is implemented and independently accepted at implementation commit
-`522cb96`, Stage 6.1's parity gap analysis is implemented and under independent
-review, and production dispatch is deliberately disabled.
+`522cb96`, Stage 6.1's parity gap analysis is implemented, was **rejected** by its
+first independent review, and is remediated pending a narrow follow-up, and
+production dispatch is deliberately disabled.
 
 **Each stage's acceptance covers the autonomous part only.** Stage 5.7's walkthrough
 found that the Stage 5.2/5.6 delivery path was unreachable and fixed it under
@@ -27,7 +28,7 @@ constraints are easy to get wrong:
 - **Stage 6.1 was a gap analysis, not implementation, and is now complete.** It
   wrote no interface code. Its measured result is that the terminal interface
   fully expresses **4** of the 82 distinct capabilities an 85-row register
-  classifies, and **3** of 20
+  classifies, and **6** of 25
   human decision classes, and that R11/R45/R46/R47/R70 were all unmeasurable as
   written — which is why that gap survived two accepted stages unnoticed. The
   sub-stage plans for 6.2–6.9 are in

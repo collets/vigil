@@ -33,15 +33,22 @@ The [Stage 5.1–5.7 plan index](../plans/stage-5/README.md#user-input-and-auton
   Stage 5.7's Linux-only evidence missed a `realpath -m` portability defect that
   made the scenario runner unusable on the only platform where native
   validation is required, and the interface is Stage 6's actual deliverable.
-- **Two product gaps found by Stage 6.1 — recorded for a later scope decision,
-  deliberately not built (2026-09-30):** the audit found that the application
-  observes **no cost or usage** (no usage table in the installed schema) and
-  persists **no implementation summary**. R46 and R47 ask for both. Stage 6's
-  scope forbids adding product capability, so 6.1 amended R46/R47 and added
-  P16/P17 to require the *absence* to be rendered as explicitly unavailable
-  rather than as zero, and recorded both gaps in the Stage 6 exclusion register
-  for a user scope decision. If the user wants real cost/usage or real
-  implementation summaries, that is a scope revision, not a Stage 6 task.
+- **Two "product gaps" Stage 6.1 reported were wrong, and the item is withdrawn
+  (2026-09-30):** 6.1 initially recorded that the application observes **no
+  cost or usage** and persists **no implementation summary**, filed both as
+  product gaps outside Stage 6's scope, and weakened R46/R47 to compensate. That
+  was false: `usage_observations` (nullable tokens and cost with
+  `observed`/`estimated` provenance) is written at
+  `internal/supervisor/runner.go:993` and read at
+  `internal/core/finalization.go:532`, and `execution_results_v11` carries a
+  per-attempt `summary` and `changed_paths_json` written at
+  `internal/supervisor/runner.go:1120`. Both are **interface** gaps, owned by
+  Stage 6.5, and neither needs a scope decision. **No user decision is required
+  here.** The correction is recorded at
+  [6.1 §6](../plans/stage-6/6.1-parity-gap-analysis.md#6-correcting-two-claims-this-analysis-originally-got-wrong)
+  rather than edited away, because the error is the kind worth remembering: a
+  `grep` of the interface for `cost` proved the *view* was missing and was
+  wrongly generalised to the *capability*.
 - **Live Codex route — blocked, and owned by Stage 8 (user decision):** this is the
   single hardest blocker on the human stage, because the Codex-dependent walkthrough steps
   cannot run until it is decided. It is deliberately *not* inside Stage 6 or 7, which are

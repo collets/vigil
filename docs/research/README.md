@@ -48,9 +48,14 @@ terminal interface that Stage 7 documents from and Stage 8 tests against, so it
 is accumulated across 6.2–6.9 rather than written per slice. Per-sub-stage
 evidence lands as dated sections in it, and the sub-stage's own review record
 lives beside it as `6.N-review.md`. The parity register in the same document is
-the authoritative classification of every product capability; the
-machine-readable form in the source code is what the mechanical check reads, and
-the document and the table are kept identical by test.
+the authoritative classification of every product capability. It is **prose
+today**: Stage 6.1 created the register and the plans, and sub-stage
+[6.2](../plans/stage-6/6.2-interface-architecture-and-parity-register.md) is
+where it becomes machine-readable — a Go table walked by a test against the real
+Cobra command tree and the real `apply` kind list, with the document and the
+table kept identical by that test. Until 6.2 lands, no such table or test
+exists, and nothing mechanically prevents a command from appearing
+unclassified.
 
 The authoritative description of each evidence file remains the main
 [documentation index](../README.md#evidence-and-reviews).
