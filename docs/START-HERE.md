@@ -75,7 +75,7 @@ the plans, and they are what most questions actually turn on.
 
 ## 4. Plans: start from the slice you are working on
 
-**Start Stage 5.7** → [`plans/stage-5/5.7-end-to-end-qualification.md`](plans/stage-5/5.7-end-to-end-qualification.md), autonomous only.
+**Stage 5.7** (implemented, under independent review) → [`plans/stage-5/5.7-end-to-end-qualification.md`](plans/stage-5/5.7-end-to-end-qualification.md), autonomous only.
 **Start Stage 6 (or 6.1)** → [`plans/stage-6/stage-6.md`](plans/stage-6/stage-6.md); 6.1 is its parity gap analysis and owns planning 6.2 onward.
 **Start Stage 7 (or 7.1)** → [`plans/stage-7/stage-7.md`](plans/stage-7/stage-7.md); 7.1 owns the information architecture and the generator decision.
 **Start Stage 8 (or 8.1)** → [`plans/stage-8/stage-8.md`](plans/stage-8/stage-8.md); this is the human stage, and 8.1 designs the walkthrough and the finding report.
@@ -95,7 +95,7 @@ useful path, not a limit on what you may read.
 | --- | --- |
 | Any Stage 5 work | [`plans/stage-5/README.md`](plans/stage-5/README.md), then the slice you are changing |
 | Stage 5.6 delivery and finalization (**implemented; acceptance scope narrowed to autonomous**) | [`5.6-delivery-and-finalization.md`](plans/stage-5/5.6-delivery-and-finalization.md) |
-| Stage 5.7 autonomous qualification (**next**; not started) | [`5.7-end-to-end-qualification.md`](plans/stage-5/5.7-end-to-end-qualification.md) |
+| Stage 5.7 autonomous qualification (implemented, under review) | [`5.7-end-to-end-qualification.md`](plans/stage-5/5.7-end-to-end-qualification.md) |
 | Stage 6 terminal interface parity (**not started**) | [`stage-6.md`](plans/stage-6/stage-6.md), then 6.1 |
 | Stage 7 documentation website (**not started**) | [`stage-7.md`](plans/stage-7/stage-7.md), then 7.1 |
 | Stage 8 human review (**not started; needs a human**) | [`stage-8.md`](plans/stage-8/stage-8.md), then 8.1 |

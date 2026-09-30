@@ -3,7 +3,7 @@
 <!-- vigil-tier: core -->
 <!-- vigil-status: stage=5.6; stage_accepted=true; implementation_commit=b0a085b5551bf58ab8412e649405eef65a91f61d -->
 
-Status: accepted product direction consolidated on 2026-09-20. The offline core is implemented and independently accepted through Stage 5.6 at `b0a085b`; Stage 5.7 is next, while production execution/model qualification and delivery authority remain gated and no delivery path has been exercised against a real remote (see [next steps](../process/next-steps.md)). This baseline defines intended behavior; it is not an implementation-completion claim.
+Status: accepted product direction consolidated on 2026-09-20. The offline core is implemented and independently accepted through Stage 5.6 at `b0a085b`; Stage 5.7 is implemented and under independent review, while production execution/model qualification and delivery authority remain gated and no delivery path has been exercised against a real remote (see [next steps](../process/next-steps.md)). This baseline defines intended behavior; it is not an implementation-completion claim.
 
 The application owns reliable coordination and state; existing harnesses execute agent work. See [MVP acceptance](mvp-acceptance.md), [architecture](architecture.md), and [discovery history](../history/discovery-notes.md). Detailed design questions are listed below separately.
 

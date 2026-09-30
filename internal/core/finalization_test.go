@@ -1111,27 +1111,41 @@ func TestArchiveRelaxationGuardsAreEachLoadBearing(t *testing.T) {
 	})
 
 	t.Run("delivery commit must sit directly on the accepted head", func(t *testing.T) {
-		// The accepted content is committed twice: HEAD is this plan's own recorded
-		// delivery commit and the tree is clean, but the parent is the first commit
-		// rather than the accepted head. Only the parent guard catches it.
+		// HEAD is this plan's own recorded delivery commit and the checkout is clean,
+		// but that commit's parent is the *first* delivery commit rather than the
+		// accepted head. Only the parent guard can catch it, because head equality and
+		// the content digest both hold.
+		//
+		// An earlier version read the recorded head before creating the second commit,
+		// so the update was a no-op, the head guard fired instead, and removing the
+		// parent guard left the whole suite green. The order matters: create the
+		// commit, then read HEAD, then point the delivery row at it, so the recorded
+		// head really is the current HEAD.
 		_, e, p := setup(t)
 		accepted := seedPreparedPlanWithAcceptedChange(t, e, p.Root, "branch-owned")
 		commitTheAcceptedChange(t, e)
-		// A second recorded commit on top of the first.
 		if _, err := exec.Command("git", "-C", p.Root, "commit", "-q", "--allow-empty", "-m", "second").CombinedOutput(); err != nil {
 			t.Fatal(err)
 		}
-		var second string
-		if err := e.DB.SQL.QueryRowContext(ctx(), "SELECT head_oid FROM deliveries WHERE plan_id='plan' AND kind='commit' AND state='succeeded' ORDER BY rowid DESC LIMIT 1").Scan(&second); err != nil {
+		head := HeadCommit(t, p.Root)
+		if _, err := e.DB.SQL.ExecContext(ctx(), "UPDATE deliveries SET head_oid=? WHERE kind='commit'", head); err != nil {
 			t.Fatal(err)
 		}
-		// Point the recorded delivery at the second commit so only the parent differs.
-		if _, err := e.DB.SQL.ExecContext(ctx(), "UPDATE deliveries SET head_oid=? WHERE kind='commit'", second); err != nil {
+		// Preconditions: every other guard passes, so the parent guard is the only
+		// thing left that can refuse.
+		var recorded string
+		if err := e.DB.SQL.QueryRowContext(ctx(), "SELECT head_oid FROM deliveries WHERE kind='commit'").Scan(&recorded); err != nil {
 			t.Fatal(err)
+		}
+		if recorded != head {
+			t.Fatalf("precondition: the recorded delivery head must be the current HEAD, got %s want %s", recorded, head)
 		}
 		state, err := workspace.Fingerprint(ctx(), p.Root, nil)
-		if err != nil || state.Dirty || state.ContentDigest != accepted.ContentDigest {
-			t.Fatalf("precondition: same accepted content, clean tree: %+v %v", state, err)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state.Dirty || state.ContentDigest != accepted.ContentDigest || state.HeadRef != accepted.HeadRef || state.HeadOID != head {
+			t.Fatalf("precondition: every other guard must pass: %+v", state)
 		}
 		if err := e.acceptedRepositoryStillHolds(ctx(), mustRepository(t, e, "fixture-repo"), accepted); err == nil {
 			t.Fatal("a delivery commit not directly on the accepted head was accepted; only the parent guard can catch this")
@@ -1183,6 +1197,16 @@ func TestArchiveRelaxationGuardsAreEachLoadBearing(t *testing.T) {
 }
 
 func ctx() context.Context { return context.Background() }
+
+// HeadCommit reads the repository's current HEAD commit.
+func HeadCommit(t *testing.T, root string) string {
+	t.Helper()
+	out, err := deliveryGit(ctx(), root, nil, nil, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(out)
+}
 
 func mustRepository(t *testing.T, e *Engine, id string) RepositoryRecord {
 	t.Helper()
@@ -1236,10 +1260,13 @@ func TestPlanCheckoutOwnershipConditionsAreEachLoadBearing(t *testing.T) {
 	})
 
 	t.Run("an operation for a previous repository revision does not confer ownership", func(t *testing.T) {
-		// Re-enrollment creates a new immutable repository revision. An operation
-		// recorded for the previous revision must not carry over, or a stale
-		// preparation would authorise a commit against a repository the application
-		// no longer knows.
+		// Re-enrollment creates a new immutable repository revision. A preparation
+		// recorded against the previous revision must not authorise anything, and
+		// the test queries with the *stale operation's own* branch ref, because
+		// querying with the new plan branch would be refused by the branch_ref clause
+		// and would pass whether or not the revision filter exists. With the filter
+		// gone, this predicate returns true for a superseded revision — a real hole,
+		// not only an unpinned guard.
 		_, e, _ := setup(t)
 		seedAcceptedPlanWithChange(t, e, false)
 		first := mustRepository(t, e, "fixture-repo")
@@ -1251,12 +1278,17 @@ func TestPlanCheckoutOwnershipConditionsAreEachLoadBearing(t *testing.T) {
 		if current.Revision == first.Revision {
 			t.Fatal("precondition: re-enrollment must advance the repository revision")
 		}
-		owned, err := e.applicationOwnsPlanCheckout(ctx(), current, "refs/heads/vigil/replacement")
+		// The stale operation is still there, and still names the old plan ref.
+		var count int
+		if err := e.DB.SQL.QueryRowContext(ctx(), "SELECT count(*) FROM repository_branch_operations WHERE repository_revision=?", first.Revision).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("precondition: the stale operation must still exist: %d %v", count, err)
+		}
+		owned, err := e.applicationOwnsPlanCheckout(ctx(), current, "refs/heads/vigil/fixture")
 		if err != nil {
 			t.Fatal(err)
 		}
 		if owned {
-			t.Fatal("a branch operation recorded for a previous repository revision conferred ownership")
+			t.Fatal("a branch operation recorded for a superseded repository revision conferred ownership")
 		}
 	})
 
@@ -1327,14 +1359,37 @@ func TestPlanCheckoutOwnershipConditionsAreEachLoadBearing(t *testing.T) {
 // ref the application itself prepared, enrolling that way would let a delivery
 // advance the base branch with HEAD sitting on it.
 func TestEnrollmentRefusesAPlanBranchEqualToTheBaseBranch(t *testing.T) {
+	// A fresh root, because reusing the already-enrolled fixture root would be
+	// refused by the unique constraint on repositories.root regardless of the
+	// guard, leaving this test unable to fail. That was the defect in an earlier
+	// version: removing the guard left the suite green.
 	_, e, _ := setup(t)
 	seedAcceptedPlan(t, e)
+	var projectRoot string
+	if err := e.DB.SQL.QueryRowContext(ctx(), "SELECT root FROM project").Scan(&projectRoot); err != nil {
+		t.Fatal(err)
+	}
+	// A distinct repository inside the project root, because reusing the enrolled
+	// root would be refused by the unique constraint on repositories.root
+	// regardless of the guard, leaving this test unable to fail.
+	root := filepath.Join(projectRoot, "collide-repo")
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	initRepository(t, root)
 	for _, planBranch := range []string{"refs/heads/main", "main"} {
 		if _, err := e.Apply(ctx(), Human, envelope(t, e, "repository.enroll", RepositoryEnrollment{
-			ID: "collide", PlanID: "plan", Root: mustRepository(t, e, "fixture-repo").Root,
+			ID: "collide-" + store.ID(), PlanID: "plan", Root: root,
 			BaseRef: "refs/heads/main", PlanBranch: planBranch, DirtyChoice: "clean"})); err == nil {
 			t.Fatalf("enrollment accepted plan_branch=%q, which is the base branch", planBranch)
 		}
+	}
+	// Sanity: the same root and base with a distinct plan branch is accepted, so the
+	// failures above are the guard and not the fixture.
+	if _, err := e.Apply(ctx(), Human, envelope(t, e, "repository.enroll", RepositoryEnrollment{
+		ID: "distinct-" + store.ID(), PlanID: "plan", Root: root,
+		BaseRef: "refs/heads/main", PlanBranch: "vigil/distinct", DirtyChoice: "clean"})); err != nil {
+		t.Fatalf("enrollment refused a legitimate distinct plan branch: %v", err)
 	}
 }
 

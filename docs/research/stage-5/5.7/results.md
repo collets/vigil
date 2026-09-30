@@ -148,10 +148,24 @@ predicate could each be deleted with the entire `internal/core` suite green. It 
 found a false security claim in the predicate's own comment, and a test that was
 vacuous because an empty grant ID failed before ownership was ever consulted.
 
-All of that is now closed. Each guard has a test that only it can catch, and the
-result is mutation-verified rather than asserted: removing any one of the seven
-guards fails the package, and a neutered ownership predicate and deleted refusal
-sites are both caught where they were previously invisible.
+All of that is now closed, and the claim is stated narrowly because a later review
+falsified the broader version of it. Of the nine guards in the two relaxations,
+**six are load-bearing and each fails the package when removed**; **three are
+deliberately redundant** — the content digest, the `gitOID` pre-check, and the
+head-equality guard that subsumes the latter — and each carries a comment saying it
+is defence in depth, so nobody later mistakes it for a load-bearing control. Two
+safety checks introduced by this slice, the live `HEAD` re-read in the index refresh
+and the enrollment guard refusing a plan branch equal to the base branch, are also
+load-bearing and now caught when removed.
+
+Two of the three unpinned guards that review found were not merely untested. The
+parent guard's test read the recorded delivery head *before* creating the commit it
+meant to record, so the head guard fired instead and the parent guard could be
+deleted with the suite green. And the repository-revision test queried with a branch
+the revision filter never had to match — removing the filter let a **superseded**
+repository revision confer ownership of a checkout, which is a real hole rather than
+only a missing test. Both tests now assert their own preconditions, that every other
+guard passes, so they cannot silently stop being isolating.
 
 Three findings from that round are worth carrying forward as facts rather than as
 fixes:
@@ -319,14 +333,16 @@ review evidence afterwards rather than reusing the prior result.
 All R01–R71 are classified: 48 `automated`, **1 `partial`**, 14 carried forward, 8
 gates.
 
-R41 is the partial one, and it is partial rather than automated because of the
-evidence, not the disclosure. R41 requires delivery to *end* at
-merge/pull-request creation. This run's delivery stopped earlier — at the
-draft-request stage, because 5.7-F1 blocked commit and push — so the boundary R41
-names was never exercised. The row records the one fact the run did observe (no
+R41 is the partial one, and it is partial because of the evidence, not the
+disclosure. R41 requires delivery to *end* at merge/pull-request creation. This run's
+delivery now reaches that boundary — commit, push and a draft pull request are all
+created through the production path — but the draft was created against a
+credential-free loopback provider stand-in rather than a real hosting provider, so
+the requirement is demonstrated in command mechanics and boundary enforcement rather
+than against a live destination. The row records the one fact the run observed (no
 merge command, endpoint or transport exists anywhere in the product command
-surface) alongside an explicit statement of what was not observed, and it appears
-in the report's `requirement_gaps` list.
+surface) alongside an explicit statement of what was not observed, and it appears in
+the report's `requirement_gaps` list.
 
 Requirement gaps are reported under their own key rather than folded into the
 milestone/recovery gap list, because a requirement is a different kind of claim
@@ -391,15 +407,21 @@ recovery 20 (14 automated, 4 partial, 2 reused), requirements 71 (48 automated,
 
 The delivery assertions were read back from the native report rather than assumed,
 and they hold on Darwin exactly as on Linux — including the index refresh, which was
-the one part of the fix that depended on Git behaviour rather than on Go:
+the one part of the fix that depended on Git behaviour rather than on Go. The values
+below are the report's own; they are quoted here by assertion name and value, not as
+the verbatim `observed` strings, which carry the formatter's exact punctuation:
 
 ```
-delivery-left-working-tree-bytes-identical  digest 6eb2afd75516 before, 6eb2afd75516 after
-delivery-moved-only-the-plan-ref            refs/heads/vigil/scenario-plan 2ed9eeadc0bb -> 32a63ff178f9
+delivery-left-working-tree-bytes-identical  worktree digest 6eb2afd75516 before, 6eb2afd75516 after, on vigil/scenario-plan
+delivery-moved-only-the-plan-ref            refs/heads/vigil/scenario-plan 2ed9eeadc0bb->32a63ff178f9
 delivery-head-is-the-commit                 32a63ff178f9
-delivery-left-checkout-clean                (no porcelain output)
-no-unintended-remote-refs                   refs/heads/main and refs/heads/vigil/scenario-plan only
+delivery-left-checkout-clean                (observed the empty string: no porcelain lines)
+no-unintended-remote-refs                   refs/heads/main 2ed9eeadc0bb93d3e1595f63d1976faa7e2e57e0 refs/heads/vigil/scenario-plan 32a63ff178f9
 ```
+
+The worktree digest matching the Linux runs exactly is worth noting: it is derived
+from the fixture's own bytes, so a fabricated block would be very unlikely to
+reproduce it.
 
 ### What native validation caught that Linux could not
 

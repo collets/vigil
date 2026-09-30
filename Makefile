@@ -25,20 +25,23 @@ check:
 	$(GO) vet ./...
 	$(GO) test ./...
 check-race:
-	$(GO) test -race ./internal/harness ./internal/spike ./internal/store ./internal/artifacts ./internal/core ./internal/coordinator ./internal/boundary ./internal/checkpoint ./internal/supervisor ./internal/checks ./internal/review ./internal/quality ./internal/tui ./internal/cli ./internal/tools ./internal/mcp ./internal/workspace
+	$(GO) test -race ./internal/harness ./internal/spike ./internal/store ./internal/artifacts ./internal/core ./internal/coordinator ./internal/boundary ./internal/checkpoint ./internal/supervisor ./internal/checks ./internal/review ./internal/quality ./internal/tui ./internal/cli ./internal/tools ./internal/mcp ./internal/workspace ./internal/scenario ./cmd/vigil-scenario
 docs-check:
 	$(GO) test ./internal/doccheck -count=1 -v
 cross-build:
 	@set -e; for os in linux darwin; do for arch in amd64 arm64; do \
 		echo "Building $$os/$$arch"; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -o dist/vigil-$$os-$$arch ./cmd/vigil; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -o dist/vigil-scenario-$$os-$$arch ./cmd/vigil-scenario; \
 	done; done
 
 # Stage 5.7 autonomous end-to-end qualification. `make scenario` drives the real
-# production binary as a subprocess against a disposable fixture and is fully
-# offline: it contacts no model provider, no hosting service and no real remote.
-# The opt-in targets below add bounded live capability and are never part of
-# `make check`.
+# production binary as a subprocess against a disposable fixture. It contacts no
+# model provider, no hosting service and no real remote. It does make one bounded
+# metadata GET against the loopback route when one is configured on the host, to
+# record that route's identity; it never issues a prompt, never follows a redirect
+# and never leaves the loopback interface. The opt-in targets below add bounded
+# live capability and are never part of `make check`.
 # The scenario root must live OUTSIDE the checkout: the walkthrough creates and
 # removes its own disposable tree, and it refuses any root inside a repository so
 # it can never touch an operator's working copy.

@@ -79,7 +79,7 @@ should do*, not for what is implemented. Implementation status lives in
 | [`plans/stage-5/5.4-quality-and-acceptance.md`](plans/stage-5/5.4-quality-and-acceptance.md) | Stage 5.4 checks, review, repair and acceptance |
 | [`plans/stage-5/5.5-workflow-and-planning.md`](plans/stage-5/5.5-workflow-and-planning.md) | Stage 5.5 workflow and planning (**independently accepted offline**) |
 | [`plans/stage-5/5.6-delivery-and-finalization.md`](plans/stage-5/5.6-delivery-and-finalization.md) | Stage 5.6 delivery and finalization (**implemented; autonomous scope only; human gates deferred to Stage 8**) |
-| [`plans/stage-5/5.7-end-to-end-qualification.md`](plans/stage-5/5.7-end-to-end-qualification.md) | Stage 5.7 autonomous end-to-end qualification (**not started**; human steps moved to Stage 8) |
+| [`plans/stage-5/5.7-end-to-end-qualification.md`](plans/stage-5/5.7-end-to-end-qualification.md) | Stage 5.7 autonomous end-to-end qualification (implemented, under review; human steps moved to Stage 8) |
 | [`plans/stage-5/stage-5-plan.md`](plans/stage-5/stage-5-plan.md) | Stage 5 backlog and R01–R71 stage mapping |
 | [`plans/stage-5/stage-5-execution.md`](plans/stage-5/stage-5-execution.md) | Stage 5 implementation order and checkpoints |
 | [`plans/stage-5/stage-5-boundary.md`](plans/stage-5/stage-5-boundary.md) | Execution boundary and qualification contract |
@@ -153,7 +153,7 @@ left as the reviewer saw them, so a quoted path may no longer exist — see
 | [`research/stage-5/5.5/qualification-input.md`](research/stage-5/5.5/qualification-input.md) | Visible credential-free review copy of the immutable Stage 5.5 qualification Markdown input |
 | [`research/stage-5/5.5/qualification-proposal.md`](research/stage-5/5.5/qualification-proposal.md) | Human-readable review copy of exact pending qualification proposal revision 1 |
 | [`research/stage-5/5.6/results.md`](research/stage-5/5.6/results.md) | Stage 5.6 implementation, review and validation evidence (**accepted `b0a085b`, autonomous scope only; human gates in Stage 8**) |
-| [`research/stage-5/5.7/results.md`](research/stage-5/5.7/results.md) | Stage 5.7 autonomous qualification evidence, the evidence matrix, and **blocking finding 5.7-F1** (unreachable delivery path) |
+| [`research/stage-5/5.7/results.md`](research/stage-5/5.7/results.md) | Stage 5.7 autonomous qualification evidence, the evidence matrix, and **finding 5.7-F1** (the delivery path was unreachable; fixed in the Stage 5.2/5.6 slice) |
 | `research/stage-5/5.2/review-probes/`, `research/stage-5/5.3/review-probes/`, `research/stage-5/5.4/review-probes/` | Retained inert review probes (`.go.txt`) |
 
 Review probes are stored as `.go.txt` so they cannot compile. To run one, copy it
