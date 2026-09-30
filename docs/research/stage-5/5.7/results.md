@@ -148,15 +148,13 @@ predicate could each be deleted with the entire `internal/core` suite green. It 
 found a false security claim in the predicate's own comment, and a test that was
 vacuous because an empty grant ID failed before ownership was ever consulted.
 
-All of that is now closed, and the claim is stated narrowly because a later review
-falsified the broader version of it. Of the nine guards in the two relaxations,
-**six are load-bearing and each fails the package when removed**; **three are
-deliberately redundant** — the content digest, the `gitOID` pre-check, and the
-head-equality guard that subsumes the latter — and each carries a comment saying it
-is defence in depth, so nobody later mistakes it for a load-bearing control. Two
-safety checks introduced by this slice, the live `HEAD` re-read in the index refresh
-and the enrollment guard refusing a plan branch equal to the base branch, are also
-load-bearing and now caught when removed.
+All of that is now closed, and the coverage claim is stated as an explicit table
+because two reviews have now corrected it. Of the eleven refusal guards in the two
+relaxations, **nine are load-bearing and each fails the `internal/core` package when
+removed**; **two are deliberately redundant** — the `gitOID` pre-check, which
+head-equality subsumes exactly, and the content-digest disjunct. Neither redundant
+guard fails the suite when removed, and each carries a comment saying it is defence
+in depth, so nobody later mistakes it for a load-bearing control.
 
 Two of the three unpinned guards that review found were not merely untested. The
 parent guard's test read the recorded delivery head *before* creating the commit it
@@ -166,6 +164,14 @@ the revision filter never had to match — removing the filter let a **supersede
 repository revision confer ownership of a checkout, which is a real hole rather than
 only a missing test. Both tests now assert their own preconditions, that every other
 guard passes, so they cannot silently stop being isolating.
+
+The index refresh's live `HEAD` re-read was unpinned for one further round and is
+now covered too, by calling `refreshIndexForMovedHead` directly with a checkout whose
+HEAD no longer names the committed ref.
+
+One honest limit on the evidence itself: the content digest's redundancy rests on a
+mutation result — no test distinguishes it from the dirty flag — not on a proof. The
+code comment says exactly that rather than upgrading it to established subsumption.
 
 Three findings from that round are worth carrying forward as facts rather than as
 fixes:
@@ -366,6 +372,32 @@ an independent reviewer spot-checked the citations substantively instead.
 R09 is a gate on its own merits: Jev was considered as an optional aid to
 model/task selection and no integration or evidence of benefit was ever recorded,
 so nothing supports it. Its originally proposed citation did not cover it either.
+
+## Sanitized delivery reference
+
+The plan requires a sanitized delivery reference, so it is recorded here rather than
+left only in the disposable root. It is sanitized by construction rather than by
+redaction: the destination is a local bare remote and a loopback provider stand-in,
+so there is no real hosted reference to redact, and no credential value is present.
+
+| Field | Value |
+| --- | --- |
+| destination api_base | `http://127.0.0.1:<port>` — a loopback stand-in, not a provider |
+| destination project | `vigil-scenario/fixture` — a fixture, not a real repository |
+| provider | `github` (named only; no GitHub endpoint is contacted) |
+| credential_ref / value | empty / "never recorded; the trusted application reads it from the named environment variable only" |
+| head | the plan-ref commit the rehearsal created |
+| base | the base-branch commit the draft proposed as its merge target |
+| grant | the one once-scoped grant consumed by the draft triple |
+| production | `false`, `rehearsed: true` |
+
+The same content is written by the walkthrough to `stage-8-delivery-inputs.json` in
+the disposable root, which is what the created draft's verified loopback URL points
+at. The port is assigned per run and is not stable, which is why it is recorded as
+`<port>` rather than as a value a reader might try to reach. **There is no real
+delivery reference in this document, and there cannot be one:** a real push and a
+real hosted draft request require the user's per-operation authorization and are
+Stage 8 operations.
 
 ## Capability gates
 

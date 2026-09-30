@@ -612,21 +612,24 @@ func acceptedRepositoryStateIsHonoured(ctx context.Context, root string, accepte
 		return nil
 	}
 	// Also redundant with the head-equality guard below, which refuses an empty
-	// `deliveryHead` identically. It is kept for the same reason and the same reason
-	// it is not load-bearing: it says what went wrong, rather than leaving the
-	// message to name a head that does not exist. Removing it does not fail the
-	// suite, and a test that claimed otherwise would be wrong.
+	// `deliveryHead` identically. It is kept for the same reason the content digest
+	// is kept, and is not load-bearing for the same reason: it says what went wrong,
+	// rather than leaving the message to name a head that does not exist. Removing it
+	// does not fail the suite, and a test claiming otherwise would be wrong.
 	if !gitOID(deliveryHead) {
 		return errors.New("accepted repository no longer matches the accepted task fingerprint")
 	}
 	// The content digest walks the working tree and the dirty flag is Git's own
 	// comparison of the index against the head tree, the worktree against the index,
-	// untracked files and abnormal index entries. Every difference the digest can
-	// see is therefore already reported by `Dirty`, so this guard is deliberately
-	// redundant: it is kept as a second opinion because it walks the bytes on disk
-	// directly, whereas `Dirty` trusts Git's view of them. A comment in the test
-	// records that it is defence in depth rather than an independently load-bearing
-	// check, so no one later mistakes it for one.
+	// untracked files and abnormal index entries. That strongly suggests every
+	// difference the digest can see is already reported by `Dirty`; the evidence
+	// actually established is weaker than the conclusion, and is worth stating as it
+	// is: removing the digest disjunct does not fail the suite, so no test
+	// distinguishes the two, and an attempt to isolate it with an untracked file
+	// failed because the checkout was dirty. It is kept as a second opinion anyway —
+	// it walks the bytes on disk directly, whereas `Dirty` trusts Git's view of them
+	// — and a comment in the test records that it is defence in depth rather than an
+	// independently load-bearing check, so no one later mistakes it for one.
 	if observed.ContentDigest != expected.ContentDigest || observed.HeadRef != expected.HeadRef || observed.Dirty {
 		return errors.New("accepted repository no longer matches the accepted task fingerprint")
 	}

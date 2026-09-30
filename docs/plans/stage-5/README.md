@@ -104,12 +104,15 @@ No immediate answer is required to begin implementation. A plan may be autonomou
     [Stage 8](../stage-8/stage-8.md). This acceptance is **not** evidence that
     any of those paths works against a real remote or a real hosting provider;
     that evidence does not exist yet.
-- [ ] 5.7 autonomous end-to-end evidence produced, limitations recorded.
-  - **No longer closes Stage 5**, and no longer claims the milestone is
+- [x] 5.7 autonomous end-to-end evidence produced, limitations recorded.
+  - **Does not close Stage 5**, and does not claim the milestone is
     demonstrated. Its human steps moved to
     [Stage 8](../stage-8/stage-8.md); a partially completed walkthrough recorded
     honestly is the acceptable outcome, a walkthrough reported as passed when it
-    did not happen is not.
+    did not happen is not. The evidence document is
+    [5.7 results](../../research/stage-5/5.7/results.md); the box is ticked because
+    the evidence exists and its limitations are recorded, **not** because the slice
+    is accepted.
 - [ ] Stage 6 terminal interface parity and its complete feature list.
 - [ ] Stage 7 user-facing documentation website.
 - [ ] Stage 8 human review of the product, with a bulk finding report.

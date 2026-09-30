@@ -1393,6 +1393,67 @@ func TestEnrollmentRefusesAPlanBranchEqualToTheBaseBranch(t *testing.T) {
 	}
 }
 
+// TestIndexRefreshRefusesWhenHeadNoLongerNamesTheCommittedRef pins the live HEAD
+// re-read in refreshIndexForMovedHead.
+//
+// Reaching that re-read through ExecuteCommit would require the checkout to move
+// between the plan-ref update and the refresh, which no unit test can arrange. The
+// guard is therefore pinned directly: the function is given a checkout whose HEAD no
+// longer names the target, and it must refuse rather than refresh an index against a
+// commit that is no longer checked out. Refresh for a path outside the moved HEAD's
+// commit would leave the operator's index describing a tree they are not on.
+//
+// Without this test the guard was removable with the whole suite green while the
+// documentation claimed it was pinned.
+func TestIndexRefreshRefusesWhenHeadNoLongerNamesTheCommittedRef(t *testing.T) {
+	_, e, p := setup(t)
+	seedPreparedPlanWithAcceptedChange(t, e, p.Root, "branch-owned")
+	record := mustRepository(t, e, "fixture-repo")
+	commitOID := commitTheAcceptedChangeReturningOID(t, e)
+	// The person moves off the plan ref after the commit, so HEAD no longer names
+	// it. `checkedOut` still says the plan ref, which is exactly the stale input the
+	// re-read exists to distrust.
+	if _, err := exec.Command("git", "-C", p.Root, "checkout", "-q", "main").CombinedOutput(); err != nil {
+		t.Fatal(err)
+	}
+	// The baseline is taken *after* the checkout, because switching branches rewrites
+	// the index itself. What must not change is the index from here on.
+	before, err := workspace.Fingerprint(ctx(), p.Root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent := CommitIntent{PlanID: "plan", RepositoryID: "fixture-repo", RepositoryRevision: record.Revision,
+		TargetRef: "refs/heads/vigil/fixture", Paths: []string{"src/new.txt"}}
+	if err := e.refreshIndexForMovedHead(ctx(), record, intent, commitOID, "refs/heads/vigil/fixture"); err == nil {
+		t.Fatal("the index was refreshed although HEAD no longer names the committed ref")
+	}
+	after, err := workspace.Fingerprint(ctx(), p.Root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.IndexDigest != before.IndexDigest {
+		t.Fatal("the refused refresh still modified the operator's index")
+	}
+}
+
+// commitTheAcceptedChangeReturningOID runs the commit triple and returns the commit
+// object it produced.
+func commitTheAcceptedChangeReturningOID(t *testing.T, e *Engine) string {
+	t.Helper()
+	c := ctx()
+	prepared, err := e.PrepareCommit(c, CommitRequest{CommandID: "commit-refresh-" + store.ID(), PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Add accepted change", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: prepared.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	result, err := e.ExecuteCommit(c, prepared.OperationID, grant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result.CommitOID
+}
+
 func TestCommitPreviewRejectsChangedAcceptedBytes(t *testing.T) {
 	_, e, p := setup(t)
 	seedAcceptedPlanWithChange(t, e, true)
