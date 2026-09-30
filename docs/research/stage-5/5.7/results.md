@@ -429,7 +429,7 @@ host-portability defects were fixed.
 | --- | --- |
 | `make check` | pass |
 | `make docs-check` | pass |
-| `make check-race` | pass |
+| `make check-race` | pass — but see the limit below: this did not yet include `internal/scenario` or `cmd/vigil-scenario` |
 | `make scenario-guard-check` | pass |
 | `make scenario` | **333 steps, 50 assertions, 0 failed, `aborted: false`, no `unmet` row** |
 
@@ -480,6 +480,23 @@ and with both variables unset: identical totals, no `unmet` row, no abort.
 
 Both are the kind of defect only a second operating system finds, and both would have
 made the stage's native validation claim impossible to make honestly.
+
+### One limit of that native evidence, stated precisely
+
+The `make check-race` row above did **not** cover this slice's own packages. At
+`1146230` the `check-race` target listed neither `./internal/scenario` nor
+`./cmd/vigil-scenario`; they were added afterwards, on Linux. So natively on macOS:
+
+- `make check` ran `go test ./...`, which **did** include both packages — they are
+  race-clean natively;
+- the scenario binary **was** built and run natively, and its walkthrough completed;
+- but the `-race` variants of those packages' tests are **Linux-side only**, and so
+  is their darwin cross-build.
+
+`make cross-build` on Linux compiles the scenario binary for darwin/amd64 and
+darwin/arm64, which is a compile check and not equivalent to native execution. A
+reviewer that reads "pass" in the race row as native race coverage of the scenario
+packages would be wrong, so it is stated here rather than left to be inferred.
 
 ## What was not verified
 

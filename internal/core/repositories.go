@@ -612,10 +612,11 @@ func acceptedRepositoryStateIsHonoured(ctx context.Context, root string, accepte
 		return nil
 	}
 	// Also redundant with the head-equality guard below, which refuses an empty
-	// `deliveryHead` identically. It is kept for the same reason the content digest
-	// is kept, and is not load-bearing for the same reason: it says what went wrong,
-	// rather than leaving the message to name a head that does not exist. Removing it
-	// does not fail the suite, and a test claiming otherwise would be wrong.
+	// `deliveryHead` identically, so it is not independently load-bearing either.
+	// Its own reason for existing is different from the digest's: it says what went
+	// wrong, rather than leaving the message to name a head that does not exist.
+	// Removing it does not fail the suite, and a test claiming otherwise would be
+	// wrong.
 	if !gitOID(deliveryHead) {
 		return errors.New("accepted repository no longer matches the accepted task fingerprint")
 	}
