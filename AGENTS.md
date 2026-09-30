@@ -1,22 +1,23 @@
 # AGENTS.md
 
-<!-- vigil-status: stage=5.6; stage_accepted=true; implementation_commit=b0a085b5551bf58ab8412e649405eef65a91f61d -->
+<!-- vigil-status: stage=5.7; stage_accepted=true; implementation_commit=522cb967f732b578a66c051cf8938dd00584d238 -->
 
 Instructions for any agent working in this repository. Read this before changing code.
 
 Vigil is a local control panel that runs existing agent harnesses (Codex, Hermes)
 through a Go core with SQLite state. It is **pre-release**: the offline core through
-Stage 5.6 is implemented and independently accepted at implementation commit
-`b0a085b`, and production dispatch is deliberately disabled.
+Stage 5.7 is implemented and independently accepted at implementation commit
+`522cb96`, and production dispatch is deliberately disabled.
 
-**Stage 5.6's acceptance covers the autonomous part only**: the delivery,
-finalization, archive and retention paths are implemented, reviewed and
-validated. No human has exercised them against a real remote or a real hosting
-provider, and no such evidence exists. Human-gated operations are Stage 8's. Do
-not enable production dispatch.
+**Each stage's acceptance covers the autonomous part only.** Stage 5.7's walkthrough
+found that the Stage 5.2/5.6 delivery path was unreachable and fixed it under
+explicit authorization; delivery is now reached end to end. No human has exercised
+any delivery path against a real remote or a real hosting provider, and no such
+evidence exists. Human-gated operations are Stage 8's. Do not enable production
+dispatch.
 
 **Do not start a stage without an explicit instruction naming it.** The stage
-order is Stage 5.7 (autonomous qualification) → Stage 6 (terminal interface
+order is now Stage 6 (terminal interface
 parity) → Stage 7 (documentation website) → Stage 8 (human review), and
 `docs/START-HERE.md` routes to each. Stages 6–8 were added by explicit user
 scope revision on 2026-09-29; the original roadmap defined Stages 1–5 only. Two

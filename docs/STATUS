@@ -13,10 +13,10 @@
 # Historical per-stage plans/results are intentionally not live status documents.
 # See AGENTS.md, section "Documentation obligations".
 
-stage=5.6
+stage=5.7
 stage_accepted=true
-implementation_commit=b0a085b5551bf58ab8412e649405eef65a91f61d
-review_record=docs/research/stage-5/5.6/results.md
+implementation_commit=522cb967f732b578a66c051cf8938dd00584d238
+review_record=docs/research/stage-5/5.7/results.md
 project_migrations=19
 coordination_migrations=2
 entry_point=docs/START-HERE.md

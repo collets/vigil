@@ -1,12 +1,12 @@
 # Vigil documentation index
 
 <!-- vigil-tier: index -->
-<!-- vigil-status: stage=5.6; stage_accepted=true; implementation_commit=b0a085b5551bf58ab8412e649405eef65a91f61d -->
+<!-- vigil-status: stage=5.7; stage_accepted=true; implementation_commit=522cb967f732b578a66c051cf8938dd00584d238 -->
 
 Vigil is a local control panel that runs existing agent harnesses through a Go core
 with SQLite state. It is pre-release: the offline core is
-implemented and independently accepted through Stage 5.6 at implementation
-commit `b0a085b`, and production dispatch is deliberately disabled. Stage 5.6's
+implemented and independently accepted through Stage 5.7 at implementation
+commit `522cb96`, and production dispatch is deliberately disabled. Each stage's
 acceptance covers its **autonomous** scope; every human-gated operation is
 deferred to Stage 8, and no delivery path has been exercised against a real
 remote. Stages 6 (terminal interface
@@ -79,7 +79,7 @@ should do*, not for what is implemented. Implementation status lives in
 | [`plans/stage-5/5.4-quality-and-acceptance.md`](plans/stage-5/5.4-quality-and-acceptance.md) | Stage 5.4 checks, review, repair and acceptance |
 | [`plans/stage-5/5.5-workflow-and-planning.md`](plans/stage-5/5.5-workflow-and-planning.md) | Stage 5.5 workflow and planning (**independently accepted offline**) |
 | [`plans/stage-5/5.6-delivery-and-finalization.md`](plans/stage-5/5.6-delivery-and-finalization.md) | Stage 5.6 delivery and finalization (**implemented; autonomous scope only; human gates deferred to Stage 8**) |
-| [`plans/stage-5/5.7-end-to-end-qualification.md`](plans/stage-5/5.7-end-to-end-qualification.md) | Stage 5.7 autonomous end-to-end qualification (implemented, under review; human steps moved to Stage 8) |
+| [`plans/stage-5/5.7-end-to-end-qualification.md`](plans/stage-5/5.7-end-to-end-qualification.md) | Stage 5.7 autonomous end-to-end qualification (independently accepted for its autonomous scope; human steps moved to Stage 8) |
 | [`plans/stage-5/stage-5-plan.md`](plans/stage-5/stage-5-plan.md) | Stage 5 backlog and R01–R71 stage mapping |
 | [`plans/stage-5/stage-5-execution.md`](plans/stage-5/stage-5-execution.md) | Stage 5 implementation order and checkpoints |
 | [`plans/stage-5/stage-5-boundary.md`](plans/stage-5/stage-5-boundary.md) | Execution boundary and qualification contract |

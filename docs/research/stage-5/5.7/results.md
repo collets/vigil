@@ -2,11 +2,15 @@
 
 <!-- vigil-tier: evidence -->
 
-Status: **implemented, under independent review; not accepted.** The walkthrough
-runs and produces a complete, honest record. Blocking product defect 5.7-F1 was
-found by this slice, fixed in the Stage 5.2/5.6 delivery path, and delivery is now
-reached end to end. This slice still does **not** claim the milestone is
-demonstrated: two milestone steps and eight requirements are owned human gates.
+Status: **accepted at `522cb96` for the autonomous scope**, 2026-09-30. The
+walkthrough runs, produces a complete honest record, and reaches commit, push and
+draft delivery end to end with no `unmet` row. Blocking product defect 5.7-F1 was
+found by this slice, fixed in the Stage 5.2/5.6 delivery path under explicit
+authorization, and reviewed in its own right.
+
+Acceptance covers the autonomous part only: this slice does **not** claim the
+milestone is demonstrated, because two milestone steps and eight requirements are
+owned human gates that are Stage 8's.
 
 ## What this is
 

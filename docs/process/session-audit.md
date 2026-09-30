@@ -1,7 +1,7 @@
 # Session continuity audit
 
 <!-- vigil-tier: process -->
-<!-- vigil-status: stage=5.6; stage_accepted=true; implementation_commit=b0a085b5551bf58ab8412e649405eef65a91f61d -->
+<!-- vigil-status: stage=5.7; stage_accepted=true; implementation_commit=522cb967f732b578a66c051cf8938dd00584d238 -->
 
 Audited 2026-09-20 against the available conversation and project documents. Purpose: preserve product intent, accepted decisions, alternatives, unresolved questions, and implementation evidence for a new session.
 
@@ -14,7 +14,7 @@ Audited 2026-09-20 against the available conversation and project documents. Pur
 4. [Architecture](../core/architecture.md) and topic documents below: design direction and proposals.
 5. [Harness investigation](../core/harness-capabilities.md) and [probe evidence](../research/stage-1/harness-probe-results.json): observed capabilities versus untested assumptions.
 
-The discovery history is chronological; an early “open” statement does not override a later accepted decision. Research recommendations and the next-step plan are not new user-approved product requirements. The application is **no longer** a hello-world scaffold: the offline core is implemented and independently accepted through Stage 5.6 at `b0a085b` for its autonomous scope, and Stage 5.7 is implemented and under independent review. This audit's historical status statements remain dated records; take current state from [next steps](next-steps.md).
+The discovery history is chronological; an early “open” statement does not override a later accepted decision. Research recommendations and the next-step plan are not new user-approved product requirements. The application is **no longer** a hello-world scaffold: the offline core is implemented and independently accepted through Stage 5.6 at `b0a085b` for its autonomous scope, and Stage 5.7 is independently accepted for its autonomous scope. This audit's historical status statements remain dated records; take current state from [next steps](next-steps.md).
 
 Provenance limit: several available user messages answer numbered questions with “yes,” “your suggestion,” or similar shorthand, while the corresponding earlier assistant proposals are not available verbatim in the conversation supplied for this audit. Existing discovery notes preserve their interpreted meaning. Those interpretations are retained, not presented as reconstructed quotations. No verbatim transcript or guarantee of recovering every unavailable proposal is claimed. If an ambiguity affects implementation, use the explicit requirements and ask a focused question rather than inventing the missing exchange.
 

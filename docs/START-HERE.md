@@ -1,7 +1,7 @@
 # Start here: reading Vigil's documentation
 
 <!-- vigil-tier: entry -->
-<!-- vigil-status: stage=5.6; stage_accepted=true; implementation_commit=b0a085b5551bf58ab8412e649405eef65a91f61d -->
+<!-- vigil-status: stage=5.7; stage_accepted=true; implementation_commit=522cb967f732b578a66c051cf8938dd00584d238 -->
 
 Vigil is a local control panel that runs existing agent harnesses (Codex, Hermes)
 through a Go core with SQLite state. It is **pre-release**: the offline core
@@ -75,7 +75,7 @@ the plans, and they are what most questions actually turn on.
 
 ## 4. Plans: start from the slice you are working on
 
-**Stage 5.7** (implemented, under independent review) → [`plans/stage-5/5.7-end-to-end-qualification.md`](plans/stage-5/5.7-end-to-end-qualification.md), autonomous only.
+**Stage 5.7** (independently accepted for its autonomous scope) → [`plans/stage-5/5.7-end-to-end-qualification.md`](plans/stage-5/5.7-end-to-end-qualification.md), autonomous only.
 **Start Stage 6 (or 6.1)** → [`plans/stage-6/stage-6.md`](plans/stage-6/stage-6.md); 6.1 is its parity gap analysis and owns planning 6.2 onward.
 **Start Stage 7 (or 7.1)** → [`plans/stage-7/stage-7.md`](plans/stage-7/stage-7.md); 7.1 owns the information architecture and the generator decision.
 **Start Stage 8 (or 8.1)** → [`plans/stage-8/stage-8.md`](plans/stage-8/stage-8.md); this is the human stage, and 8.1 designs the walkthrough and the finding report.
