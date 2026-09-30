@@ -115,7 +115,7 @@ No immediate answer is required to begin implementation. A plan may be autonomou
     is accepted.
 - [ ] Stage 6 terminal interface parity and its complete feature list.
       **6.1 is implemented, was rejected by its first independent review,
-      returned conditional by each of six further reviews, and all seven rounds
+      returned conditional by each of seven further reviews, and all eight rounds
       of findings are remediated pending one more confirming review**; the box
       stays unticked: 6.1 was the gap analysis, and Stage 6 still has 6.2–6.9 to
       implement. The measured gap, the parity register and the feature list are

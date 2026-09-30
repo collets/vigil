@@ -13,7 +13,7 @@ remote. Stages 6 (terminal interface
 parity), 7 (documentation website) and 8 (human review) were added by explicit
 user scope revision on 2026-09-29.
 
-**Stage 6.1 is implemented, was rejected by its first independent review, was returned conditional by each of six further reviews, and all seven rounds of findings are remediated pending one more confirming review.** It was the parity gap
+**Stage 6.1 is implemented, was rejected by its first independent review, was returned conditional by each of seven further reviews, and all eight rounds of findings are remediated pending one more confirming review.** It was the parity gap
 analysis, so it wrote no interface code. It measured the interface and the
 product surface from the code and the built binary, found that the interface
 fully expresses 4 of the 82 distinct capabilities the 85-row register classifies, and 6 of the 25 human
