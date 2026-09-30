@@ -58,22 +58,6 @@ The application owns reliable coordination and state; existing harnesses execute
 | R45 | Prioritize task progression and actionable user requests on the main dashboard: one screen shows the active plan, the current task and its blocker, the queue position, the live run and session state, the compact per-task quality status, and the actionable request list, all without navigating away. Agent activity is a bounded, sanitized view of persisted run, session and event state, never raw harness output |
 | R46 | Put change records (paths, artifact references and commit references), quality results, and cost or usage information in secondary views that are navigable from a visible focus |
 | R47 | Show in the human review screen each reviewer finding's severity, blocking status and text, the implementation summary for the current attempt, and each check result's status, exit state and evidence reference; state where to inspect code and diffs, which stay in external IDE tools |
-
-R46 and R47 keep their original force on cost/usage and implementation summary.
-Both are **satisfied from data the application already persists**: token usage
-and cost live in `usage_observations` with `observed`/`estimated` provenance,
-and the per-attempt implementation summary and changed-path record live in
-`execution_results_v11`. The gap is that no read model or interface screen
-surfaces either, which is an interface gap owned by
-[Stage 6.5](../plans/stage-6/6.5-quality-review-and-evidence-views.md) — not a
-missing capability, and not grounds for excluding either clause. An earlier
-draft of the 6.1 analysis claimed both capabilities were absent; that claim was
-false, and the correction is recorded in
-[6.1 §6](../plans/stage-6/6.1-parity-gap-analysis.md#6-correcting-two-claims-this-analysis-originally-got-wrong).
-
-The honesty obligation — an unobserved quantity renders as explicitly
-unavailable, never as zero — lives in P07 and P16, not inside R46 or R47. It
-governs the **view**; it must never be used to excuse a missing **capability**.
 | R48 | Show human verification checklists only for task requirements that need manual functional verification |
 | R49 | Automatically save and clear agent-owned changes while preserving pre-existing user work; request approval to bring a saved attempt back |
 | R50 | Produce commits per task, allowing multiple commits where they improve clarity, subject to commit authorization |
@@ -100,6 +84,27 @@ governs the **view**; it must never be used to excuse a missing **capability**.
 | R71 | Coordinate workspace ownership and shared local inference capacity across application instances without requiring background agent execution |
 
 The user selected the project name Vigil after Stage 1, approved Go, Cobra, Bubble Tea, and SQLite, and requested technology selection followed by functional analysis before workflow design.
+
+### Two clauses of R46 and R47 that the product already satisfies
+
+R46 and R47 keep their original force on cost/usage and on the implementation
+summary. Both are satisfiable from data the application **already persists**:
+token usage and cost live in `usage_observations` with `observed`/`estimated`
+provenance, and the per-attempt implementation summary and changed-path record
+live in `execution_results_v11`. The gap is that no read model or interface
+screen surfaces either, which is an interface gap owned by
+[Stage 6.5](../plans/stage-6/6.5-quality-review-and-evidence-views.md) — not a
+missing capability, and not grounds for excluding either clause. An earlier
+draft of the 6.1 analysis claimed both capabilities were absent; that claim was
+false, and the correction is recorded in
+[6.1 §6](../plans/stage-6/6.1-parity-gap-analysis.md#6-correcting-two-claims-this-analysis-originally-got-wrong).
+
+The honesty obligation — an unobserved quantity renders as explicitly
+unavailable, never as zero — lives in P07 and P16, not inside R46 or R47. It
+governs the **view**, and it must never be used to excuse a missing
+**capability**. That substitution is what the false claim above briefly
+enabled, and it is the reason the rule is stated here as a prohibition rather
+than only as a rendering instruction.
 
 ## Proposed verification conditions
 

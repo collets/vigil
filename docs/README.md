@@ -13,7 +13,7 @@ remote. Stages 6 (terminal interface
 parity), 7 (documentation website) and 8 (human review) were added by explicit
 user scope revision on 2026-09-29.
 
-**Stage 6.1 is implemented; its first independent review rejected it and the remediation awaits a narrow follow-up.** It was the parity gap
+**Stage 6.1 is implemented, was rejected by its first independent review, was returned conditional by a narrow follow-up, and has both sets of findings remediated pending a final confirming review.** It was the parity gap
 analysis, so it wrote no interface code. It measured the interface and the
 product surface from the code and the built binary, found that the interface
 fully expresses 4 of the 82 distinct capabilities the 85-row register classifies, and 6 of the 25 human
@@ -171,7 +171,7 @@ left as the reviewer saw them, so a quoted path may no longer exist — see
 | [`research/stage-5/5.5/qualification-proposal.md`](research/stage-5/5.5/qualification-proposal.md) | Human-readable review copy of exact pending qualification proposal revision 1 |
 | [`research/stage-5/5.6/results.md`](research/stage-5/5.6/results.md) | Stage 5.6 implementation, review and validation evidence (**accepted `b0a085b`, autonomous scope only; human gates in Stage 8**) |
 | [`research/stage-5/5.7/results.md`](research/stage-5/5.7/results.md) | Stage 5.7 autonomous qualification evidence, the evidence matrix, and **finding 5.7-F1** (the delivery path was unreachable; fixed in the Stage 5.2/5.6 slice) |
-| [`research/stage-6/results.md`](research/stage-6/results.md) | **Stage 6 results:** the measured interface inventory with screen captures, the 85-entry **parity register**, the exclusion and product-gap register, and the **feature list** — Stage 6's required deliverable. Skeleton created by 6.1; completed by 6.9 |
+| [`research/stage-6/results.md`](research/stage-6/results.md) | **Stage 6 results:** the measured interface inventory with screen captures, the 85-entry **parity register**, the closed **exclusion register**, and the **feature list** — Stage 6's required deliverable. Skeleton created by 6.1; completed by 6.9 |
 | [`research/stage-6/6.1-review.md`](research/stage-6/6.1-review.md) | Stage 6.1 independent adversarial review record, findings and verdict |
 | `research/stage-5/5.2/review-probes/`, `research/stage-5/5.3/review-probes/`, `research/stage-5/5.4/review-probes/` | Retained inert review probes (`.go.txt`) |
 

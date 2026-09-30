@@ -114,8 +114,9 @@ No immediate answer is required to begin implementation. A plan may be autonomou
     the evidence exists and its limitations are recorded, **not** because the slice
     is accepted.
 - [ ] Stage 6 terminal interface parity and its complete feature list.
-      **6.1 is implemented, was rejected by its first independent review, and is
-      remediated pending a narrow follow-up**; the box stays unticked: 6.1 was the gap analysis, and Stage 6 still has 6.2–6.9 to
+      **6.1 is implemented, was rejected by its first independent review, returned
+      conditional by a narrow follow-up, and is remediated pending a final
+      confirming review**; the box stays unticked: 6.1 was the gap analysis, and Stage 6 still has 6.2–6.9 to
       implement. The measured gap, the parity register and the feature list are
       in [6.1's analysis](../stage-6/6.1-parity-gap-analysis.md) and
       [the results document](../../research/stage-6/results.md).

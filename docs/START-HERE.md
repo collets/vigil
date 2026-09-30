@@ -10,13 +10,15 @@ scope, and production
 check, model and reviewer dispatch are deliberately disabled. This page tells you
 which documents to read, and — more importantly — which ones you can skip.
 
-**Stage 6.1 is implemented; its first independent review rejected it and the remediation awaits a narrow follow-up.** It is the terminal
-interface parity gap analysis, so it wrote no interface code: it measured the
-interface and the product surface from the code and the built binary, found that
-the interface fully expresses 4 of the 82 distinct capabilities the 85-row register classifies, and 3 of
-20 human decision classes, found that R11/R45/R46/R47/R70 were all unmeasurable
-as written, amended them with conditions P13–P18, and planned sub-stages 6.2–6.9.
-Stage 6 is not complete.
+**Stage 6.1 is implemented, was rejected by its first independent review, was
+returned conditional by a narrow follow-up, and has both sets of findings
+remediated pending a final confirming review.** It is the terminal interface
+parity gap analysis, so it wrote no interface code: it measured the interface
+and the product surface from the code and the built binary, found that the
+interface fully expresses 4 of the 82 distinct capabilities the 85-row register
+classifies and 6 of the 25 human decision classes, found that
+R11/R45/R46/R47/R70 were all unmeasurable as written, amended them with
+conditions P13–P18, and planned sub-stages 6.2–6.9. Stage 6 is not complete.
 
 [`docs/README.md`](README.md) is the full index: what every document is
 authoritative for. This page is the *reading order*.

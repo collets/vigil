@@ -104,7 +104,12 @@ Its deliverables:
 2. **Inventory** the reachable product surface: every CLI command group, the
    `apply` envelope commands, and the human decision points, each classified as
    *expressible in a terminal interface*, *expressible with a documented
-   compromise*, or *not expressible, with the reason*.
+   compromise*, or *not expressible, with the reason*. (6.1 renamed the third
+   class to **excluded, with reason**, after establishing that none of its rows
+   is a technical impossibility and that conflating a scope decision with one
+   would be misleading. The class is the same; only the label changed, because
+   the label was doing work the content did not support. See
+   [6.1 §2.2](6.1-parity-gap-analysis.md#22-classification-rule).)
 3. **Requirement audit** against R11, R45, R46, R47 and R70. For each, state
    whether the requirement as written is (a) met, (b) partially met, or (c) not
    measurable as written — and for (b) and (c), **amend `requirements.md` and the

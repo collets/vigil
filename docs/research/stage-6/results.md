@@ -237,18 +237,18 @@ Classification rule, from
 
 | Command | Class | Today | Compromise / reason | Sub-stage |
 | --- | --- | --- | --- | --- |
-| `init` | C | absent | **Compromise:** the root path is typed and validated, not browsed | 6.8 |
+| `init` | C | absent | Situation **(a)**: the root path is typed and validated, not browsed | 6.8 |
 | `list` | E | absent | — | 6.8 |
 | `status` | E | partial (view 1) | promoted to a readiness view | 6.3 |
 | `inbox` | E | partial (view 3) | extended in 6.4 | 6.4 |
 | `events` | E | partial (view 4) | extended in 6.3 | 6.3 |
-| `apply` (command) | C | absent | **Compromise:** one typed form per envelope kind; the interface never accepts a pasted envelope, so an unknown field or duplicate key cannot be submitted | 6.8 |
+| `apply` (command) | C | absent | Situation **(a)**: the real command is `apply PROJECT_ID --file COMMAND.json`, so the operator supplies a filesystem path. In exchange the interface builds one typed form per envelope kind and never accepts a pasted envelope, so an unknown field or duplicate key cannot be submitted | 6.8 |
 | `discover` | E | absent | — | 6.8 |
 | `repository` | E | absent | — | 6.8 |
 | `prepare-repository` | E | absent | — | 6.8 |
-| `spec-import` | C | absent | **Compromise:** the owned `.md` path is typed inside the project root, not browsed | 6.8 |
+| `spec-import` | C | absent | Situation **(a)**: the owned `.md` path is typed inside the project root, not browsed | 6.8 |
 | `spec-show` | E | absent | — | 6.8 |
-| `proposal-create` | C | absent | **Compromise:** the nested plan/task/criteria/dependency definition is composed through a guided editor and the exact envelope is displayed before creation | 6.8 |
+| `proposal-create` | C | absent | Situation **(b)**: the nested plan/task/criteria/dependency definition is composed through a guided editor and the exact envelope is displayed before creation | 6.8 |
 | `proposal-show` | E | absent | — | 6.8 |
 | `proposal-apply` | E | partial (`g`) | criteria-change authority added as an explicit confirmation | 6.4 |
 | `proposal-decide` | E | partial (`n`, `v`) | typed rationale replaces the hardcoded one | 6.4 |
@@ -275,7 +275,7 @@ Classification rule, from
 | `checkpoint-clear` | E | absent | — | 6.6 |
 | `checkpoint-restore` | E | absent | the explicit approval is bound to the three visible set IDs and the displayed revision | 6.6 |
 | `reservation` | E | absent | — | 6.5 |
-| `artifact` | C | absent | **Compromise:** the file path is typed, not browsed | 6.5 |
+| `artifact` | C | absent | Situation **(a)**: the file path is typed, not browsed | 6.5 |
 | `artifacts` | E | absent | — | 6.5 |
 
 ### 4.5 Project commands, part 3 — quality and acceptance
@@ -304,9 +304,9 @@ Classification rule, from
 | `delivery-close-unobserved` | E | absent | The attestation is bounded free text typed into a prompt the shell cannot quote, shown as final and irreversible before acceptance, and read back by `delivery-status`. Bounded free text is `E` under the rule, not `C` | 6.7 |
 | `archive-build` | E | absent | — | 6.7 |
 | `archive-show` | E | absent | — | 6.7 |
-| `archive-export` | C | absent | **Compromise:** the destination directory is typed and its non-symbolic-link parent is checked and stated in the confirmation; there is no directory browser | 6.7 |
+| `archive-export` | C | absent | Situation **(a)**: the destination directory is typed and its non-symbolic-link parent is checked and stated in the confirmation; there is no directory browser | 6.7 |
 | `archive-narrative` | E | absent | Citations are **selected from the validated manifest's own reference set** rather than typed, so a citation outside the manifest cannot be submitted. Restricting the operator's input is `E` under the rule, not `C` | 6.7 |
-| `finalization-run` | C | absent | **Compromise:** the prepared manifest path and the optional private key path are typed; the interface cannot browse the operator's filesystem or verify a prepared credential-free home | 6.7 |
+| `finalization-run` | C | absent | Situations **(a)** and **(c)**: the prepared manifest path and the optional private key path are typed; the interface cannot browse the operator's filesystem or verify a prepared credential-free home | 6.7 |
 | `finalization-quarantine` | E | absent | — | 6.7 |
 | `retention-inspect` | E | absent | — | 6.7 |
 | `retention-expire` | E | absent | bound to the exact visible inspect receipt and displayed revision | 6.7 |
@@ -315,19 +315,19 @@ Classification rule, from
 
 | Command | Class | Today | Compromise / reason | Sub-stage |
 | --- | --- | --- | --- | --- |
-| `planning-run` | C | absent | **Compromise:** the prepared manifest path and optional private key path are typed, for the same reason as `finalization-run` | 6.7 |
+| `planning-run` | C | absent | Situations **(a)** and **(c)**, for the same reason as `finalization-run` | 6.7 |
 | `planning-reconcile` | E | absent | — | 6.7 |
-| `tool-qualify` | C | absent | **Compromise:** as `finalization-run`; this is a qualification action, not a day-to-day capability | 6.7 |
+| `tool-qualify` | C | absent | Situations **(a)** and **(c)**, as `finalization-run`; this is a qualification action, not a day-to-day capability | 6.7 |
 | `tool-server` | X | absent | **Mechanism.** A newline-delimited JSON-RPC stdio MCP server for a native harness subprocess. It is spawned by the application with a pre-opened session, is not an operator action and grants no operator authority. No human surface can express it, and giving one would widen authority. | — |
 
 ### 4.8 `apply` envelope kinds
 
 | Kind | Class | Today | Compromise / reason | Sub-stage |
 | --- | --- | --- | --- | --- |
-| `repository.enroll` | C | absent | **Compromise:** `nested_boundaries` and the `dirty_choice` included-path set are composed through a guided editor from the `discover` output | 6.8 |
-| `project.configure` | C | absent | **Compromise:** `check_definitions` argv arrays and the full policy are composed through a guided editor; the effective policy is displayed before it is committed | 6.8 |
+| `repository.enroll` | C | absent | Situation **(b)**: the `nested_boundaries` list and the `dirty_choice` included-path set are composed through a guided editor from the `discover` output | 6.8 |
+| `project.configure` | C | absent | Situation **(b)**: the policy document is nested, carrying the `check_definitions` argv arrays and their environment and output lists; it is composed through a guided editor and the effective policy is displayed before it is committed | 6.8 |
 | `profile.put` | E | absent | — | 6.8 |
-| `plan.put` | C | absent | **Compromise:** the plan/task/criteria/dependency graph is composed through a guided editor; dependency validation runs live and the exact envelope is displayed before commit | 6.8 |
+| `plan.put` | C | absent | Situation **(b)**: the plan/task/criteria/dependency graph is recursive; it is composed through a guided editor, dependency validation runs live, and the exact envelope is displayed before commit | 6.8 |
 | `plan.reorder` | E | absent | — | 6.8 |
 | `task.criteria.revise` | E | absent | — | 6.8 |
 | `planning.proposal.apply` | E | partial (`g`) | criteria-change authority becomes an explicit confirmation | 6.4 |
@@ -474,7 +474,7 @@ conditions in [`core/requirements.md`](../../core/requirements.md).
 | --- | --- | --- | --- | --- | --- | --- |
 | 5.1 | Human review screen showing everything being accepted | — | — | R24, R47 | absent (6.1-F13) | planned (6.5) |
 | 5.2 | Per-finding severity, blocking status, text and location | — | `quality-review` | R47, R53 | counts only (6.1-F11) | planned (6.5) |
-| 5.3 | Review decision and summary for the exact attempt | — | `quality-review` | R31, R47 | absent; no summary stored (§6) | planned (6.5) |
+| 5.3 | Review decision and summary for the exact attempt | — | `quality-review`, `execution_results_v11` | R31, R47 | absent — the summary is persisted and read by the reconciler, but no read model exposes it | planned (6.5) |
 | 5.4 | Per-check status, exit state, duration and evidence reference | — | `quality-check` | R47, R29 | `id:status:artifact` (6.1-F12) | planned (6.5) |
 | 5.5 | Bounded check output viewer | — | `artifacts` | R47, P07 | absent | planned (6.5) |
 | 5.6 | Run a declared check | — | `quality-check` | R24, R29 | absent | planned (6.5) |
@@ -575,9 +575,13 @@ conditions in [`core/requirements.md`](../../core/requirements.md).
 ### 5.9 Deliberate exclusions
 
 Recorded so a reader can tell an exclusion from an oversight. This list is
-**closed**: it is mirrored in the requirements baseline so that the agent
-executing Stage 6 cannot satisfy R11 by writing down its own exclusions, and
-adding an entry is a user scope decision. 6.9 fixes the final wording.
+**closed**, and its canonical copy is the one in
+[`docs/core/requirements.md`](../../core/requirements.md) under "The closed
+exclusion list R11 depends on"; this section is a mirror of it. The two must stay
+identical in entries, reason class and reason, and 6.2 schedules a test that
+asserts exactly that — so the executing agent cannot satisfy R11 by writing down
+its own exclusions, and cannot quietly diverge from the baseline either. Adding
+an entry is a user scope decision. 6.9 fixes the final wording.
 
 | Excluded | Reason class | Reason |
 | --- | --- | --- |
@@ -587,7 +591,7 @@ adding an entry is a user scope decision. 6.9 fixes the final wording.
 | `vigil spike` | scope | A development-only Stage 1–3 experiment runner outside the persisted core. Stage 6 must not add product capability. |
 | `vigil completion` | mechanism | Cobra shell-completion generation; shell scaffolding with no Vigil state. |
 | `vigil help` | mechanism | Documents the CLI surface that Stage 6 replaces as primary. The interface's own help screen supersedes it. |
-| Code and diff inspection | scope, deliberate | R47 places this in an external IDE. The interface states where to look rather than embedding a diff viewer. |
+| Code and diff inspection | scope, accepted | R47 places this in an external IDE. The interface states where to look rather than embedding a diff viewer. |
 | Automatic merge | scope, accepted | R41 excludes merging entirely. The interface states that no merge endpoint exists. |
 
 **Nothing else is excluded, and in particular two items an earlier draft of this
@@ -625,12 +629,22 @@ wider gates above were run anyway and are recorded as evidence, and
 `make scenario` is run here specifically to show the Stage 5.7 walkthrough still
 reaches commit, push and draft delivery end to end after this change.
 
-**These gates were re-run after the remediation** of the rejected first review
-(see [`6.1-review.md`](6.1-review.md)), not only before it. `make check`,
-`make check-race`, `make docs-check`, `make build`, `make cross-build` and
-`make build-boundary` all pass at the remediation SHA, and `git diff --check` is
-clean. The remediation is also documentation-only, so the same
-`internal/`-unchanged argument holds.
+**These gates were re-run after each remediation**, not only before the first
+one (see [`6.1-review.md`](6.1-review.md)). `make check`, `make check-race`,
+`make docs-check`, `make build`, `make cross-build` and `make build-boundary` all
+pass at the final SHA, and `git diff --check` is clean. Both remediations are
+documentation-only, so the same `internal/`-unchanged argument holds.
+
+The second review noted, correctly, that `make docs-check` is a weaker gate than
+the obligations it is credited with: it has **no table-structure check**, so it
+could not see that the first remediation had inserted prose paragraphs inside the
+R01–R71 table in `requirements.md` and broken it for R48–R71. A structural
+sweep was therefore run separately over every Markdown table in the repository,
+asserting that each has a header, a delimiter row and at least one body row, and
+that the R01–R71 block contains no non-table line. Both pass. That check is not
+part of `make docs-check` and is not proposed here as a code change, because
+Stage 6.1 must not touch Go; it is recorded as a gap in the documentation gate
+for a later slice to close.
 
 ### A pre-existing race flake observed, and how it was attributed
 
