@@ -68,8 +68,23 @@ func (w *walkthrough) rehearseDelivery(ctx context.Context, betweenPushAndDraft 
 	if err != nil {
 		panic(&ScenarioAbort{Step: "remote ref listing", Err: err})
 	}
-	w.assert("no-unintended-remote-refs", len(refs) == 2, strings.Join(refs, " "),
-		"the destination must hold only the seeded base branch and the one approved plan ref; tags and checkpoint refs must never be pushed")
+	// The destination must hold exactly the seeded base branch and the one approved
+	// plan ref, and nothing else. Naming the refs matters as much as counting them:
+	// a count-only assertion passes just as happily if a tag replaced the plan ref.
+	seen := map[string]bool{}
+	for _, ref := range refs {
+		name, _, _ := strings.Cut(ref, " ")
+		seen[name] = true
+	}
+	wantRefs := []string{"refs/heads/main", "refs/heads/" + PlanBranch}
+	exact := len(refs) == len(wantRefs)
+	for _, name := range wantRefs {
+		if !seen[name] {
+			exact = false
+		}
+	}
+	w.assert("no-unintended-remote-refs", exact, strings.Join(refs, " "),
+		"the destination must hold exactly the seeded base branch and the one approved plan ref; a tag, mirror ref or checkpoint ref must never be pushed")
 	if err := w.report.Matrix.Mark("recovery", CaseNoUnintendedRefs, EvidenceAutomated,
 		"the destination holds exactly the base branch it was seeded with plus the one approved plan ref; no tag, mirror, force or checkpoint ref was created",
 		"git for-each-ref on the local bare remote after the rehearsal"); err != nil {
@@ -109,8 +124,8 @@ func (w *walkthrough) rehearseDelivery(ctx context.Context, betweenPushAndDraft 
 	w.assert("stage-8-delivery-inputs-written", w.stageEightInputsExist(), filepath.Join(w.root, "stage-8-delivery-inputs.json"),
 		"the exact destination identity, head/base/object scope, credential reference name and grant list must be recorded for Stage 8")
 	if err := w.report.Matrix.Mark("recovery", CaseGitAndHostingBoundary, EvidenceAutomated,
-		"each delivery operation ran through its own prepare/grant/execute triple, the fake provider received exactly one creation POST, and the operator's checkout was unchanged",
-		"bin/vigil project commit-prepare/execute, push-prepare/execute, draft-prepare/execute"); err != nil {
+		"each delivery operation ran through its own prepare/grant/execute triple, the fake provider received exactly one creation POST, and the only ref the delivery moved was the plan ref the application itself had checked out — the operator's working files are byte-identical and no other branch, tag or ref moved",
+		"bin/vigil project commit-prepare/execute, push-prepare/execute, draft-prepare/draft-execute against a local bare remote and a loopback provider stand-in"); err != nil {
 		panic(&ScenarioAbort{Step: "matrix:boundary", Err: err})
 	}
 
@@ -212,7 +227,7 @@ func (w *walkthrough) verifyCheckoutUnchanged(ctx context.Context, baseline chec
 	}
 	w.assert("delivery-left-working-tree-bytes-identical", baseline.worktreeDigest == after.worktreeDigest,
 		fmt.Sprintf("worktree digest %s before, %s after, on %s", baseline.worktreeDigest[:12], after.worktreeDigest[:12], after.branch),
-		"commit, push and draft must never change a single byte the operator can see in their checkout")
+		"commit, push and draft must not change a single byte of any tracked or untracked, non-ignored file the operator can see; gitignored paths such as the application-owned .vigil archive view are outside this observation")
 	w.assert("delivery-left-branch-unchanged", baseline.branch == after.branch, after.branch,
 		"delivery must not move the operator to another branch")
 

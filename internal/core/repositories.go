@@ -149,6 +149,16 @@ func (e *Engine) prepareRepositoryEnrollment(ctx context.Context, input Reposito
 			return prepared, fmt.Errorf("nested boundary %s is not an eligible discovered repository", boundary)
 		}
 	}
+	// The plan branch must be a branch of its own. It used to be enough that it
+	// was not the ref the application had checked out, because the commit path
+	// refused a checked-out plan ref unconditionally; now that the commit path acts
+	// on a plan ref the application itself prepared, enrolling with the plan branch
+	// equal to the base ref would let a delivery advance the operator's base branch
+	// with HEAD on it. The two must be different refs for the workflow to mean
+	// anything.
+	if input.PlanBranch == input.BaseRef || input.PlanBranch == strings.TrimPrefix(input.BaseRef, "refs/heads/") {
+		return prepared, errors.New("plan branch must differ from the base branch")
+	}
 	observation, err := workspace.ObserveEnrollment(ctx, root, input.BaseRef, input.PlanBranch, input.Remote, nested)
 	if err != nil {
 		return prepared, err
@@ -505,16 +515,15 @@ func (e *Engine) refreshIndexForMovedHead(ctx context.Context, record Repository
 // situations apart that look identical to `git symbolic-ref`:
 //
 //   - The application parked HEAD there as a documented, journaled step of the
-//     prepare/execute/accept workflow, and the accepted fingerprint binds that
-//     checkout. Refusing to move the ref would make delivery unreachable, because
-//     preparing the plan branch is itself required for execution.
-//   - A person checked the ref out, possibly after a commit was prepared.
-//     Advancing the ref under them would move their branch, so the commit path
-//     refuses.
+//     prepare/execute/accept workflow. Refusing to move the ref would make delivery
+//     unreachable, because preparing the plan branch is itself required for
+//     execution.
+//   - A person checked the ref out. Advancing the ref under them would move their
+//     branch, so the commit path refuses.
 //
-// Without this predicate the two refusals are mutually exclusive: the application
-// leaves the checkout in the one state its own commit path will not act on, and
-// the only way out — returning the checkout to the base branch — invalidates the
+// Without this predicate the two refusals were mutually exclusive: the application
+// left the checkout in the one state its own commit path would not act on, and the
+// only way out — returning the checkout to the base branch — invalidated the
 // accepted fingerprint, because acceptance binds the whole baseline including the
 // head ref. That deadlock was Stage 5.7 finding 5.7-F1.
 //
@@ -522,41 +531,35 @@ func (e *Engine) refreshIndexForMovedHead(ctx context.Context, record Repository
 // operation is authoritative only once it has been observed or reconciled, never
 // while merely prepared. A `prepared` row means the symbolic-ref mutation may not
 // have happened, so it cannot establish that the application owns the checkout.
-// Requiring `branch_ref` to equal the target and `observed_head_ref` to equal the
-// target also means a repository whose HEAD the user later moved elsewhere and
-// back is no longer treated as application-owned by accident: the recorded
-// observation no longer describes the current checkout.
-// applicationOwnsPlanCheckout reports whether the application itself put HEAD on
-// the given plan ref, as opposed to a person having checked it out.
 //
-// The distinction is the whole point, and it is durably recorded rather than
-// inferred. `PrepareBranch` performs `git symbolic-ref HEAD <plan ref>`, and the
-// operation that journaled that intent records the head ref it observed
-// afterwards. A delivery that finds HEAD on the plan ref can therefore tell two
-// situations apart that look identical to `git symbolic-ref`:
-//
-//   - The application parked HEAD there as a documented, journaled step of the
-//     prepare/execute/accept workflow, and the accepted fingerprint binds that
-//     checkout. Refusing to move the ref would make delivery unreachable, because
-//     preparing the plan branch is itself required for execution.
-//   - A person checked the ref out, possibly after a commit was prepared.
-//     Advancing the ref under them would move their branch, so the commit path
-//     refuses.
-//
-// Without this predicate the two refusals are mutually exclusive: the application
-// leaves the checkout in the one state its own commit path will not act on, and
-// the only way out — returning the checkout to the base branch — invalidates the
-// accepted fingerprint, because acceptance binds the whole baseline including the
-// head ref. That deadlock was Stage 5.7 finding 5.7-F1.
-//
-// The state requirement mirrors `internal/supervisor/preparation.go`: a branch
-// operation is authoritative only once it has been observed or reconciled, never
-// while merely prepared. A `prepared` row means the symbolic-ref mutation may not
-// have happened, so it cannot establish that the application owns the checkout.
-// Requiring `branch_ref` to equal the target and `observed_head_ref` to equal the
-// target also means a repository whose HEAD the user later moved elsewhere and
-// back is no longer treated as application-owned by accident: the recorded
-// observation no longer describes the current checkout.
+// What this does **not** establish, stated plainly because it is the interesting
+// limit: `observed_head_ref` is a stored string, and this predicate does not re-read
+// it against a live `symbolic-ref HEAD`. The live checkout is compared by the
+// caller, which only calls here when HEAD currently names the target — so a person
+// who checks out the base branch and later returns to the plan ref is, at that
+// moment, indistinguishable from the application having parked it there, and their
+// branch is treated as application-owned. No test claims otherwise, and closing
+// that gap would require recording a checkout history rather than a single
+// observation. The `branch_ref` requirement does provide a real limit: it must be
+// the plan ref the application enrolled for this repository revision, so a ref the
+// person created themselves is never claimed.
+
+func (e *Engine) applicationOwnsPlanCheckout(ctx context.Context, record RepositoryRecord, target string) (bool, error) {
+	var state, branchRef, observedHeadRef string
+	err := e.DB.SQL.QueryRowContext(ctx, `SELECT state,branch_ref,coalesce(observed_head_ref,'') FROM repository_branch_operations WHERE repository_id=? AND repository_revision=? ORDER BY rowid DESC LIMIT 1`,
+		record.ID, record.Revision).Scan(&state, &branchRef, &observedHeadRef)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if state != "observed" && state != "reconciled" {
+		return false, nil
+	}
+	return branchRef == target && observedHeadRef == target, nil
+}
+
 // acceptedRepositoryStillHolds reports whether the enrolled repository still shows
 // exactly what the plan's acceptance approved.
 //
@@ -611,8 +614,14 @@ func acceptedRepositoryStateIsHonoured(ctx context.Context, root string, accepte
 	if !gitOID(deliveryHead) {
 		return errors.New("accepted repository no longer matches the accepted task fingerprint")
 	}
-	// The content digest walks the working tree, so recording that content in a
-	// commit does not change it. If it differs, nothing below can apply.
+	// The content digest walks the working tree and the dirty flag is Git's own
+	// comparison of the index against the head tree, the worktree against the index,
+	// untracked files and abnormal index entries. Every difference the digest can
+	// see is therefore already reported by `Dirty`, so this guard is deliberately
+	// redundant: it is kept as a second opinion because it walks the bytes on disk
+	// directly, whereas `Dirty` trusts Git's view of them. A comment in the test
+	// records that it is defence in depth rather than an independently load-bearing
+	// check, so no one later mistakes it for one.
 	if observed.ContentDigest != expected.ContentDigest || observed.HeadRef != expected.HeadRef || observed.Dirty {
 		return errors.New("accepted repository no longer matches the accepted task fingerprint")
 	}
@@ -621,27 +630,19 @@ func acceptedRepositoryStateIsHonoured(ctx context.Context, root string, accepte
 	}
 	// The delivery commit must sit directly on the accepted head, so this state can
 	// only be reached by recording the accepted content once.
+	//
+	// A known limitation, stated rather than left to be discovered: a plan with more
+	// than one task to commit cannot archive at all, because the second task's
+	// commit has the first task's commit as its parent, not the accepted head. That
+	// fails closed — the archive is refused rather than published over a state this
+	// check cannot vouch for — and multi-task plans are exactly the case the
+	// qualification does not yet drive. Widening the check to accept a chain of
+	// this plan's own delivery commits is the obvious next step, and is deliberately
+	// not done here, because doing it without evidence would be relaxing a guard in
+	// a re-opened accepted slice on a path nothing has tested.
 	parent, err := deliveryGit(ctx, root, nil, nil, "rev-parse", "--verify", "--end-of-options", deliveryHead+"^")
 	if err != nil || strings.TrimSpace(parent) != expected.HeadOID {
 		return errors.New("accepted repository head is not this plan's own recorded delivery commit")
 	}
 	return nil
-}
-
-// applicationOwnsPlanCheckout reports whether the application itself put HEAD on
-// the given plan ref, as opposed to a person having checked it out.
-func (e *Engine) applicationOwnsPlanCheckout(ctx context.Context, record RepositoryRecord, target string) (bool, error) {
-	var state, branchRef, observedHeadRef string
-	err := e.DB.SQL.QueryRowContext(ctx, `SELECT state,branch_ref,coalesce(observed_head_ref,'') FROM repository_branch_operations WHERE repository_id=? AND repository_revision=? ORDER BY rowid DESC LIMIT 1`,
-		record.ID, record.Revision).Scan(&state, &branchRef, &observedHeadRef)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	if state != "observed" && state != "reconciled" {
-		return false, nil
-	}
-	return branchRef == target && observedHeadRef == target, nil
 }

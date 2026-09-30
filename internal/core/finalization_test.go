@@ -969,28 +969,45 @@ func TestArchiveStillRefusesContentThatIsNotTheAcceptedContent(t *testing.T) {
 
 // TestCommitStillRefusesWhenTheApplicationDoesNotOwnTheCheckout is the
 // complementary safeguard: ownership is required, not assumed.
+//
+// An earlier version of this test called ExecuteCommit with an empty grant ID on a
+// still-prepared operation, so it failed at the grant check no matter what the
+// ownership predicate said. It passed with the predicate neutered and with both
+// refusal sites deleted. It now grants properly and asserts the refusal happens at
+// *prepare*, so the only thing that can produce it is the ownership check.
 func TestCommitStillRefusesWhenTheApplicationDoesNotOwnTheCheckout(t *testing.T) {
 	_, e, p := setup(t)
 	seedPreparedPlanWithAcceptedChange(t, e, p.Root, "branch-owned-then-abandoned")
-	ctx := context.Background()
-	prepared, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "commit-abandoned", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
-		Paths: []string{"src/new.txt"}, Message: "Must be refused", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	c := context.Background()
+	// Sanity: the checkout IS owned right after the application's own preparation,
+	// so anything that follows is caused by the abandonment, not by a fixture that
+	// was never owned.
+	record := mustRepository(t, e, "fixture-repo")
+	owned, err := e.applicationOwnsPlanCheckout(c, record, "refs/heads/vigil/fixture")
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !owned {
+		t.Fatal("precondition: the application's own preparation must confer ownership")
+	}
 	// The recorded preparation no longer describes the current checkout: HEAD has
-	// been moved elsewhere and back by a person, so the application can no longer
-	// claim the checkout as its own.
+	// been moved elsewhere and back by a person.
 	for _, ref := range []string{"main", "vigil/fixture"} {
 		if _, err := exec.Command("git", "-C", p.Root, "checkout", "-q", ref).CombinedOutput(); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE repository_branch_operations SET observed_head_ref='refs/heads/other'"); err != nil {
+	if _, err := e.DB.SQL.ExecContext(c, "UPDATE repository_branch_operations SET observed_head_ref='refs/heads/other'"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.ExecuteCommit(ctx, prepared.OperationID, ""); err == nil {
-		t.Fatal("commit moved a plan ref whose recorded preparation no longer describes the checkout")
+	if _, err := e.PrepareCommit(c, CommitRequest{CommandID: "commit-abandoned", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Must be refused", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"}); err == nil {
+		t.Fatal("commit was prepared on a checkout whose recorded preparation no longer describes it")
+	}
+	// And no approval request may have been left behind by the refusal.
+	var count int
+	if err := e.DB.SQL.QueryRowContext(c, "SELECT count(*) FROM operations WHERE kind='commit'").Scan(&count); err != nil || count != 0 {
+		t.Fatalf("the refusal left an approval operation behind: %d %v", count, err)
 	}
 }
 
@@ -1020,6 +1037,304 @@ func TestBranchOperationMustBeObservedToEstablishOwnership(t *testing.T) {
 	if _, err := e.PrepareCommit(ctx, CommitRequest{CommandID: "commit-prepared-only", PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
 		Paths: []string{"src/new.txt"}, Message: "Must be refused", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"}); err == nil {
 		t.Fatal("commit was prepared on a checkout owned only by a prepared operation")
+	}
+}
+
+// TestArchiveRelaxationGuardsAreEachLoadBearing pins every guard in
+// acceptedRepositoryStateIsHonoured independently.
+//
+// The relaxation that lets the factual archive see the accepted content after this
+// plan's own delivery commit has recorded it lives inside an independently accepted
+// boundary. Each of its guards was previously unpinned: a review removed four of the
+// five and the whole `internal/core` suite stayed green. An unpinned guard in a
+// re-opened accepted slice is one edit away from being advisory, so each guard gets
+// a case that only that guard can catch.
+//
+// The cases are deliberately narrow. "Changed content" and "a late edit" trip
+// several guards at once and prove nothing about which one is load-bearing, so each
+// case below isolates a single condition.
+func TestArchiveRelaxationGuardsAreEachLoadBearing(t *testing.T) {
+	t.Run("content digest guard is defence in depth, and is pinned as such", func(t *testing.T) {
+		// This one guard is deliberately redundant with `Dirty`, and no test can
+		// isolate it. `Dirty` is computed from the index against the HEAD tree, the
+		// worktree against the index, untracked files and abnormal index entries, so
+		// every difference the content digest could see is already reported by
+		// `Dirty` — including an untracked file, which was checked specifically for
+		// this comment. An earlier draft of this test claimed to isolate it with an
+		// untracked file and did not: the checkout was dirty, and `Dirty` alone
+		// refused it.
+		//
+		// The guard is kept anyway, because `Dirty` is a comparison of Git's own
+		// view and the digest is a walk of the bytes on disk. If Git's comparison
+		// ever fails to report something the walk does see, the digest is the
+		// second opinion. What this test pins is that the combination refuses, and
+		// the comment above is what stops anyone later mistaking this guard for an
+		// independently load-bearing one.
+		_, e, p := setup(t)
+		accepted := seedPreparedPlanWithAcceptedChange(t, e, p.Root, "branch-owned")
+		commitTheAcceptedChange(t, e)
+		if err := os.WriteFile(filepath.Join(p.Root, "src", "new.txt"), []byte("unaccepted rewrite\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		state, err := workspace.Fingerprint(ctx(), p.Root, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state.ContentDigest == accepted.ContentDigest {
+			t.Fatal("precondition: the content digest must differ")
+		}
+		if err := e.acceptedRepositoryStillHolds(ctx(), mustRepository(t, e, "fixture-repo"), accepted); err == nil {
+			t.Fatal("a checkout whose bytes are not the accepted content was accepted")
+		}
+	})
+
+	t.Run("head ref must still be the accepted one", func(t *testing.T) {
+		// The content is exactly the accepted content and the checkout is clean, but
+		// HEAD names a different ref than acceptance recorded — the person switched
+		// branches without changing any file. Only the head-ref guard catches it.
+		_, e, p := setup(t)
+		accepted := seedPreparedPlanWithAcceptedChange(t, e, p.Root, "branch-owned")
+		commitTheAcceptedChange(t, e)
+		if _, err := exec.Command("git", "-C", p.Root, "checkout", "-q", "-b", "other-branch").CombinedOutput(); err != nil {
+			t.Fatal(err)
+		}
+		state, err := workspace.Fingerprint(ctx(), p.Root, nil)
+		if err != nil || state.Dirty || state.ContentDigest != accepted.ContentDigest {
+			t.Fatalf("precondition: same content, clean tree: %+v %v", state, err)
+		}
+		if state.HeadRef == accepted.HeadRef {
+			t.Fatal("precondition: the head ref must differ")
+		}
+		if err := e.acceptedRepositoryStillHolds(ctx(), mustRepository(t, e, "fixture-repo"), accepted); err == nil {
+			t.Fatal("a checkout on a different ref was accepted; only the head-ref guard can catch this")
+		}
+	})
+
+	t.Run("delivery commit must sit directly on the accepted head", func(t *testing.T) {
+		// The accepted content is committed twice: HEAD is this plan's own recorded
+		// delivery commit and the tree is clean, but the parent is the first commit
+		// rather than the accepted head. Only the parent guard catches it.
+		_, e, p := setup(t)
+		accepted := seedPreparedPlanWithAcceptedChange(t, e, p.Root, "branch-owned")
+		commitTheAcceptedChange(t, e)
+		// A second recorded commit on top of the first.
+		if _, err := exec.Command("git", "-C", p.Root, "commit", "-q", "--allow-empty", "-m", "second").CombinedOutput(); err != nil {
+			t.Fatal(err)
+		}
+		var second string
+		if err := e.DB.SQL.QueryRowContext(ctx(), "SELECT head_oid FROM deliveries WHERE plan_id='plan' AND kind='commit' AND state='succeeded' ORDER BY rowid DESC LIMIT 1").Scan(&second); err != nil {
+			t.Fatal(err)
+		}
+		// Point the recorded delivery at the second commit so only the parent differs.
+		if _, err := e.DB.SQL.ExecContext(ctx(), "UPDATE deliveries SET head_oid=? WHERE kind='commit'", second); err != nil {
+			t.Fatal(err)
+		}
+		state, err := workspace.Fingerprint(ctx(), p.Root, nil)
+		if err != nil || state.Dirty || state.ContentDigest != accepted.ContentDigest {
+			t.Fatalf("precondition: same accepted content, clean tree: %+v %v", state, err)
+		}
+		if err := e.acceptedRepositoryStillHolds(ctx(), mustRepository(t, e, "fixture-repo"), accepted); err == nil {
+			t.Fatal("a delivery commit not directly on the accepted head was accepted; only the parent guard can catch this")
+		}
+	})
+
+	t.Run("a staged payload the delivery commit never contained is refused", func(t *testing.T) {
+		// Every working-tree byte matches the accepted content, but the index holds a
+		// different blob for one path: porcelain-clean by content, disagreeing with the
+		// delivery commit. This is exactly the footgun the index refresh manages, and
+		// only the dirty guard can see it.
+		_, e, p := setup(t)
+		accepted := seedPreparedPlanWithAcceptedChange(t, e, p.Root, "branch-owned")
+		commitTheAcceptedChange(t, e)
+		// Stage a blob that is not the accepted content, then restore the working
+		// file, so the tree is clean by content while the index disagrees.
+		staged := filepath.Join(t.TempDir(), "staged")
+		if err := os.WriteFile(staged, []byte("different payload\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		for _, args := range [][]string{
+			{"-C", p.Root, "hash-object", "-w", "--no-filters", "--stdin"},
+		} {
+			cmd := exec.Command("git", args...)
+			cmd.Stdin, _ = os.Open(staged)
+			out, err := cmd.Output()
+			if err != nil {
+				t.Fatal(err)
+			}
+			oid := strings.TrimSpace(string(out))
+			if _, err := exec.Command("git", "-C", p.Root, "update-index", "--cacheinfo", "100644,"+oid+",src/new.txt").CombinedOutput(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		state, err := workspace.Fingerprint(ctx(), p.Root, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state.ContentDigest != accepted.ContentDigest {
+			t.Fatal("precondition: the working-tree bytes must still be the accepted ones")
+		}
+		if !state.Dirty {
+			t.Fatal("precondition: the index must disagree with the head")
+		}
+		if err := e.acceptedRepositoryStillHolds(ctx(), mustRepository(t, e, "fixture-repo"), accepted); err == nil {
+			t.Fatal("an index holding a payload the delivery commit never contained was accepted; only the dirty guard can catch this")
+		}
+	})
+}
+
+func ctx() context.Context { return context.Background() }
+
+func mustRepository(t *testing.T, e *Engine, id string) RepositoryRecord {
+	t.Helper()
+	record, err := e.Repository(ctx(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return record
+}
+
+// commitTheAcceptedChange runs the commit triple for the accepted change.
+func commitTheAcceptedChange(t *testing.T, e *Engine) {
+	t.Helper()
+	c := ctx()
+	prepared, err := e.PrepareCommit(c, CommitRequest{CommandID: "commit-guard-" + store.ID(), PlanID: "plan", RepositoryID: "fixture-repo", TaskID: "first",
+		Paths: []string{"src/new.txt"}, Message: "Add accepted change", AuthorName: "Fixture", AuthorEmail: "fixture@invalid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := resultString(t, apply(t, e, "permission.grant", GrantRequest{RequestID: prepared.RequestID, Scope: "once", Decision: "allow"}), "grant_id")
+	if _, err := e.ExecuteCommit(c, prepared.OperationID, grant); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestPlanCheckoutOwnershipConditionsAreEachLoadBearing pins every condition of
+// the ownership predicate independently.
+//
+// The predicate is the whole basis on which the commit path may move a ref, so each
+// clause is a security control. A review removed three of the four and the whole
+// `internal/core` suite stayed green, which is exactly how a control becomes
+// advisory without anything noticing. Each clause gets a case that only it can
+// catch, plus a case for the choice of ordering.
+func TestPlanCheckoutOwnershipConditionsAreEachLoadBearing(t *testing.T) {
+	target := "refs/heads/vigil/fixture"
+
+	t.Run("no journaled operation means not owned", func(t *testing.T) {
+		_, e, _ := setup(t)
+		seedAcceptedPlanWithChange(t, e, false)
+		record := mustRepository(t, e, "fixture-repo")
+		if _, err := exec.Command("git", "-C", record.Root, "checkout", "-q", "-b", "vigil/fixture").CombinedOutput(); err != nil {
+			t.Fatal(err)
+		}
+		owned, err := e.applicationOwnsPlanCheckout(ctx(), record, target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if owned {
+			t.Fatal("a plan ref the application never prepared was treated as application-owned")
+		}
+	})
+
+	t.Run("an operation for a previous repository revision does not confer ownership", func(t *testing.T) {
+		// Re-enrollment creates a new immutable repository revision. An operation
+		// recorded for the previous revision must not carry over, or a stale
+		// preparation would authorise a commit against a repository the application
+		// no longer knows.
+		_, e, _ := setup(t)
+		seedAcceptedPlanWithChange(t, e, false)
+		first := mustRepository(t, e, "fixture-repo")
+		preparePlanBranchForFixture(t, e, "branch-for-old-revision")
+		// Re-enroll under a different plan branch, which is how a revision advances.
+		apply(t, e, "repository.enroll", RepositoryEnrollment{ID: "fixture-repo", PlanID: "plan", Root: first.Root,
+			BaseRef: "refs/heads/main", PlanBranch: "vigil/replacement", DirtyChoice: "clean"})
+		current := mustRepository(t, e, "fixture-repo")
+		if current.Revision == first.Revision {
+			t.Fatal("precondition: re-enrollment must advance the repository revision")
+		}
+		owned, err := e.applicationOwnsPlanCheckout(ctx(), current, "refs/heads/vigil/replacement")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if owned {
+			t.Fatal("a branch operation recorded for a previous repository revision conferred ownership")
+		}
+	})
+
+	t.Run("at most one branch operation exists per repository revision", func(t *testing.T) {
+		// This is what makes the predicate's ordering immaterial rather than a
+		// security decision. A partial index named
+		// `one_repository_branch_preparation` is unique on
+		// (repository_id, repository_revision), so the query's `LIMIT 1` cannot pick
+		// a stale row: there is at most one. The assertion pins that schema
+		// invariant, so if the index were ever dropped, this fails instead of the
+		// predicate quietly becoming order-dependent.
+		_, e, _ := setup(t)
+		seedAcceptedPlanWithChange(t, e, false)
+		record := mustRepository(t, e, "fixture-repo")
+		preparePlanBranchForFixture(t, e, "branch-only-one")
+		_, err := e.DB.SQL.ExecContext(ctx(), `INSERT INTO repository_branch_operations(id,repository_id,repository_revision,expected_base_oid,branch_ref,state,created_at,observed_head_ref)
+			VALUES('branch-second',?,?,?,'refs/heads/other','observed',0,'refs/heads/other')`, record.ID, record.Revision, record.BaseOID)
+		if err == nil {
+			t.Fatal("a second branch operation was accepted for the same repository revision; the predicate's ordering is now load-bearing and unpinned")
+		}
+	})
+
+	t.Run("branch_ref must be the target", func(t *testing.T) {
+		// The operation is observed and its observed head ref matches, but it was
+		// recorded for a different branch. Only the branch_ref clause catches this.
+		_, e, _ := setup(t)
+		seedAcceptedPlanWithChange(t, e, false)
+		record := mustRepository(t, e, "fixture-repo")
+		preparePlanBranchForFixture(t, e, "branch-other-ref")
+		if _, err := e.DB.SQL.ExecContext(ctx(), "UPDATE repository_branch_operations SET branch_ref='refs/heads/somewhere-else'"); err != nil {
+			t.Fatal(err)
+		}
+		owned, err := e.applicationOwnsPlanCheckout(ctx(), record, target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if owned {
+			t.Fatal("an operation recorded for a different branch conferred ownership of the target")
+		}
+	})
+
+	t.Run("the state condition rejects an uncertain operation", func(t *testing.T) {
+		// An operation whose effect is uncertain cannot establish that the
+		// application moved HEAD, so it must not confer ownership.
+		_, e, _ := setup(t)
+		seedAcceptedPlanWithChange(t, e, false)
+		record := mustRepository(t, e, "fixture-repo")
+		preparePlanBranchForFixture(t, e, "branch-uncertain")
+		if _, err := e.DB.SQL.ExecContext(ctx(), "UPDATE repository_branch_operations SET state='uncertain'"); err != nil {
+			t.Fatal(err)
+		}
+		owned, err := e.applicationOwnsPlanCheckout(ctx(), record, target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if owned {
+			t.Fatal("an uncertain branch operation conferred ownership of the checkout")
+		}
+	})
+}
+
+// TestEnrollmentRefusesAPlanBranchEqualToTheBaseBranch pins the guard that keeps
+// the delivery path from ever advancing an operator's base branch.
+//
+// Before finding 5.7-F1 was fixed, this was inert: the commit path refused a
+// checked-out plan ref unconditionally, so enrolling with the plan branch equal to
+// the base branch could not reach a commit. Now that the commit path acts on a plan
+// ref the application itself prepared, enrolling that way would let a delivery
+// advance the base branch with HEAD sitting on it.
+func TestEnrollmentRefusesAPlanBranchEqualToTheBaseBranch(t *testing.T) {
+	_, e, _ := setup(t)
+	seedAcceptedPlan(t, e)
+	for _, planBranch := range []string{"refs/heads/main", "main"} {
+		if _, err := e.Apply(ctx(), Human, envelope(t, e, "repository.enroll", RepositoryEnrollment{
+			ID: "collide", PlanID: "plan", Root: mustRepository(t, e, "fixture-repo").Root,
+			BaseRef: "refs/heads/main", PlanBranch: planBranch, DirtyChoice: "clean"})); err == nil {
+			t.Fatalf("enrollment accepted plan_branch=%q, which is the base branch", planBranch)
+		}
 	}
 }
 

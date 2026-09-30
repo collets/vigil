@@ -233,11 +233,9 @@ func (e *Engine) BuildFactualArchive(ctx context.Context, commandID, planID stri
 			// Normalize the stored exclusion set so an acceptance recorded
 			// before an application-owned directory became excluded is not
 			// invalidated by the forced set alone.
-			normalized, err := workspace.NormalizeExclusions(accepted.Identity.Root, accepted.Observed.Exclusions)
-			if err != nil {
+			if _, err := workspace.NormalizeExclusions(accepted.Identity.Root, accepted.Observed.Exclusions); err != nil {
 				return nil, errors.New("accepted repository fingerprint exclusions are invalid")
 			}
-			_ = normalized
 			// Queried on the transaction handle: this path holds a write
 			// transaction, so opening a second connection to read the delivery head
 			// would deadlock against itself.
@@ -352,11 +350,9 @@ func (e *Engine) collectFactualArchive(ctx context.Context, planID string) (Fact
 		if err := current.Identity.Validate(); err != nil {
 			return manifest, 0, 0, err
 		}
-		normalized, err := workspace.NormalizeExclusions(current.Root, accepted.Observed.Exclusions)
-		if err != nil {
+		if _, err := workspace.NormalizeExclusions(current.Root, accepted.Observed.Exclusions); err != nil {
 			return manifest, 0, 0, fmt.Errorf("accepted repository %s has invalid fingerprint exclusions", accepted.ID)
 		}
-		_ = normalized
 		if err := e.acceptedRepositoryStillHolds(ctx, current, accepted.Observed); err != nil {
 			return manifest, 0, 0, fmt.Errorf("accepted repository %s changed before archive: %w", accepted.ID, err)
 		}

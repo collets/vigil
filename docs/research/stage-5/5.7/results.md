@@ -134,6 +134,53 @@ substituted a narrative explanation for the first refusal and thrown the real
 error away, which is how a diagnosis ends up describing a guard the product never
 applied. The observed text is now recorded verbatim wherever a stage fails.
 
+### How the fix was reviewed, and what that review changed
+
+An independent adversarial review of the fix returned **conditional, with no P0 and
+no P1**: it could not move a ref outside the plan ref, could not get an archive
+published over content the acceptance did not cover, and found the index refresh
+genuinely tight. It agreed that re-opening an accepted slice to fix a blocking
+defect found by a later slice is the right call.
+
+What it did find was that the **acceptance argument was weak**: four of the five
+guards in the archive relaxation and three of the four conditions in the ownership
+predicate could each be deleted with the entire `internal/core` suite green. It also
+found a false security claim in the predicate's own comment, and a test that was
+vacuous because an empty grant ID failed before ownership was ever consulted.
+
+All of that is now closed. Each guard has a test that only it can catch, and the
+result is mutation-verified rather than asserted: removing any one of the seven
+guards fails the package, and a neutered ownership predicate and deleted refusal
+sites are both caught where they were previously invisible.
+
+Three findings from that round are worth carrying forward as facts rather than as
+fixes:
+
+- **The content-digest guard is deliberately redundant.** `Dirty` is Git's own
+  comparison of the index against the head tree, the worktree against the index,
+  untracked files and abnormal index entries, so everything the digest can see it
+  already reports. An attempt to isolate it with an untracked file failed: the
+  checkout was dirty. It is kept as a second opinion, and the code and the test now
+  say so, so nobody later mistakes it for a load-bearing control.
+- **The ownership predicate's ordering is not security-relevant.** A unique index,
+  `one_repository_branch_preparation`, makes it impossible to have two branch
+  operations for one repository revision, so the query's `LIMIT 1` cannot pick a
+  stale row. The index invariant is now asserted, so dropping it would fail rather
+  than silently making the query order-dependent.
+- **A person who moves HEAD away and back is not distinguished.** `observed_head_ref`
+  is a stored string and is never re-read live, so at the moment they return, their
+  branch is treated as application-owned. The comment claimed otherwise and now
+  states the limit, naming what does bound it: the `branch_ref` must be the plan ref
+  the application enrolled for this repository revision, so a ref the person created
+  themselves is never claimed.
+
+Two narrower limits are recorded rather than fixed. A plan with more than one task to
+commit cannot archive, because the second commit's parent is the first commit rather
+than the accepted head; that fails closed and is not widened here, because widening
+it would relax a guard in a re-opened slice on a path nothing has tested. And
+enrollment now refuses a plan branch equal to the base branch, which was inert before
+the fix and would otherwise have let a delivery advance the operator's base branch.
+
 ## Boundary and recovery cases
 
 Twenty cases, all decided: fourteen fully automated, two carried from accepted

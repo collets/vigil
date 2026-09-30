@@ -73,10 +73,12 @@ const (
 	CaseSummaryOnlyRetry         = "finalization-retry-does-not-rerun-development"
 	CaseTranscriptExpiryPreserve = "transcript-expiry-preserves-durable-evidence"
 	CaseGitAndHostingBoundary    = "git-and-hosting-boundaries-verified"
-	// CaseBaseBranchReturn records the integration gap the rehearsal actually
-	// found: the production CLI cannot return an enrolled repository to its base
-	// branch, so the commit path is unreachable after the documented
-	// prepare/execute/accept path.
+	// CaseBaseBranchReturn records that delivery is reached from the accepted state
+	// without any out-of-band checkout. It was opened as an integration gap: the
+	// commit path refused a checked-out plan ref, and the accepted fingerprint
+	// required exactly that checkout, so the two refusals were mutually exclusive and
+	// commit was unreachable. That was Stage 5.7 finding 5.7-F1; the case now asserts
+	// the fixed behaviour rather than the gap.
 	CaseBaseBranchReturn = "base-branch-return-for-commits"
 )
 

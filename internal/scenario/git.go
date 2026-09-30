@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -136,6 +137,12 @@ func WorktreeStatus(ctx context.Context, root string) ([]string, error) {
 // from one modified line to none is the point of committing rather than a
 // disturbance — but a digest of the bytes is unchanged either way, and that is the
 // property worth asserting.
+//
+// A path that is listed but absent is recorded as absent rather than treated as an
+// error, so a tracked file deleted from the worktree digests rather than aborting
+// the run. Gitignored paths are excluded, which includes the product-written
+// `.vigil` archive view; the assertion that uses this digest therefore speaks about
+// tracked and untracked-but-not-ignored files, and says so.
 func WorktreeDigest(ctx context.Context, root string) (string, error) {
 	output, err := git(ctx, root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
 	if err != nil {
@@ -153,6 +160,10 @@ func WorktreeDigest(ctx context.Context, root string) (string, error) {
 	for _, name := range names {
 		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
 		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				fmt.Fprintf(digest, "%s\x00absent\x00", name)
+				continue
+			}
 			return "", err
 		}
 		fmt.Fprintf(digest, "%s\x00%d\x00", name, len(raw))
