@@ -3,9 +3,10 @@
 <!-- vigil-tier: evidence -->
 
 Status: **implemented, under independent review; not accepted.** The walkthrough
-runs and produces a complete, honest record, but it found a blocking product
-defect (5.7-F1) and the stage cannot be accepted while the delivery path is
-unreachable. This slice does **not** claim the milestone is demonstrated.
+runs and produces a complete, honest record. Blocking product defect 5.7-F1 was
+found by this slice, fixed in the Stage 5.2/5.6 delivery path, and delivery is now
+reached end to end. This slice still does **not** claim the milestone is
+demonstrated: two milestone steps and eight requirements are owned human gates.
 
 ## What this is
 
@@ -40,6 +41,9 @@ empty value — using a sentinel directory it creates and removes itself. Every
 scenario target refuses a root that does not resolve to the documented
 `/tmp/vigil-stage-5.7-scenario`.
 
+The run is stable: 12 of 12 consecutive runs completed with `aborted: false` and
+all 50 assertions passing, at 333 recorded steps.
+
 `make scenario` writes `report.json` into its disposable root and prints the
 milestone, recovery and requirement tables. `make scenario-clean` removes that
 root; the runner itself never removes anything it did not create, and refuses a
@@ -60,36 +64,80 @@ model turns, and 45 minutes of wall clock. Every bound is enforced, not advisory
 | 5 Review finding and repair | automated | a fresh distinct reviewer session found the injected defect as blocking; a bounded repair fixed it; fresh check and a distinct fresh review then passed |
 | 6 Checks, findings, summaries | automated | check, fresh review, manual outcome, human decision, atomic acceptance, plus the plan's own `--plan-wide` gates |
 | 7 Task and plan human review | **pending Stage 8** | a real functional Pass and real acceptance are human decisions; fixture actors prove mechanics only |
-| 8 Draft pull/merge request | **unmet** | blocked by finding 5.7-F1 below; a real draft also needs an authorized destination |
+| 8 Draft pull/merge request | automated | commit → push → draft ran through the production path against a local bare remote and a credential-free loopback provider stand-in, verified by exact head/base/operation marker with exactly one POST. No real remote or hosted request was touched |
 
-## Finding 5.7-F1 — the delivery path is unreachable (blocking)
+## Finding 5.7-F1 — the delivery path was unreachable (found here, now fixed)
 
 Preparing the plan branch is required for execution, and it leaves the checkout on
-the plan branch. The commit path refuses to move a ref the user currently has
+the plan branch. The commit path refused to move a ref the user currently had
 checked out. Returning the checkout to the base branch — which no production
-command does — invalidates the accepted task fingerprint, because acceptance
-binds the whole baseline including the head ref.
+command does — invalidated the accepted task fingerprint, because acceptance binds
+the whole baseline including the head ref.
 
-The two refusals are mutually exclusive, so commit, and therefore push and draft
-delivery, cannot be reached from the documented workflow:
+The two refusals were mutually exclusive, so commit, and therefore push and draft
+delivery, could not be reached from the documented workflow. The rehearsal recorded
+this rather than working around it, and filed the three affected recovery rows and
+the draft milestone as `unmet`, because the cause was a product defect and not a
+human gate.
 
-```
-observation 1: commit-prepare refused while HEAD is on the plan branch
-observation 2: commit-prepare refused again after an explicit base-branch return:
-               "repository no longer matches accepted task fingerprint"
-```
+### What fixing it actually took
 
-The rehearsal did **not** work around this and did not report it as a pass. The
-three affected recovery rows and the draft milestone are recorded as `unmet`,
-because the cause is a product defect in the Stage 5.2/5.6 delivery path and not
-a human gate. Fixing it belongs to those slices; the check is that the
-`commitParent` guard and the acceptance fingerprint stop contradicting each other
-for a repository the application itself prepared.
+The defect was diagnosed as one contradiction and turned out to be **two
+independent ones**, plus a consequence neither diagnosis had reached.
+
+**The checked-out-plan-ref refusal.** The guard exists so delivery never moves a
+branch a person has checked out. But `PrepareBranch` performs the `symbolic-ref`
+change itself, and the operation that journaled that intent records the head ref it
+observed afterwards. The refusal is now conditional on the application not owning
+that checkout: a branch operation for the repository's current revision, in state
+`observed` or `reconciled`, whose `branch_ref` and `observed_head_ref` are both the
+target. A person who checks the ref out later is not described by that record, so
+the refusal stands — and it now fires at *prepare*, before any approval could be
+requested. A merely `prepared` operation cannot establish ownership, because its
+`symbolic-ref` mutation may not have happened.
+
+**The accepted fingerprint is invalidated by the commit itself.** The factual
+archive re-verifies the accepted baseline, so it had to be built *before* the
+commit, while draft delivery requires an archive revision and so had to come
+*after* it. Delivery was unreachable in a second, independent way.
+`acceptedRepositoryStateIsHonoured` now accepts the accepted content already
+recorded by this plan's own verified delivery commit: the same content digest, the
+same head ref, HEAD equal to that recorded commit whose parent is the accepted
+head, and a clean checkout. This is the same acceptance after the application has
+done the one thing the acceptance approved, not a weaker one. A changed content
+digest, an unrelated head, a late edit and a dirty checkout all still fail, and
+`TestArchiveStillRefusesContentThatIsNotTheAcceptedContent` pins each of those.
+
+**A stale index the fix exposed.** The commit tree is built in a private temporary
+index, so the operator's real index is never written — the right containment
+default, and what leaves the checkout byte-identical when HEAD is not the ref being
+moved. With HEAD on the moved ref it was wrong: the index described the previous
+commit, every committed path read as staged-and-unstaged modified, and the
+operator's next commit would have reverted the work Vigil had just recorded. The
+index is now refreshed for exactly the committed paths, from the commit that was
+just written, and only when HEAD is the ref this application prepared. No other
+index entry is touched and no working file is written.
+
+### What the walkthrough now observes
+
+Delivery runs commit → push → draft through the production path. The order is the
+product's own, and the rehearsal follows it rather than inventing one: the factual
+archive sits between the push and the draft, because draft creation requires an
+archive revision and observing the draft creates a new one.
+
+`no-unintended-refs-created`, `git-and-hosting-boundaries-verified` and
+`base-branch-return-for-commits` are now `automated`, and the draft milestone is
+observed rather than `unmet`. There is no `unmet` row anywhere in the report.
+
+The rehearsal also stopped discarding the product's own error text. It had
+substituted a narrative explanation for the first refusal and thrown the real
+error away, which is how a diagnosis ends up describing a guard the product never
+applied. The observed text is now recorded verbatim wherever a stage fails.
 
 ## Boundary and recovery cases
 
-Twenty cases, all decided: eleven fully automated, two carried from accepted
-predecessor records, three `unmet` under 5.7-F1, and four **partial**.
+Twenty cases, all decided: fourteen fully automated, two carried from accepted
+predecessor records, and four **partial**. There is no `unmet` case.
 
 A partial row is its own class, not a flavour of automated. It records that a
 narrower observation happened through the production path while the full property
@@ -104,7 +152,7 @@ does not state what was not observed. The four are:
 | `mixed-user-and-agent-work-preserved` | a commit naming an out-of-scope path is refused and unrelated work is byte-identical afterwards | clearing and restoring a mixed user/agent change set |
 | `partial-multi-repository-restore-is-visible` | a restore naming three nonexistent identities is refused before touching any repository | a genuinely partial multi-repository restore |
 
-The remaining eleven were observed in full. `controller-kill-leaves-unknown-outcome`
+The remaining fourteen were observed in full. `controller-kill-leaves-unknown-outcome`
 is among them, and its detail is written from the observed durable state rather
 than from an assumed landing. Where a kill lands is a race against the synthetic
 driver's speed, and **both landings occur**: across repeated runs on this host the
@@ -279,10 +327,17 @@ recorded as pending work.
 
 - Any real harness turn. Zero model turns ran; every execution used the labelled
   synthetic fixture driver.
-- Native macOS validation and the cross-build matrix.
+- Native macOS validation and the cross-build matrix, for the 5.7-F1 fix as well as
+  for the harness. The fix touches `internal/core` delivery and the fork-accounting
+  exception at `internal/checks/runner.go:459` is a separate, still-open Darwin
+  observation.
 - `scenario-clean` and the `--keep=false` removal path, though the guard both share
   is exercised by `make scenario-guard-check`.
 - The Docker opt-in, which this environment did not exercise.
+- The commit path's index refresh was exercised on Linux only, and only in the
+  walkthrough and the three new core tests. The behaviour it depends on —
+  `git ls-tree` and `git update-index --cacheinfo` against a live HEAD — has not
+  been checked natively on macOS.
 
 ## Pending Stage 8 inputs
 

@@ -83,7 +83,7 @@ func requirementCoverage() []MatrixEntry {
 	// would leave it reading as a pass to anyone scanning the evidence classes,
 	// which is the confusion the class exists to prevent.
 	partial := map[string]string{
-		"R41": "no merge command, endpoint or transport exists anywhere in the product command surface, so automated delivery cannot end in an automatic merge. NOT observed: the run's own delivery stopped at the draft-request stage because 5.7-F1 blocked commit and push, so the merge/pull-request creation boundary named by this requirement was not exercised",
+		"R41": "no merge command, endpoint or transport exists anywhere in the product command surface, so automated delivery cannot end in an automatic merge. NOT observed: this run's draft request was created against a credential-free loopback provider stand-in, not a real hosting provider, so the boundary is exercised in mechanics and command surface rather than against a live destination; the real destination is Stage 8's",
 	}
 	// reused lists requirements whose evidence lives in an accepted predecessor
 	// slice, with that slice's record as the source.
