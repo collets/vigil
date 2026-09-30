@@ -136,14 +136,33 @@ P13–P18 were added by [Stage 6.1](../plans/stage-6/6.1-parity-gap-analysis.md)
 
 ### The closed exclusion list R11 depends on
 
-R11 makes interface parity conditional on an exclusion list. That list is
-**fixed here**, in the requirements baseline, so that the agent executing Stage
-6 cannot satisfy the condition by writing down its own exclusions:
+R11 makes interface parity conditional on an exclusion list. That list is **fixed
+here**, in the requirements baseline rather than in a Stage 6 deliverable, so that
+the agent executing Stage 6 cannot satisfy the condition by producing its own
+exclusion register and then treating that register as the list. **That reduces
+the self-certification; it does not eliminate it**, and it is stated plainly here
+because a green test must not be read as more than it is. No mechanical gate can
+make a live requirements document immutable — only the installed migrations are
+immutable in this repository — so the guarantee is **procedural and
+review-enforced**: adding an entry is a user scope decision, the list is mirrored
+into the evidence document, a test pins the two copies against each other and
+against the `X` classifications, and any change to either copy is visible in an
+independent review's diff. A reviewer must treat a **new entry here as a scope
+decision needing the user's approval**, not as a documentation edit.
 
-| Excluded capability | Reason class | Reason |
+This list is the **canonical** one. The mirror in
+[`research/stage-6/results.md`](../research/stage-6/results.md#59-deliberate-exclusions)
+carries these eight entries with the same reason class and the same reason text,
+word for word, and 6.2 schedules a test that asserts it. The first six entries
+correspond to the register's six `X` rows; the last two name **capabilities rather
+than commands**, so they have no register row — they are the deliberate
+exclusions R47 and R41 already state, recorded here so that no later reader
+mistakes either for an oversight.
+
+| Excluded | Reason class | Reason |
 | --- | --- | --- |
 | `vigil tool-server` | mechanism | A stdio JSON-RPC server for a native harness subprocess, spawned by the application with a pre-opened session. Not an operator action; a human surface would widen authority. |
-| `apply` kind `operation.start` | mechanism | Accepted only for the `Core` authority and issued by the trusted coordinator at effect start. Not a human decision, and unreachable from the CLI too. |
+| `apply` kind `operation.start` | mechanism | Rejected for the `Human` authority inside `Engine.permission`; issued by the trusted coordinator at effect start. Not a human decision, and unreachable from the CLI too. |
 | `vigil completion` | mechanism | Cobra shell-completion generation; shell scaffolding with no Vigil state. |
 | `vigil help` | mechanism | Documents the CLI surface that Stage 6 replaces as primary. The interface's own help screen supersedes it. |
 | `vigil hello` | scope | A SQLite connectivity smoke test with no project state. Not a product capability. |

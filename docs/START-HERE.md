@@ -11,8 +11,9 @@ check, model and reviewer dispatch are deliberately disabled. This page tells yo
 which documents to read, and — more importantly — which ones you can skip.
 
 **Stage 6.1 is implemented, was rejected by its first independent review, was
-returned conditional by a narrow follow-up, and has both sets of findings
-remediated pending a final confirming review.** It is the terminal interface
+returned conditional by a narrow follow-up and again by a final confirming
+review, and all three rounds of findings are remediated pending one more
+confirming review.** It is the terminal interface
 parity gap analysis, so it wrote no interface code: it measured the interface
 and the product surface from the code and the built binary, found that the
 interface fully expresses 4 of the 82 distinct capabilities the 85-row register

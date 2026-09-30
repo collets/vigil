@@ -204,9 +204,14 @@ Classification rule, from
   from what the interface displays. **A bounded free-text field is not a
   compromise**, and neither is restricting what the operator may supply.
 - **C** expressible with a documented compromise — reachable, but the operator
-  must supply a filesystem path outside the interface's own state, a large
-  nested closed document built through a guided editor, or a private key file.
-  Each C row names which of those three it is.
+  must supply something the interface cannot display, select or verify, in one
+  of exactly three situations: **(a)** a filesystem path outside the interface's
+  own state, **(b)** a *nested or recursive* closed document built through a
+  guided editor — a flat list of scalars in a guided form is `E`, not `C` — or
+  **(c)** a private key file. Each C row names which of the three it is, in
+  those words. The word *large* is deliberately not used: it is defined nowhere,
+  and without *nested* the `quality-review`/`project.configure` boundary would be
+  an unstated line.
 - **X** excluded, with reason — not reachable from a terminal interface, or
   deliberately outside Stage 6's scope. Each X row says which, and why. **No
   row is excluded for technical impossibility**; all six are shell/subprocess
@@ -587,12 +592,12 @@ an entry is a user scope decision. 6.9 fixes the final wording.
 | --- | --- | --- |
 | `vigil tool-server` | mechanism | A stdio JSON-RPC server for a native harness subprocess, spawned by the application with a pre-opened session. Not an operator action; a human surface would widen authority. |
 | `apply` kind `operation.start` | mechanism | Rejected for the `Human` authority inside `Engine.permission`; issued by the trusted coordinator at effect start. Not a human decision, and unreachable from the CLI too. |
-| `vigil hello` | scope | A SQLite connectivity smoke test with no project state. Not a product capability. |
-| `vigil spike` | scope | A development-only Stage 1–3 experiment runner outside the persisted core. Stage 6 must not add product capability. |
 | `vigil completion` | mechanism | Cobra shell-completion generation; shell scaffolding with no Vigil state. |
 | `vigil help` | mechanism | Documents the CLI surface that Stage 6 replaces as primary. The interface's own help screen supersedes it. |
-| Code and diff inspection | scope, accepted | R47 places this in an external IDE. The interface states where to look rather than embedding a diff viewer. |
-| Automatic merge | scope, accepted | R41 excludes merging entirely. The interface states that no merge endpoint exists. |
+| `vigil hello` | scope | A SQLite connectivity smoke test with no project state. Not a product capability. |
+| `vigil spike` | scope | A development-only Stage 1–3 experiment runner outside the persisted core. Stage 6 must not add product capability. |
+| Code and diff inspection | scope, accepted | R47 places this in external IDE tools. Not a product gap. |
+| Automatic merge | scope, accepted | R41 excludes merging entirely. |
 
 **Nothing else is excluded, and in particular two items an earlier draft of this
 analysis wrongly excluded are ordinary interface gaps.** The application *does*

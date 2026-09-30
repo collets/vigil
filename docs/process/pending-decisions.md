@@ -19,8 +19,8 @@ The [Stage 5.1–5.7 plan index](../plans/stage-5/README.md#user-input-and-auton
 - **`main` commit/push authority clarified 2026-09-27:** the agent follows the task-branch workflow and has **no** standing authorization to commit or push to `main`; an independently accepted candidate is ready to *propose*. Only the user can authorize a named `main` operation or session, and that authorization is scope-bound and never a standing default. Ordinary non-force checkpoint pushes to the matching task branch remain standing-authorized. Deleting an agent-owned task/integration branch needs no further confirmation once its integration into `origin/main` is clearly confirmed. Server-side branch protection is deliberately not configured for now; do not assume `main` is protected and do not pre-emptively add protection recommendations to the policy.
 - **Native macOS access — blocked on authentication (user gate, 2026-09-30):**
   [Stage 6.1](../plans/stage-6/6.1-parity-gap-analysis.md) measured the
-  terminal interface on Linux only, because the Mac could not be reached over
-  SSH. The host is **up and reachable** (`ping` answers, `sshd` offers
+  terminal interface on Linux only, because SSH **authentication** to the Mac
+  was refused. The host is **up and reachable** (`ping` answers, `sshd` offers
   `publickey,password,keyboard-interactive`), but this machine's
   `~/.ssh/id_ed25519` is refused for every account that could be inferred
   (`admin`, `scoletta`, `vigil`, `icarus`, and the bare local user name), with

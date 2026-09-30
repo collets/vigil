@@ -8,8 +8,10 @@ Vigil is a local control panel that runs existing agent harnesses (Codex, Hermes
 through a Go core with SQLite state. It is **pre-release**: the offline core through
 Stage 5.7 is implemented and independently accepted at implementation commit
 `522cb96`, Stage 6.1's parity gap analysis is implemented, was **rejected** by its
-first independent review, and is remediated pending a narrow follow-up, and
-production dispatch is deliberately disabled.
+first independent review, was returned **conditional** by a narrow follow-up and
+again by a final confirming review, and has all three rounds of findings
+remediated pending one more confirming review, and production dispatch is
+deliberately disabled.
 
 **Each stage's acceptance covers the autonomous part only.** Stage 5.7's walkthrough
 found that the Stage 5.2/5.6 delivery path was unreachable and fixed it under

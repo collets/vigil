@@ -135,7 +135,7 @@ and cannot reach **66** by any action; that 6 of the 25 human decision classes
 are fully expressed, 6 are partial and 13 are absent; and that all five audited
 requirements were unmeasurable as written, which is why the interface could sit
 at four expressed capabilities through two accepted stages unnoticed. It
-recorded 21 measured defects, 12 documented compromises, 6 exclusions with
+recorded 21 measured defects, 12 documented compromises, 6 excluded register rows (the first six of the 8-entry closed list in `requirements.md`) with
 reasons, and 8 sub-stages (6.2–6.9), and it wrote the **closed** exclusion register that
 stops Stage 6 from excusing itself out of R11. The evidence is in
 [`research/stage-6/results.md`](../../research/stage-6/results.md) and the
