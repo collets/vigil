@@ -130,8 +130,11 @@ production's own `Inspect` actually guarantees:
   offers both `start` and `reconcile` for a `writing` run, so requiring `start` to
   be absent would assert a property the product does not have. The check that
   cannot false-positive is the narrower one: `reconcile` must be offered on a run
-  that has not finished. A `completed` run offers only `inspect` and has nothing
-  left to reconcile, so it is exempt.
+  the inspection would let a caller submit to — the only run where an unproven
+  replay is possible. A run offering no submit path has nothing to replay and
+  nothing left to reconcile, so it is exempt. Both conditions are read off the
+  observed command list rather than off the run state, so the reason can never
+  contradict the list printed beside it.
 - a resolved state resolves the outcome, so offering `start` is the safe path.
 - an absent or unrecognised state establishes nothing and is never reported as
   resolving an outcome. `decodeIsReadable` requires `submission_state` for this
@@ -164,14 +167,23 @@ exercises the harness's own rule cannot catch the harness asserting something th
 product does not do.
 
 Be precise about what it is worth. The transcription is a second hand-written copy
-of production's switch, so it **cannot** detect production changing underneath it —
-a stale table would still pass. Its value is that a reviewer reading the harness
-check has the product's rule beside it in executable form, and that is what caught
-the defect. `TestProductionTranscriptionMatchesSource` re-reads the production
-source and fails if the two properties the transcription encodes — that `uncertain`
-is the only submission state special-cased, and that every non-completed branch
-offers `reconcile` — have drifted. It is a drift guard on a copy, not an
-integration test against the product.
+of production's switch, so by itself it cannot detect production changing
+underneath it — its value is that a reviewer reading the harness check has the
+product's rule beside it in executable form, and that is what caught the defect.
+`TestProductionTranscriptionMatchesSource` is what makes the copy safe: it parses
+production's `switch` arms — condition and command list, in order — out of the
+source and fails if any differs from the transcription, and it fails loudly rather
+than skipping when the source is unreadable. It is a drift guard on a copy, not an
+integration test against a running product. An earlier version of it was named as
+a drift check but only inspected two text shapes, and was shown to miss five of
+six realistic production mutations; the parser form catches them, which was
+verified by mutating `reconcile.go` and confirming each mutation fails the test.
+
+`TestSchemaEnumerationsMatchMigrations` does the same for the run states and
+submission states the harness enumerates: it reads the `CHECK` constraints out of
+the migrations and fails if the enumeration and the schema disagree in either
+direction, so a widening of either constraint cannot silently leave the
+replay-safety check unexercised for a state the product can hold.
 
 Also observed in full: pause refusing five
 distinct dispatch commands and `continue` restoring them; a bounded stop
@@ -220,8 +232,11 @@ in the report's `requirement_gaps` list.
 Requirement gaps are reported under their own key rather than folded into the
 milestone/recovery gap list, because a requirement is a different kind of claim
 from a case and conflating them would let a reader mistake one for the other. Each
-section's printed total now names every class it holds, so the line's own
-arithmetic reconciles (8 + 20 + 71).
+section's printed total names every class it holds, including `undecided` for rows
+an aborted run never reached, so the line's own arithmetic reconciles
+(8 + 20 + 71). A class the renderer does not know about at all would render as an
+explicit `UNPRINTED=` contradiction rather than a summary that quietly does not
+add up.
 
 **The citation check verifies resolvability only.** Each carried citation is
 confirmed to name a record that is readable in this checkout; an absent record

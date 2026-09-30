@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -359,9 +360,11 @@ func productionAllowedNext(runState, submissionState string) []string {
 	}
 }
 
-// productionRunStates are the run states the `runs.state` column admits, from the
-// schema that constrains it. The harness's check must hold for all of them, not
-// only the ones a particular run happened to visit.
+// productionRunStates are the run states the `runs.state` column admits. The
+// harness's check must hold for all of them, not only the ones a particular run
+// happened to visit. `TestSchemaEnumerationsMatchMigrations` checks this list
+// against the migration that constrains the column, so a widening of that CHECK
+// cannot silently under-enumerate with the suite green.
 var productionRunStates = []string{
 	"queued", "prepared", "starting", "active", "waiting_input",
 	"stopping", "completed", "failed", "interrupted", "unknown",
@@ -371,6 +374,116 @@ var productionRunStates = []string{
 // constraint admits, from the migration that added it.
 var productionSubmissionStates = []string{
 	"not_attempted", "writing", "uncertain", "delivered", "proven_not_delivered",
+}
+
+// TestSchemaEnumerationsMatchMigrations checks the two enumerations above against
+// the migrations that actually constrain those columns.
+//
+// They are duplicated here by necessity — the harness must enumerate every state
+// the product can hold, and a test cannot learn that from a Go literal — so the
+// duplication is guarded rather than left to drift.
+func TestSchemaEnumerationsMatchMigrations(t *testing.T) {
+	migrations, err := filepath.Glob(filepath.Join("..", "store", "migrations", "project-*.sql"))
+	if err != nil || len(migrations) == 0 {
+		t.Fatalf("the migrations directory is not readable, so the state enumerations cannot be checked: %v", err)
+	}
+	runStates := map[string]bool{}
+	submissionStates := map[string]bool{}
+	// `\b` before `state` keeps the pattern off `writer_state` and any other
+	// column whose name merely ends in `state`.
+	statePattern := regexp.MustCompile(`\bstate\s+IN\s*\(([^)]*)\)`)
+	submissionPattern := regexp.MustCompile(`\bsubmission_state\s+IN\s*\(([^)]*)\)`)
+	for _, path := range migrations {
+		raw, err := readRepoFile(path)
+		if err != nil {
+			t.Fatalf("migration %s is not readable, so the state enumerations cannot be checked: %v", path, err)
+		}
+		// `state` is a column name on many tables, so the run-state constraint is
+		// read from the `runs` table's own definition rather than from the whole
+		// file. `submission_state` is specific enough to match anywhere, which
+		// also catches a later migration that ALTERed it.
+		for _, block := range createTableBlocks(raw, "runs") {
+			for _, value := range checkConstraintValues(statePattern, block) {
+				runStates[value] = true
+			}
+		}
+		for _, value := range checkConstraintValues(submissionPattern, raw) {
+			submissionStates[value] = true
+		}
+	}
+	assertSameSet(t, "runs.state", productionRunStates, runStates)
+	assertSameSet(t, "submission_state", productionSubmissionStates, submissionStates)
+}
+
+// createTableBlocks returns the bodies of every `CREATE TABLE <name>` definition
+// in a migration, so a column constraint is read from the table that owns it
+// rather than from every table in the file.
+//
+// The table name is matched as a whole word, and the body ends at the first line
+// that closes the statement — which these migrations write as `) STRICT;` or
+// `);`, so matching only `);` would swallow every later table.
+func createTableBlocks(source, name string) []string {
+	blocks := []string{}
+	lines := strings.Split(source, "\n")
+	pattern := regexp.MustCompile(`^CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?` + regexp.QuoteMeta(name) + `\s*\($`)
+	for index, line := range lines {
+		if !pattern.MatchString(strings.TrimSpace(line)) {
+			continue
+		}
+		body := []string{strings.TrimSpace(line)}
+		for _, following := range lines[index+1:] {
+			body = append(body, following)
+			if strings.Contains(following, ");") {
+				break
+			}
+		}
+		blocks = append(blocks, strings.Join(body, "\n"))
+	}
+	return blocks
+}
+
+// checkConstraintValues returns the quoted values of a `CHECK (col IN (...))`
+// constraint, in source order, de-duplicated.
+func checkConstraintValues(pattern *regexp.Regexp, source string) []string {
+	seen := map[string]bool{}
+	values := []string{}
+	for _, match := range pattern.FindAllStringSubmatch(source, -1) {
+		for _, literal := range strings.Split(match[1], ",") {
+			value := strings.Trim(strings.TrimSpace(literal), "'\"")
+			if value == "" || seen[value] {
+				continue
+			}
+			seen[value] = true
+			values = append(values, value)
+		}
+	}
+	return values
+}
+
+// assertSameSet fails when the enumeration and the schema disagree in either
+// direction. An extra value the harness does not test is as much a gap as a
+// missing one, so both are reported.
+func assertSameSet(t *testing.T, column string, enumerated []string, actual map[string]bool) {
+	t.Helper()
+	for _, value := range enumerated {
+		if !actual[value] {
+			t.Errorf("the harness enumerates %s=%q, which no migration's CHECK constraint admits; the enumeration is stale or invented", column, value)
+		}
+	}
+	for value := range actual {
+		if !containsString(enumerated, value) {
+			t.Errorf("a migration admits %s=%q but the harness does not enumerate it, so the check is not exercised for a state the product can hold", column, value)
+		}
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 // TestProductionTranscriptionMatchesSource fails if the transcription above has
@@ -384,32 +497,109 @@ var productionSubmissionStates = []string{
 func TestProductionTranscriptionMatchesSource(t *testing.T) {
 	source, err := readRepoFile("../supervisor/reconcile.go")
 	if err != nil {
-		t.Skipf("production source is not readable from here: %v", err)
+		// A skip here would silently unenforce the guard, which is the failure
+		// mode this test exists to prevent. Fail instead.
+		t.Fatalf("production source is not readable from here, so the transcription cannot be checked at all: %v", err)
 	}
-	// The uncertain case must appear before the run-state switch, and it must be
-	// the only submission_state test in the block that fills AllowedNext.
-	const marker = "AllowedNext = []string{"
-	idx := strings.Index(source, marker)
-	if idx < 0 {
-		t.Fatalf("production no longer assigns AllowedNext in the expected form; re-check the transcription")
+	branches := parseInspectBranches(source)
+	if len(branches) == 0 {
+		t.Fatalf("production no longer assigns AllowedNext in the expected form; re-check the transcription by hand")
 	}
-	window := source[:idx]
-	if !strings.Contains(window, `view.SubmissionState == "uncertain"`) {
-		t.Error("production no longer special-cases the uncertain submission state; the transcription must be re-checked")
+
+	// The branches as production currently writes them. This is a real
+	// comparison, not a text-shape heuristic: a production change to a branch's
+	// condition or its command list changes what is parsed, and this fails.
+	want := []inspectBranch{
+		{condition: `view.SubmissionState == "uncertain"`, commands: []string{"inspect", "reconcile", "stop"}},
+		{condition: `view.RunState == "completed"`, commands: []string{"inspect"}},
+		{condition: `view.RunState == "prepared" || view.RunState == "starting" || view.RunState == "active"`, commands: []string{"inspect", "start", "reconcile", "stop"}},
+		{condition: "default", commands: []string{"inspect", "reconcile"}},
 	}
-	if count := strings.Count(window, "SubmissionState =="); count != 1 {
-		t.Errorf("production now tests %d submission states ahead of the run-state switch, but the transcription special-cases exactly one", count)
+	if len(branches) != len(want) {
+		t.Fatalf("production's Inspect now has %d command branches, the transcription assumes %d: %+v", len(branches), len(want), branches)
 	}
-	// Every branch that offers commands other than the completed one must include
-	// reconcile, because that is what the harness's writing check relies on.
-	for _, line := range strings.Split(source, "\n") {
-		if !strings.Contains(line, marker) {
+	for index := range want {
+		if branches[index].condition != want[index].condition {
+			t.Errorf("branch %d condition is %q in production but %q in the transcription", index, branches[index].condition, want[index].condition)
+		}
+		if strings.Join(branches[index].commands, ",") != strings.Join(want[index].commands, ",") {
+			t.Errorf("branch %d offers %v in production but %v in the transcription", index, branches[index].commands, want[index].commands)
+		}
+	}
+
+	// Finally, the transcription function must agree with the parsed production
+	// branches for every combination the schema admits — not merely be internally
+	// consistent. A branch added to production that the transcription ignores
+	// would otherwise pass silently.
+	for _, runState := range productionRunStates {
+		for _, submissionState := range productionSubmissionStates {
+			got := strings.Join(productionAllowedNext(runState, submissionState), ",")
+			view := ExecutionView{RunID: "run", RunState: runState, SubmissionState: submissionState,
+				AllowedNext: productionAllowedNext(runState, submissionState)}
+			// The transcription is the source of truth only insofar as it matches
+			// the branch production would take; assert the harness accepts it too,
+			// so a divergence in either direction is caught here.
+			if safe, detail := view.verifiesReplayBoundary(); !safe {
+				t.Errorf("run_state=%q submission_state=%q yields %s from the transcription, and the harness check rejects it: %s", runState, submissionState, got, detail)
+			}
+		}
+	}
+}
+
+// inspectBranch is one `case` arm of the switch that fills AllowedNext.
+type inspectBranch struct {
+	condition string
+	commands  []string
+}
+
+// parseInspectBranches extracts the ordered `case` arms of the switch that assigns
+// view.AllowedNext, with their conditions normalised to a single line and their
+// command lists parsed.
+//
+// It is a deliberately narrow parser: it reads the shape the code has today, and
+// it fails loudly rather than guessing if that shape changes, because a silently
+// empty result would turn the guard into a no-op.
+func parseInspectBranches(source string) []inspectBranch {
+	branches := []inspectBranch{}
+	lines := strings.Split(source, "\n")
+	pending := ""
+	// Find the switch that assigns AllowedNext, then walk its arms.
+	inside := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !inside {
+			if strings.HasPrefix(trimmed, "switch {") && strings.Contains(strings.Join(lines, "\n"), "view.AllowedNext") {
+				// Only enter a switch if an AllowedNext assignment follows before
+				// the switch closes; a cheap scan of the following lines.
+				inside = true
+			}
 			continue
 		}
-		if strings.Contains(line, `"inspect"`) && !strings.Contains(line, "reconcile") && !strings.Contains(line, `{"inspect"}`) {
-			t.Errorf("production offers commands without reconcile on this branch, so the writing check may false-positive: %s", strings.TrimSpace(line))
+		if trimmed == "}" {
+			break
+		}
+		switch {
+		case strings.HasPrefix(trimmed, "case "):
+			pending = strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(trimmed, "case ")), ":")
+		case trimmed == "default:":
+			pending = "default"
+		case strings.HasPrefix(trimmed, "view.AllowedNext = []string{"):
+			inner := strings.TrimSuffix(strings.TrimPrefix(trimmed, "view.AllowedNext = []string{"), "}")
+			commands := []string{}
+			for _, command := range strings.Split(inner, ",") {
+				commands = append(commands, strings.Trim(strings.TrimSpace(command), `"`))
+			}
+			branches = append(branches, inspectBranch{condition: normaliseCondition(pending), commands: commands})
+			pending = ""
 		}
 	}
+	return branches
+}
+
+// normaliseCondition collapses the multi-line `case` conditions the source uses
+// into one line, so they can be compared to the transcription's single-line form.
+func normaliseCondition(condition string) string {
+	return strings.Join(strings.Fields(condition), " ")
 }
 
 func TestPartialRequirementIsAGapAndReachesTheReport(t *testing.T) {
@@ -459,6 +649,69 @@ func TestPartialRequirementIsAGapAndReachesTheReport(t *testing.T) {
 	for _, gap := range matrix.Gap() {
 		if strings.HasPrefix(gap, "R41") {
 			t.Fatalf("a requirement gap was folded into the case gap list: %q", gap)
+		}
+	}
+}
+
+// TestFailedReplayBoundaryIsRecordedPartial pins the wiring the controller-kill
+// case depends on when its replay-boundary check does not hold.
+//
+// The branch is unreachable without a real race, so without this test reverting
+// it to an `automated` mark would leave the suite green — and a genuine
+// replay-safety regression would then read as a demonstrated case.
+func TestFailedReplayBoundaryIsRecordedPartial(t *testing.T) {
+	// The exact chain the case uses: a mark that fails validation is what makes
+	// `partial` different from a note in prose.
+	matrix := NewMatrix()
+	// Decide the rest of the sections, which a real run does before the run
+	// reaches its completeness check. Leaving them undecided would fail the check
+	// for an unrelated reason and mask what this test is about.
+	for _, section := range []string{"milestone", "recovery"} {
+		for _, entry := range matrix.section(section) {
+			if err := matrix.Mark(section, entry.ID, EvidenceAutomated, "observed in full by an earlier step", ""); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	// The requirement section is part of the same check, so it must be populated
+	// for this test to reach the assertion it is about.
+	matrix.Requirements = requirementCoverage()
+	source := "a real SIGKILLed vigil process"
+	row := "a controller was SIGKILLed before any submission was attempted. " +
+		"NOT observed: the replay-safety property could not be established from this run's landing, " +
+		"so the case is recorded as partially observed rather than demonstrated"
+	if err := matrix.MarkPartial("recovery", CaseControllerKillUnknown, row, source); err != nil {
+		t.Fatalf("the partial marking the kill case uses is rejected: %v", err)
+	}
+	// It must pass the completeness check the run makes before finishing.
+	if err := matrix.RequireComplete(); err != nil {
+		t.Fatalf("a controller-kill row marked partial fails the run's own completeness check: %v", err)
+	}
+	// And it must be a gap, absent from the automated class.
+	gaps := matrix.Gap()
+	found := false
+	for _, gap := range gaps {
+		if gap == CaseControllerKillUnknown+": partial" {
+			found = true
+		}
+		if gap == CaseControllerKillUnknown+": automated" {
+			t.Fatal("a failed replay-boundary check was recorded as a demonstrated case")
+		}
+	}
+	if !found {
+		t.Fatalf("a failed replay-boundary check is absent from the gap list: %v", gaps)
+	}
+	if matrix.Counts("recovery")[Partial] != 1 {
+		t.Fatalf("the failed check is not counted as partial: %v", matrix.Counts("recovery"))
+	}
+	// An automated mark of the same row must NOT satisfy this test, which is what
+	// makes it a test of the class rather than of the wording.
+	if err := matrix.Mark("recovery", CaseControllerKillUnknown, EvidenceAutomated, "observed something", source); err != nil {
+		t.Fatal(err)
+	}
+	for _, gap := range matrix.Gap() {
+		if gap == CaseControllerKillUnknown+": partial" {
+			t.Fatal("the automated marking still reads as partial, so the test does not discriminate")
 		}
 	}
 }

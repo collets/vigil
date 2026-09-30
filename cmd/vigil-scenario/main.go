@@ -149,7 +149,8 @@ func printSummary(report *scenario.Report, destination string, started time.Time
 // that a gap can never be quietly omitted — is rendered for a human reader, and
 // the previous revision silently dropped a whole evidence class from the counts
 // line while the suite stayed green. A renderer with no test is how that happens
-// again; `TestSummaryLinesReconcileEveryClass` pins it.
+// again; `TestCountLineReconcilesEveryClass` and `TestCountLineNamesAnUnprintedClass`
+// pin it.
 func summaryLines(report *scenario.Report, destination string, elapsed time.Duration) string {
 	lines := []string{
 		"Stage 5.7 autonomous qualification",
@@ -200,7 +201,14 @@ func summaryLines(report *scenario.Report, destination string, elapsed time.Dura
 // It is a declared list rather than an inline set of arguments at the call site
 // because a new class added to the matrix but not here would be silently omitted
 // from the rendered summary — the exact defect this refactor exists to prevent.
+//
+// The undecided class is listed first and labelled as what it is. A row that was
+// never decided has an empty class, and on an aborted run that is the only class
+// with a large count; naming it `undecided` rather than folding it into an
+// "unprinted remainder" is the difference between a reader understanding the line
+// and having to work it out.
 var evidenceClasses = []struct{ label, class string }{
+	{"undecided", ""},
 	{"automated", scenario.EvidenceAutomated},
 	{"partial", scenario.Partial},
 	{"reused", scenario.EvidenceReused},
@@ -224,9 +232,9 @@ func countLine(section string, counts map[string]int) string {
 		total += count
 	}
 	if printed != total {
-		// A class the report holds that the renderer does not print. Rendering
-		// an explicit contradiction beats rendering a summary that quietly does
-		// not add up.
+		// A class the report holds that the renderer does not know about at all.
+		// Rendering an explicit contradiction beats rendering a summary that
+		// quietly does not add up.
 		fields = append(fields, fmt.Sprintf("UNPRINTED=%d", total-printed))
 	}
 	return fmt.Sprintf("  %-12s total=%d %s", section, total, strings.Join(fields, " "))

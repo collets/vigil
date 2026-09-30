@@ -555,7 +555,7 @@ func controllerKillLanding(view ExecutionView) string {
 				"and had recorded no outcome, so the prompt may already have been delivered. The writer state is %q. "+
 				"This is the in-flight landing rather than the uncertain one: the outcome is not yet recorded as "+
 				"unknown, so the run is pending reconciliation, and production enforces the refusal to resubmit an "+
-				"unproven generation in Submit and Reconcile rather than by withholding start. The uncertain-outcome "+
+				"unproven generation in Runner.submit and Runner.Reconcile rather than by withholding start. The uncertain-outcome "+
 				"branch, where a resubmission is an unproven repeat, is carried by the accepted Stage 5.2 crash "+
 				"matrix and is not claimed here", view.WriterState)
 	default:
@@ -1237,7 +1237,7 @@ func (v ExecutionView) offersCommand(cmd string) bool {
 //
 // The property is deliberately narrow, because it is checked against a racy kill
 // landing. Production enforces "never submit a generation twice without proof" in
-// two places that do not depend on this landing at all: `Submit` refuses a
+// two places that do not depend on this landing at all: `Runner.submit` refuses a
 // `writing` generation whose driver inspection cannot prove `not_attempted`, and
 // `Reconcile` drives a `writing` generation to either `proven_not_delivered` or
 // `uncertain`. What `Inspect` itself guarantees here is narrower still:
@@ -1270,21 +1270,30 @@ func (v ExecutionView) verifiesReplayBoundary() (bool, string) {
 		return true, fmt.Sprintf("%s (submission_state=%q: the outcome is already unknown, and no start is offered, so a resubmission cannot silently repeat an unproven delivery)", detail, v.SubmissionState)
 	}
 	if v.SubmissionState == "writing" {
-		// A completed run offers only `inspect` — there is nothing left to
-		// reconcile, and the submission cannot still be in flight on a run that
-		// has finished. Any other run state is offered `reconcile` by production.
-		finished := v.RunState == "completed"
-		if !finished && !v.offersCommand("reconcile") {
-			return false, fmt.Sprintf("submission_state=%q means the submission is in flight with no recorded outcome, yet the inspection does not offer reconcile; commands offered: %s", v.SubmissionState, detail)
+		// `reconcile` is required only on a run the inspection would let a caller
+		// submit to — that is the run where an unproven replay is possible. A run
+		// offering no submit path (production offers only `inspect` for a
+		// completed one) has nothing to replay and nothing left to reconcile, so
+		// demanding `reconcile` there would be asking for a command the product
+		// deliberately does not offer.
+		//
+		// Both conditions are read off the observed command list rather than off
+		// the run state, so this cannot claim something the list beside it denies.
+		if v.offersStart() && !v.offersCommand("reconcile") {
+			return false, fmt.Sprintf("submission_state=%q means the submission is in flight with no recorded outcome, yet the inspection offers start without offering reconcile; commands offered: %s", v.SubmissionState, detail)
 		}
-		// The claim about what production offers is derived, not assumed: a
-		// finished run offers no start, and saying otherwise would put a false
-		// sentence in the rendered report beside the command list itself.
-		offered := fmt.Sprintf("This inspection %s", strings.Join(v.AllowedNext, ", "))
-		if !finished {
-			offered += ", which includes start — what production's own Inspect does for a " + v.RunState + " run"
+		// The claim about what production offers is keyed off the observed
+		// command list, never off the run state. Production offers `start` only
+		// for a prepared/starting/active run and withholds it for every other
+		// state, so keying the sentence off the run state would put a false
+		// claim beside the very list it describes.
+		offered := "This inspection offers " + strings.Join(v.AllowedNext, ", ")
+		if v.offersStart() {
+			offered += ", which includes start"
+		} else {
+			offered += ", and withholds start"
 		}
-		return true, fmt.Sprintf("%s (submission_state=%q: the submission was in flight with no recorded outcome. %s. The refusal to resubmit an unproven generation is enforced in the supervisor's submit and reconcile paths, not by withholding start, and that is exercised by the accepted Stage 5.2 crash matrix rather than asserted from this racy landing)", detail, v.SubmissionState, offered)
+		return true, fmt.Sprintf("%s (submission_state=%q: the submission was in flight with no recorded outcome. %s. The refusal to resubmit an unproven generation is enforced in Runner.submit and Runner.Reconcile, not by withholding start, and that is exercised by the accepted Stage 5.2 crash matrix rather than asserted from this racy landing)", detail, v.SubmissionState, offered)
 	}
 	switch v.SubmissionState {
 	case "delivered", "proven_not_delivered", "not_attempted":
