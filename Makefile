@@ -63,15 +63,27 @@ build-scenario:
 #
 # The value is passed through the environment rather than interpolated into the
 # recipe text, so a `'` in SCENARIO_ROOT cannot break out of the guard and run
-# before any check happens. The root is then also confined with `realpath` and
-# shell-quoted at every use.
+# before any check happens. Every use is `--`-guarded and quoted.
+#
+# Resolution uses `cd`/`pwd -P` on the parent directory rather than `realpath -m`,
+# because macOS's realpath has no `-m` and an earlier version of this guard failed
+# closed on every macOS host. Both the candidate root and the documented constant
+# go through the same resolution, so a platform where /tmp is a symlink to
+# /private/tmp compares like with like instead of refusing the correct path.
 define scenario_root_guard
 	@root="$$SCENARIO_ROOT"; \
 	case "$$root" in *..*) \
 		echo "refusing to touch SCENARIO_ROOT=$$root: it contains a traversal component" >&2; exit 1 ;; \
 	esac; \
-	resolved=$$(cd "$$root" 2>/dev/null && pwd -P || realpath -m "$$root"); \
-	if [ "$$resolved" != "/tmp/vigil-stage-5.7-scenario" ]; then \
+	resolve() { \
+		dir=`dirname -- "$$1"`; \
+		base=`basename -- "$$1"`; \
+		parent=`cd "$$dir" 2>/dev/null && pwd -P` || return 1; \
+		printf '%s/%s\n' "$$parent" "$$base"; \
+	}; \
+	resolved=`resolve "$$root"` || resolved=""; \
+	documented=`resolve "/tmp/vigil-stage-5.7-scenario"` || documented=""; \
+	if [ -z "$$resolved" ] || [ "$$resolved" != "$$documented" ]; then \
 		echo "refusing to touch SCENARIO_ROOT=$$root: it resolves to '$$resolved', not the documented disposable /tmp/vigil-stage-5.7-scenario" >&2; \
 		exit 1; \
 	fi
@@ -128,6 +140,12 @@ scenario-guard-check:
 	probe /etc; \
 	probe relative/path; \
 	probe ""; \
+	# A documented-looking path that is one character off must be refused too, so \
+	# the comparison cannot be a prefix or basename match. \
+	probe /tmp/vigil-stage-5.7-scenario-extra; \
+	probe /tmp/vigil-stage-5.7-scenari; \
+	# The documented root's own parent must not be removable through the root. \
+	probe /tmp; \
 	rm -rf "$$sentinel" /tmp/vigil-scenario-guard-link; \
 	if [ -e "$$sentinel" ]; then echo "FAIL: the guard removed the sentinel"; status=1; else echo "ok: sentinel survived"; fi; \
 	exit $$status
