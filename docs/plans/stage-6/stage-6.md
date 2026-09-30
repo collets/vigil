@@ -16,8 +16,12 @@ known before the gap is measured. That job is now done: see
 
 ## Why this stage exists
 
-R11 requires: *"Make the dashboard the primary application interface, with ways
-to intervene in individual agents."* R70 scopes the product to a terminal-only
+R11 **required**, in its pre-amendment text: *"Make the dashboard the primary
+application interface, with ways to intervene in individual agents."* Stage 6.1's
+audit found that clause **not measurable as written** and narrowed it — the
+current text is the amended one in
+[`requirements.md`](../../core/requirements.md), not the sentence quoted here,
+which is quoted as the text the audit examined. R70 scopes the product to a terminal-only
 interface initially.
 
 The interface does not yet meet that. As of `f2d740c`, `internal/tui` is a
