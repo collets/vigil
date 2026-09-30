@@ -4,7 +4,7 @@
 
 A local control panel for development agents running through existing harnesses, combining frontier and local models.
 
-Status: **pre-release.** The persisted core is independently accepted offline through **Stage 5.7 at `522cb96`**, for each stage's **autonomous** scope. Stage 5.7's autonomous qualification found blocking finding 5.7-F1, which made the delivery path unreachable from the documented workflow; that defect was fixed in the Stage 5.2/5.6 slice under explicit authorization, and the walkthrough now reaches commit, push and draft delivery end to end. Every human-gated operation is deferred to Stage 8, and no delivery path has been exercised against a real remote. Stages 6, 7 and 8 were added by user scope revision on 2026-09-29. Stage 5.5 checkpoints A–D and independent-review remediation are implemented through `84c0275`, including stale-dispatch retirement, expiring recovery choices, persisted terminal decisions, bounded planning, shared MCP handlers and native Hermes one-tool isolation; exact-commit Linux/WSL and native macOS gates pass. Automatic plan advancement remains disabled. Production check, model and reviewer dispatch remain deliberately disabled pending live qualification, and nothing in planning or acceptance can commit, push, publish or deliver.
+Status: **pre-release.** The persisted core is independently accepted offline through **Stage 5.7 at `522cb96`**, for each stage's **autonomous** scope. **Stage 6.1**, the terminal interface parity gap analysis, is implemented and under independent review; it wrote no interface code and measured that the interface fully expresses 4 of the 82 distinct capabilities the 85-row register classifies, and 3 of 20 human decision classes, then planned sub-stages 6.2–6.9. Stage 5.7's autonomous qualification found blocking finding 5.7-F1, which made the delivery path unreachable from the documented workflow; that defect was fixed in the Stage 5.2/5.6 slice under explicit authorization, and the walkthrough now reaches commit, push and draft delivery end to end. Every human-gated operation is deferred to Stage 8, and no delivery path has been exercised against a real remote. Stages 6, 7 and 8 were added by user scope revision on 2026-09-29. Stage 5.5 checkpoints A–D and independent-review remediation are implemented through `84c0275`, including stale-dispatch retirement, expiring recovery choices, persisted terminal decisions, bounded planning, shared MCP handlers and native Hermes one-tool isolation; exact-commit Linux/WSL and native macOS gates pass. Automatic plan advancement remains disabled. Production check, model and reviewer dispatch remain deliberately disabled pending live qualification, and nothing in planning or acceptance can commit, push, publish or deliver.
 
 Targets: Linux and macOS, on amd64 and arm64. See [`docs/process/next-steps.md`](docs/process/next-steps.md) for current state.
 
@@ -81,7 +81,7 @@ cmd/vigil-relay/      container boundary relay
 internal/cli/         Cobra commands
 internal/harness/     bounded stdio transport and native session adapters
 internal/spike/       isolated development runner and fixture validation
-internal/tui/         Bubble Tea persisted project views
+internal/tui/         Bubble Tea persisted project views (Stage 6.2 onward splits this into a screen stack)
 internal/tools/       bounded role/session-scoped model application handlers
 internal/mcp/         small JSON-RPC transport reusing the model handlers
 internal/storage/     SQLite connection check

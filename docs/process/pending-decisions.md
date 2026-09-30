@@ -3,7 +3,7 @@
 <!-- vigil-tier: process -->
 <!-- vigil-status: stage=5.7; stage_accepted=true; implementation_commit=522cb967f732b578a66c051cf8938dd00584d238 -->
 
-Updated 2026-09-27 while continuing Stage 5.
+Updated 2026-09-30 while running Stage 6.1.
 
 The user authorized continued autonomous local development and tests while away, and conditional Stage 6 planning/implementation after Stage 5, provided no additional spending or dangerous changes are made to either computer. Record questions here rather than waiting for an immediate answer.
 
@@ -17,6 +17,31 @@ The [Stage 5.1–5.7 plan index](../plans/stage-5/README.md#user-input-and-auton
 - **Stage 5.1 decision confirmed and clarified 2026-09-26:** the user explicitly authorized bounded live qualification using the existing Codex ChatGPT sign-in/subscription, including consumption of its included usage, plus the existing local llama.cpp. Online documentation/research needed to implement or qualify those routes is also authorized. Confirm the effective Codex route is the ChatGPT login rather than a metered API key, inspect remaining included usage when the client exposes it, and stop at the included limit rather than purchasing or consuming additional credits. No paid API calls, purchases, subscription changes, automatic paid fallback, credential copying, or unrestricted worker egress. Do not ask again for this scoped included-usage or research permission. No credential values belong in this document.
 - **Standing development tooling policy confirmed 2026-09-27:** relevant read-only technical research, declared dependency downloads, configured Git synchronization, contained local Docker/OrbStack, the prepared local llama route, included Codex/ChatGPT subscription usage and OpenCode while its selected route is free/included may proceed autonomously. The purpose is to prevent unplanned charges, not to prohibit useful tools. Metered or ambiguous routes, paid fallback, purchases/upgrades, hosted deployment, billable cloud resources, credential disclosure, arbitrary source uploads and mutating third-party actions remain gated. The user may clearly approve a narrowly identified exception to repository policy; vague autonomy does not waive it.
 - **`main` commit/push authority clarified 2026-09-27:** the agent follows the task-branch workflow and has **no** standing authorization to commit or push to `main`; an independently accepted candidate is ready to *propose*. Only the user can authorize a named `main` operation or session, and that authorization is scope-bound and never a standing default. Ordinary non-force checkpoint pushes to the matching task branch remain standing-authorized. Deleting an agent-owned task/integration branch needs no further confirmation once its integration into `origin/main` is clearly confirmed. Server-side branch protection is deliberately not configured for now; do not assume `main` is protected and do not pre-emptively add protection recommendations to the policy.
+- **Native macOS access — blocked on authentication (user gate, 2026-09-30):**
+  [Stage 6.1](../plans/stage-6/6.1-parity-gap-analysis.md) measured the
+  terminal interface on Linux only, because the Mac could not be reached over
+  SSH. The host is **up and reachable** (`ping` answers, `sshd` offers
+  `publickey,password,keyboard-interactive`), but this machine's
+  `~/.ssh/id_ed25519` is refused for every account that could be inferred
+  (`admin`, `scoletta`, `vigil`, `icarus`, and the bare local user name), with
+  and without `-o IdentitiesOnly=yes`; the exact attempts are recorded in
+  [the results document](../research/stage-6/results.md#native-macos-attempted-and-blocked).
+  No macOS-specific interface behaviour is claimed anywhere, and the gap is
+  logged rather than worked around. The user needs to authorize this machine's
+  public key on the Mac (or name the account and re-enable a route) before any
+  Stage 6 sub-stage can produce native interface evidence. This is not cosmetic:
+  Stage 5.7's Linux-only evidence missed a `realpath -m` portability defect that
+  made the scenario runner unusable on the only platform where native
+  validation is required, and the interface is Stage 6's actual deliverable.
+- **Two product gaps found by Stage 6.1 — recorded for a later scope decision,
+  deliberately not built (2026-09-30):** the audit found that the application
+  observes **no cost or usage** (no usage table in the installed schema) and
+  persists **no implementation summary**. R46 and R47 ask for both. Stage 6's
+  scope forbids adding product capability, so 6.1 amended R46/R47 and added
+  P16/P17 to require the *absence* to be rendered as explicitly unavailable
+  rather than as zero, and recorded both gaps in the Stage 6 exclusion register
+  for a user scope decision. If the user wants real cost/usage or real
+  implementation summaries, that is a scope revision, not a Stage 6 task.
 - **Live Codex route — blocked, and owned by Stage 8 (user decision):** this is the
   single hardest blocker on the human stage, because the Codex-dependent walkthrough steps
   cannot run until it is decided. It is deliberately *not* inside Stage 6 or 7, which are

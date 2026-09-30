@@ -25,7 +25,7 @@ The numbers express a working order, not permission to bypass a dependency. Buil
 
 Current implementation status: 5.1–5.5 are independently accepted offline, and 5.6 is accepted for its autonomous scope at `b0a085b`. Stage 5.5 checkpoints A–D and review remediation are implemented through `84c0275` (checkpoint A `4dbb444`); narrow follow-up closes 5.5-R1–5.5-R7 and accepts 5.5-R8's authority-neutral boundary. Exact-commit native macOS full/race/build/documentation/boundary/cross-build gates and native Hermes one-tool qualification pass. Production Codex/reviewer qualification and real decisions remain disabled future production gates. Production dispatch remains disabled.
 
-Suggested sequence: 5.1 offline work → 5.2 offline work → 5.3 offline recovery → 5.4 → 5.5 → 5.6 → 5.7, then Stage 6 → Stage 7 → Stage 8. Live qualification is no longer a Stage 5 gate: it is Stage 8's, together with every human decision deferred out of 5.6 and 5.7. If a live gate needs the user, continue the next plan's explicitly independent work. Do not mark a live or review gate complete from local implementation evidence.
+Suggested sequence: 5.1 offline work → 5.2 offline work → 5.3 offline recovery → 5.4 → 5.5 → 5.6 → 5.7, then Stage 6 (**6.1 done; 6.2 → 6.9 next**) → Stage 7 → Stage 8. Live qualification is no longer a Stage 5 gate: it is Stage 8's, together with every human decision deferred out of 5.6 and 5.7. If a live gate needs the user, continue the next plan's explicitly independent work. Do not mark a live or review gate complete from local implementation evidence.
 
 ## Shared operating contract
 
@@ -114,6 +114,11 @@ No immediate answer is required to begin implementation. A plan may be autonomou
     the evidence exists and its limitations are recorded, **not** because the slice
     is accepted.
 - [ ] Stage 6 terminal interface parity and its complete feature list.
+      **6.1 is implemented and under independent review** and the box stays
+      unticked: 6.1 was the gap analysis, and Stage 6 still has 6.2–6.9 to
+      implement. The measured gap, the parity register and the feature list are
+      in [6.1's analysis](../stage-6/6.1-parity-gap-analysis.md) and
+      [the results document](../../research/stage-6/results.md).
 - [ ] Stage 7 user-facing documentation website.
 - [ ] Stage 8 human review of the product, with a bulk finding report.
 

@@ -11,7 +11,15 @@ acceptance covers its **autonomous** scope; every human-gated operation is
 deferred to Stage 8, and no delivery path has been exercised against a real
 remote. Stages 6 (terminal interface
 parity), 7 (documentation website) and 8 (human review) were added by explicit
-user scope revision on 2026-09-29 and are defined as scope, not yet planned.
+user scope revision on 2026-09-29.
+
+**Stage 6.1 is implemented and under independent review.** It was the parity gap
+analysis, so it wrote no interface code. It measured the interface and the
+product surface from the code and the built binary, found that the interface
+fully expresses 4 of the 82 distinct capabilities the 85-row register classifies, and 3 of 20 human decision
+classes, found that R11/R45/R46/R47/R70 were all unmeasurable as written,
+amended them with conditions P13–P18, and planned sub-stages 6.2–6.9. Stage 6
+itself is not complete.
 
 This index states what each document is authoritative for. For the *reading
 order* — what to read now and what you can skip — start at
@@ -84,7 +92,16 @@ should do*, not for what is implemented. Implementation status lives in
 | [`plans/stage-5/stage-5-execution.md`](plans/stage-5/stage-5-execution.md) | Stage 5 implementation order and checkpoints |
 | [`plans/stage-5/stage-5-boundary.md`](plans/stage-5/stage-5-boundary.md) | Execution boundary and qualification contract |
 | [`plans/stage-5/stage-5-cli.md`](plans/stage-5/stage-5-cli.md) | **CLI reference.** Every command, flag and command receipt |
-| [`plans/stage-6/stage-6.md`](plans/stage-6/stage-6.md) | **Stage 6 scope:** terminal interface parity and completeness, and its complete feature list (user scope revision 2026-09-29; 6.1 is the gap analysis) |
+| [`plans/stage-6/stage-6.md`](plans/stage-6/stage-6.md) | **Stage 6 scope:** terminal interface parity and completeness, and its complete feature list (user scope revision 2026-09-29) |
+| [`plans/stage-6/6.1-parity-gap-analysis.md`](plans/stage-6/6.1-parity-gap-analysis.md) | **Stage 6.1:** the measured interface and product-surface inventories, the R11/R45/R46/R47/R70 audit and its amendments, 21 measured defects, the gap table and the 6.2–6.9 decomposition (**complete**) |
+| [`plans/stage-6/6.2-interface-architecture-and-parity-register.md`](plans/stage-6/6.2-interface-architecture-and-parity-register.md) | Stage 6.2 screen-stack architecture, key safety and the mechanical parity register |
+| [`plans/stage-6/6.3-main-dashboard.md`](plans/stage-6/6.3-main-dashboard.md) | Stage 6.3 main dashboard, live run state and navigable history |
+| [`plans/stage-6/6.4-actionable-inbox.md`](plans/stage-6/6.4-actionable-inbox.md) | Stage 6.4 the complete human decision surface |
+| [`plans/stage-6/6.5-quality-review-and-evidence-views.md`](plans/stage-6/6.5-quality-review-and-evidence-views.md) | Stage 6.5 quality, review, evidence and human acceptance views |
+| [`plans/stage-6/6.6-execution-recovery-and-checkpoints.md`](plans/stage-6/6.6-execution-recovery-and-checkpoints.md) | Stage 6.6 execution, recovery and checkpoint screens |
+| [`plans/stage-6/6.7-delivery-archive-and-finalization.md`](plans/stage-6/6.7-delivery-archive-and-finalization.md) | Stage 6.7 delivery, archive, finalization and retention screens |
+| [`plans/stage-6/6.8-setup-definitions-and-resources.md`](plans/stage-6/6.8-setup-definitions-and-resources.md) | Stage 6.8 setup, definitions and resource coordination screens |
+| [`plans/stage-6/6.9-parity-closure-and-feature-list.md`](plans/stage-6/6.9-parity-closure-and-feature-list.md) | Stage 6.9 exclusion register, complete feature list and Stage 6 closure |
 | [`plans/stage-7/stage-7.md`](plans/stage-7/stage-7.md) | **Stage 7 scope:** user-facing documentation website for the terminal interface (7.1 decides the information architecture and generator) |
 | [`plans/stage-8/stage-8.md`](plans/stage-8/stage-8.md) | **Stage 8 scope:** the human review stage — the walkthrough guide, the bulk finding report format, and every human-gated step deferred out of 5.6/5.7 |
 
@@ -154,6 +171,8 @@ left as the reviewer saw them, so a quoted path may no longer exist — see
 | [`research/stage-5/5.5/qualification-proposal.md`](research/stage-5/5.5/qualification-proposal.md) | Human-readable review copy of exact pending qualification proposal revision 1 |
 | [`research/stage-5/5.6/results.md`](research/stage-5/5.6/results.md) | Stage 5.6 implementation, review and validation evidence (**accepted `b0a085b`, autonomous scope only; human gates in Stage 8**) |
 | [`research/stage-5/5.7/results.md`](research/stage-5/5.7/results.md) | Stage 5.7 autonomous qualification evidence, the evidence matrix, and **finding 5.7-F1** (the delivery path was unreachable; fixed in the Stage 5.2/5.6 slice) |
+| [`research/stage-6/results.md`](research/stage-6/results.md) | **Stage 6 results:** the measured interface inventory with screen captures, the 85-entry **parity register**, the exclusion and product-gap register, and the **feature list** — Stage 6's required deliverable. Skeleton created by 6.1; completed by 6.9 |
+| [`research/stage-6/6.1-review.md`](research/stage-6/6.1-review.md) | Stage 6.1 independent adversarial review record, findings and verdict |
 | `research/stage-5/5.2/review-probes/`, `research/stage-5/5.3/review-probes/`, `research/stage-5/5.4/review-probes/` | Retained inert review probes (`.go.txt`) |
 
 Review probes are stored as `.go.txt` so they cannot compile. To run one, copy it
@@ -167,8 +186,10 @@ sentence spans more than one stage.
 | Form | Meaning | Defined in |
 | --- | --- | --- |
 | `R01`-`R71` (two digits) | Functional requirements | [`core/requirements.md`](core/requirements.md), mapped in [`plans/stage-5/stage-5-plan.md`](plans/stage-5/stage-5-plan.md) |
+| `P01`-`P18` (two digits) | Proposed verification conditions; P13–P18 added by Stage 6.1 | [`core/requirements.md`](core/requirements.md) |
 | `5.4-R2`, `5.2-R6` (stage prefix) | A finding of one stage's independent review | That stage's `research/stage-5/5.N/astra-review.md` |
 | `F1`-`F3` | P3 findings from the Stage 5.4 follow-up review | [`research/stage-5/5.4/astra-review.md`](research/stage-5/5.4/astra-review.md#independent-follow-up-of-cba322b) |
+| `6.1-F1`-`6.1-F21` (stage prefix) | A measured interface defect found by Stage 6.1 | [`plans/stage-6/6.1-parity-gap-analysis.md`](plans/stage-6/6.1-parity-gap-analysis.md#4-measured-defects) |
 
 The same bare label denotes different findings in different reviews, so an unqualified
 `R1` in a shared status document is ambiguous. Per-stage documents are self-scoping.

@@ -60,7 +60,7 @@ The draft SQL encodes key integrity invariants; application transactions additio
 
 | Requirements | Contract location | Implementation / qualification |
 | --- | --- | --- |
-| R01, R06, R07, R11, R45, R46, R47, R51, R70 | Core §§1–3,10; authoritative views/inbox | H; terminal only, external IDE for detailed diffs |
+| R01, R06, R07, R11, R45, R46, R47, R51, R70 | Core §§1–3,10; authoritative views/inbox; **Stage 6 interface contract** — parity register and feature list in [`research/stage-6/results.md`](../../research/stage-6/results.md), gap table and sub-stage plan in [`6.1-parity-gap-analysis.md`](../stage-6/6.1-parity-gap-analysis.md) | H; terminal only, external IDE for detailed diffs. **P13–P18 added by 6.1** |
 | R02, R03, R04, R08, R10, R42, R58, R59, R69 | Core §§1,2,4,8 | B,D,E; Codex/Hermes first, existing server, other harnesses deferred |
 | R05, R21, R23, R33, R34, R35 | Core §§2–4; typed tools above | B,I; explicit criteria changes remain human-only |
 | R09 | Core §4 | **Jev** optional/deferred; no dependency or implicit remote routing |
@@ -74,7 +74,9 @@ The draft SQL encodes key integrity invariants; application transactions additio
 | R32, R38, R40, R43, R49 | Core §9 | F; preserve mixed work, plan branches, verified checkpoint sets, approved restore |
 | R64, R65, R66, R67, R68 | Core §11 | A,J; factual archives, independent finalization, explicit export, unfinished retention |
 
-R38/R43 intentionally refer to the same branch rule. Every R01–R71 ID appears above; this map records design coverage, not implementation completion. Proposed verification conditions P01–P12 are exercised across B/E/H (profiles/state/overrides), A/F (history/recovery), C/D (resources/control), G (acceptance), and A/G/J (honest usage/evidence).
+R38/R43 intentionally refer to the same branch rule. Every R01–R71 ID appears above; this map records design coverage, not implementation completion.
+
+The first row's interface contract is Stage 6's. [Stage 6.1](../stage-6/6.1-parity-gap-analysis.md) audited R11, R45, R46, R47 and R70 on 2026-09-30, found all five unmeasurable as written, and amended them in [requirements.md](../../core/requirements.md) with the P13–P18 acceptance conditions above. The 6.1 gap table names the owning sub-stage for every interface gap, and [`research/stage-6/results.md`](../../research/stage-6/results.md) holds the 85-entry parity register and the feature list. The audit is a statement about the **interface**, not about the mapped product contracts: R01, R06, R07 and R51 keep their Stage 5 owners, and their Stage 6 rows are the views the interface must provide, not new product behavior. Proposed verification conditions P01–P12 are exercised across B/E/H (profiles/state/overrides), A/F (history/recovery), C/D (resources/control), G (acceptance), and A/G/J (honest usage/evidence).
 
 ## Remaining setup choices and explicit deferrals
 

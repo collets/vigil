@@ -5,6 +5,8 @@
 
 Status: Go and the foundation stack accepted, 2026-09-19; status reconciled through 2026-09-27. Linux and macOS are the initial targets. The decision has held: the application is still Go, still uses SQLite with embedded forward-only migrations, and still has no ORM. What has changed is scale, not stack — the original hello-world scaffold has grown into the persisted core implemented and independently accepted through Stage 5.6 at `b0a085b` (see [next steps](../process/next-steps.md)). Stage 5.7 is independently accepted for its autonomous scope; production execution/model qualification and delivery authority remain gated.
 
+Stage 6.1 changed no technology decision: it was a terminal interface gap analysis, wrote no interface code, and added no dependency. It is recorded here because the stack it plans against is unchanged and every one of its eight sub-stages is Go, Bubble Tea and SQLite work — Bubble Tea v2 in particular, which the measured interface already uses. The one thing the analysis did surface about the stack is that `internal/tui` is currently a single 700-line file with one `View()`, and splitting it is 6.2's first checkpoint.
+
 ## Recommendation
 
 Use Go for the CLI, terminal dashboard, session supervision, and orchestration core. Keep harnesses and model inference in separate processes or services. Use one implementation language initially.

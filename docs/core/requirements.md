@@ -21,7 +21,7 @@ The application owns reliable coordination and state; existing harnesses execute
 | R08 | Mix paid frontier models and local models to reduce token use and monetary cost |
 | R09 | Consider Jev as an optional aid to model/task selection |
 | R10 | Implement Codex and Hermes first; retain Claude Code, pi, and OpenCode as subsequent integration targets |
-| R11 | Make the dashboard the primary application interface, with ways to intervene in individual agents |
+| R11 | Make the terminal dashboard the primary application interface: every persisted product capability has a reachable path from it, except capabilities the Stage 6 exclusion register records with a reason, and every human decision point has a distinct revision-bound action in it rather than a fallback to the command line |
 | R12 | Default to approval-first operation, with granular configuration of increased autonomy |
 | R13 | Support starting application sessions in different folders, with folder/project discovery behavior to be defined |
 | R14 | Support completing complex feature or component plans with human quality validation and high-risk decision gates |
@@ -55,9 +55,9 @@ The application owns reliable coordination and state; existing harnesses execute
 | R42 | Support manually configurable harness/model profiles initially; defer guided onboarding |
 | R43 | Use one dedicated branch per plan per affected repository, reusing it when resuming the plan |
 | R44 | Support GitHub and GitLab delivery with draft requests as the default |
-| R45 | Prioritize task progression and actionable user requests on the main dashboard; show compact quality status and optionally live agent activity |
-| R46 | Put detailed changes, quality results, and cost information in secondary navigable views |
-| R47 | Show reviewer findings, implementation summaries, and check results in human review; use external IDE tools for code/diff inspection |
+| R45 | Prioritize task progression and actionable user requests on the main dashboard: one screen shows the active plan, the current task and its blocker, the queue position, the live run and session state, the compact per-task quality status, and the actionable request list, all without navigating away. Agent activity is a bounded, sanitized view of persisted run, session and event state, never raw harness output |
+| R46 | Put change records (paths, artifact references and commit references), quality results, and cost or usage information in secondary views that are navigable from a visible focus; a quantity the application does not observe renders as explicitly unavailable, never as zero |
+| R47 | Show in the human review screen each reviewer finding's severity, blocking status and text, the implementation summary for the current attempt, and each check result's status, exit state and evidence reference; state where to inspect code and diffs, which stay in external IDE tools |
 | R48 | Show human verification checklists only for task requirements that need manual functional verification |
 | R49 | Automatically save and clear agent-owned changes while preserving pre-existing user work; request approval to bring a saved attempt back |
 | R50 | Produce commits per task, allowing multiple commits where they improve clarity, subject to commit authorization |
@@ -80,7 +80,7 @@ The application owns reliable coordination and state; existing harnesses execute
 | R67 | On summary failure, retain the factual archive and show finalization pending; retry finalization alone and allow draft delivery as an explicit action |
 | R68 | Default raw transcript retention to 30 days after plan completion, configurable per project; preserve unfinished recovery context |
 | R69 | Manage only harness sessions launched by this application in the first release |
-| R70 | Provide a terminal-only interface initially; defer a browser dashboard |
+| R70 | Provide a terminal-only interface as the first release's only interactive surface and defer a browser dashboard: no repository process serves a browser or network UI, and the interface's completeness is measured against the reachable product surface rather than by the absence of a browser |
 | R71 | Coordinate workspace ownership and shared local inference capacity across application instances without requiring background agent execution |
 
 The user selected the project name Vigil after Stage 1, approved Go, Cobra, Bubble Tea, and SQLite, and requested technology selection followed by functional analysis before workflow design.
@@ -101,6 +101,17 @@ The user selected the project name Vigil after Stage 1, approved Go, Cobra, Bubb
 | P10 | Preserve native harness controls | Required permission/input requests are surfaced or the limitation is stated |
 | P11 | Separate process completion from task acceptance | A successful process exit alone does not mark the task as accepted |
 | P12 | Make recovery explicit | After interruption, stale runs are reconciled or shown as unknown rather than silently relaunched |
+
+P13–P18 were added by [Stage 6.1](../plans/stage-6/6.1-parity-gap-analysis.md) on 2026-09-30. Its audit found R11, R45, R46, R47 and R70 **not measurable as written**: "primary", "prioritize", "actionable", "compact", "optionally", "detailed", "navigable" and "show" named no bound, no ordering and no source, so none of them could fail — which is how a four-of-85 interface sat under them across two accepted stages. The five requirement rows were narrowed to specific, testable clauses and the conditions below were added. No requirement was removed, renumbered or relaxed; each amendment adds a criterion and lowers nothing.
+
+| ID | Requirement | Observable acceptance condition |
+| --- | --- | --- |
+| P13 | R11 interface parity | Every leaf command in the `vigil` command tree and every `apply` envelope kind is classified in the Stage 6 parity register as expressible, expressible with a documented compromise, or not expressible with a reason. A mechanical check walks the real command tree and fails when an entry is missing, duplicated or unclassified |
+| P14 | R11, R51 distinct decision actions | Every persisted human decision class has its own interface action, bound to the visibly displayed exact revision or request ID, and two decision classes never issue the same command. A test drives each class against a seeded request and asserts the exact command and the exact persisted effect |
+| P15 | R45 main dashboard | From a cold start with no navigation, one screen shows the active plan, the current task and its blocker, the queue position, the live run and session state, the compact per-task quality roll-up, and the actionable request list with each request's kind, age and blocking state |
+| P16 | R46 secondary views and honest absence | Quality and review detail is reachable from a visible focus, and a quantity the application does not observe renders as explicitly unavailable with a reason. A test fails if an unobserved quantity renders as zero |
+| P17 | R47 human review content | Against a fixture with a recorded review carrying a blocking finding, a suggestion, two check results and a manual outcome, the human review screen's rendered content contains the blocking finding's severity, blocking status and text; the suggestion's distinct classification; each check's status, exit state and evidence reference; and the statement of where to inspect code and diffs |
+| P18 | R70 terminal-only, completeness measured | No repository process serves a browser or network UI, and the interface's completeness claim is backed by the complete Stage 6 feature list rather than by the absence of a browser |
 
 Local inference may have no per-token vendor charge, but still consumes hardware, energy, and time. Evaluate savings using total attempts and review effort, not only the worker model's token price. Exact billing may be unavailable for some subscription-based harnesses.
 

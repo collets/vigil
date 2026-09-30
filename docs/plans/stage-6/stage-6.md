@@ -2,14 +2,17 @@
 
 <!-- vigil-tier: plan -->
 
-Status: **scope defined, not planned and not started.** Established 2026-09-29
+Status: **6.1 complete; 6.2–6.9 planned, not started.** Established 2026-09-29
 by explicit user scope revision. Stage 6 does not exist in the original roadmap
 (which defines Stages 1–5 only); the user directed that it follow Stage 5.7.
 
 This document is a **scope** description. It states the outcome, the boundaries
 and the deliverable. It deliberately contains **no work checkpoints** — those are
 [6.1's](#61-parity-gap-analysis) job, because the sub-stage structure cannot be
-known before the gap is measured.
+known before the gap is measured. That job is now done: see
+[6.1's analysis](6.1-parity-gap-analysis.md), the
+[results document](../../research/stage-6/results.md) and the
+[independent review](../../research/stage-6/6.1-review.md).
 
 ## Why this stage exists
 
@@ -71,8 +74,22 @@ At the end of Stage 6:
 
 | Sub-stage | Purpose | Autonomous |
 | --- | --- | --- |
-| [6.1](#61-parity-gap-analysis) | Parity gap analysis; amend the requirements it finds untestable | yes |
-| 6.2 … | Implementation sub-stages, planned by 6.1 from the measured gap | yes |
+| [6.1](6.1-parity-gap-analysis.md) | Parity gap analysis; amend the requirements it finds untestable — **complete** | yes |
+| [6.2](6.2-interface-architecture-and-parity-register.md) | Interface architecture, key safety, and the mechanical parity register | yes |
+| [6.3](6.3-main-dashboard.md) | Main dashboard, live run state and navigable history | yes |
+| [6.4](6.4-actionable-inbox.md) | The complete human decision surface | yes |
+| [6.5](6.5-quality-review-and-evidence-views.md) | Quality, review, evidence and human acceptance views | yes |
+| [6.6](6.6-execution-recovery-and-checkpoints.md) | Execution, recovery and checkpoint screens | yes |
+| [6.7](6.7-delivery-archive-and-finalization.md) | Delivery, archive, finalization and retention screens | yes |
+| [6.8](6.8-setup-definitions-and-resources.md) | Setup, definitions and resource coordination screens | yes |
+| [6.9](6.9-parity-closure-and-feature-list.md) | Exclusion register, complete feature list, Stage 6 closure | yes |
+
+6.3–6.8 are serialized rather than parallel: they all edit `internal/tui` and
+the same read model, and the [development workflow](../../process/development-workflow.md)
+forbids two agents owning one set of source files. 6.2 is first because every
+later sub-stage navigates through the model it establishes and is checked by the
+parity test it installs; 6.9 is last because the feature list is accumulated by
+6.2–6.8 and can only be audited once they have landed.
 
 ### 6.1 Parity gap analysis
 
@@ -104,6 +121,22 @@ Its deliverables:
 
 **6.1 must not** implement interface code, and **must not** silently absorb the
 implementation into itself. Its output is decisions and plans.
+
+**6.1 delivered all six items** on 2026-09-30 from `27182de`, and wrote no
+interface code. It measured the gap from the code and the built binary rather
+than from prose, and found that of the 85 register rows — 82 distinct
+capabilities — the interface fully expresses **4**, partially expresses **9**
+and cannot reach **66** by any action; that 3 of 20 human decision classes are
+fully expressed, 5 are partial and 12 are absent; and that all five audited
+requirements were unmeasurable as written, which is why the interface could sit
+at four expressed capabilities through two accepted stages unnoticed. It
+recorded 21 measured defects, 6 documented compromises, 6 exclusions with
+reasons, and 8 sub-stages (6.2–6.9), and it wrote the exclusion and product-gap
+register that keeps Stage 6 from adding capability. The evidence is in
+[`research/stage-6/results.md`](../../research/stage-6/results.md) and the
+derivation of every number is in
+[§4.9](../../research/stage-6/results.md#49-register-totals) so a reviewer can
+re-derive rather than believe it.
 
 ## Dependencies
 

@@ -30,12 +30,27 @@ stage-5/
   5.3/                   recovery/control results, review and probes
   5.4/                   quality/acceptance results, review and probes
   5.5/                   workflow/planning results and user review material
+  5.6/                   delivery/finalization results and review
+  5.7/                   autonomous qualification results and review
+stage-6/                  terminal interface inventory, parity register and feature list
+  results.md             Stage 6's required deliverable; skeleton created by 6.1
+  6.1-review.md          Stage 6.1 independent review record
 ```
 
 Stage 5 review probes use the name `review-probes/` and the `.go.txt` suffix so
 they cannot accidentally compile as part of the normal suite. Future Stage 5.x
 evidence belongs under `stage-5/5.x/` using `results.md` and, when applicable,
 `astra-review.md`, `blockers.md` and `review-probes/`.
+
+Stage 6 differs deliberately. `stage-6/results.md` is not a per-sub-stage record:
+it is the stage's **required deliverable**, a complete feature list of the
+terminal interface that Stage 7 documents from and Stage 8 tests against, so it
+is accumulated across 6.2–6.9 rather than written per slice. Per-sub-stage
+evidence lands as dated sections in it, and the sub-stage's own review record
+lives beside it as `6.N-review.md`. The parity register in the same document is
+the authoritative classification of every product capability; the
+machine-readable form in the source code is what the mechanical check reads, and
+the document and the table are kept identical by test.
 
 The authoritative description of each evidence file remains the main
 [documentation index](../README.md#evidence-and-reviews).
