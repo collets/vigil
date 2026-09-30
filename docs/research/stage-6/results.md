@@ -654,7 +654,13 @@ for a later slice to close.
 
 ### A pre-existing race flake observed, and how it was attributed
 
-`make check-race` failed once during this slice, with
+**Two** distinct flakes have now been observed in this slice's test runs, in two
+different packages, and both are named here because the disclosure's purpose is
+that the next agent meets them already documented. Neither is a regression: this
+slice changed no code, and `internal/` is byte-identical to `27182de`.
+
+**Flake 1 — `internal/cli`, observed by the implementing agent.** `make check-race`
+failed once during this slice, with
 
 ```
 internal/cli/dashboard_interaction_linux_test.go:233:
@@ -678,6 +684,24 @@ cannot be waved away on the grounds that it changed nothing:
 | `-race -run TestDashboard ./internal/cli` at `27182de`, 6 consecutive runs | 6/6 pass |
 | `-race -run TestDashboard ./internal/cli` on this branch, 10 consecutive runs | 10/10 pass |
 | `make check-race` on this branch, 2 consecutive runs | 2/2 pass |
+
+**Flake 2 — `internal/checks`, observed by the ninth reviewer.** The ninth
+independent review reported that its **first** `make check` run failed
+`TestIndependentSupervisorPipeDescriptors`
+(`internal/checks/stage54_independent_test.go:66`, "supervisor reported
+containment failure false", `exit status 125`); the test then passed 3/3 in
+isolation and the reviewer's **second** full `make check` run was clean. It is a
+different test in a different package from Flake 1 and was not previously
+disclosed. The same non-regression argument applies — `internal/checks` is
+byte-identical to `27182de` — and it is recorded rather than dismissed, because
+the cost of a one-in-N containment test is precisely that a future reader cannot
+tell an intermittent failure from a real one.
+
+Neither flake is fixed here. Both are pre-existing defects in test
+**synchronisation**, not in product behaviour, and fixing them would mean
+changing `internal/`, which this slice's verified "zero code changed" claim
+forbids. They are candidates for 6.2 alongside the two doccheck additions that
+same constraint already defers.
 
 So the failure is a **pre-existing low-rate timing flake** in a test whose
 synchronisation is wall-clock rather than event-driven, not a regression from
