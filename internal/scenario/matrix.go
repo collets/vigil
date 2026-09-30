@@ -121,6 +121,11 @@ type Matrix struct {
 	Milestone    []MatrixEntry `json:"milestone"`
 	Recovery     []MatrixEntry `json:"recovery"`
 	Requirements []MatrixEntry `json:"requirements"`
+	// RequirementGapList is the recorded set of requirement rows that are not
+	// fully demonstrated. It is a field rather than a derived value so the report
+	// carries it: a gap that exists only in a function nobody called is not a gap
+	// the report can be said to have reported.
+	RequirementGapList []string `json:"requirement_gaps"`
 }
 
 // NewMatrix returns the matrix with every declared step present and unresolved.
@@ -139,14 +144,6 @@ func NewMatrix() *Matrix {
 	}
 	return matrix
 }
-
-// MarkPartial records a row this run only partially observed. The row stays in
-// the automated class — the narrower observation did happen through the
-// production path — but the detail names exactly what was and was not observed,
-// so a reader can tell a demonstrated case from a partially observed one.
-//
-// A case name describes the full property; the detail states the narrower thing
-// that was actually measured. Collapsing the two would overstate the evidence.
 
 // MarkUnmet records a row that this run could not demonstrate because of a
 // defect in the product, rather than because a human gate owns it.
@@ -257,6 +254,7 @@ func (m *Matrix) RequireComplete() error {
 	}{
 		{"milestone", m.Milestone, len(milestoneSteps)},
 		{"recovery", m.Recovery, len(recoveryCases)},
+		{"requirements", m.Requirements, len(requirementIDs())},
 	} {
 		if len(group.rows) != group.count {
 			return fmt.Errorf("matrix section %q has %d rows, want %d", group.name, len(group.rows), group.count)
@@ -282,6 +280,30 @@ func (m *Matrix) RequireComplete() error {
 		}
 	}
 	return nil
+}
+
+// RequirementGaps reports the requirement rows this run did not fully
+// demonstrate.
+//
+// Requirements are listed separately from `Gap` because they are a different
+// kind of claim from a milestone step or a recovery case, and folding them into
+// the same list would blur two things a reader needs told apart. A requirement
+// carries no case name, so there is nothing for a partial requirement to be
+// partial *about* beyond the requirement text itself — which is why a partial
+// requirement must still appear here rather than reading as a pass.
+func (m *Matrix) RequirementGaps() []string {
+	gaps := []string{}
+	for _, row := range m.Requirements {
+		switch row.Evidence {
+		case EvidenceAutomated, EvidenceReused:
+		case "":
+			gaps = append(gaps, row.ID+": undecided")
+		default:
+			gaps = append(gaps, row.ID+": "+row.Evidence)
+		}
+	}
+	sort.Strings(gaps)
+	return gaps
 }
 
 // Counts summarizes one section by evidence class. The sections are counted

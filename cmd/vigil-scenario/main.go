@@ -148,14 +148,20 @@ func printSummary(report *scenario.Report, destination string, started time.Time
 	// Each section is counted separately: a milestone step, a recovery case and a
 	// requirement are different claims, and a combined total would let one
 	// section's passes disguise another's gaps.
+	//
+	// Every class the report can hold is printed, including `partial`. Omitting
+	// one would leave the line's own arithmetic unreconciled — a total that
+	// silently does not add up is worse than a longer line, because the reader
+	// cannot tell which reading is correct.
 	for _, section := range []string{"milestone", "recovery", "requirements"} {
 		counts := report.Matrix.Counts(section)
 		total := 0
 		for _, count := range counts {
 			total += count
 		}
-		fmt.Printf("  %-12s total=%d automated=%d reused=%d pending=%d unmet=%d\n", section, total,
-			counts[scenario.EvidenceAutomated], counts[scenario.EvidenceReused],
+		fmt.Printf("  %-12s total=%d automated=%d partial=%d reused=%d pending=%d unmet=%d\n", section, total,
+			counts[scenario.EvidenceAutomated], counts[scenario.Partial],
+			counts[scenario.EvidenceReused],
 			counts[scenario.EvidencePendingStage8], counts[scenario.EvidenceUnmet])
 	}
 	fmt.Printf("  report       %s\n", destination)
@@ -166,6 +172,12 @@ func printSummary(report *scenario.Report, destination string, started time.Time
 	}
 	for _, gap := range report.Gaps {
 		fmt.Printf("  gap          %s\n", gap)
+	}
+	// Requirement gaps are printed under their own label rather than folded into
+	// the list above, so a partial requirement is not mistaken for a recovery case
+	// that failed.
+	for _, gap := range report.Matrix.RequirementGapList {
+		fmt.Printf("  req gap      %s\n", gap)
 	}
 	for _, pending := range report.Pending {
 		fmt.Printf("  pending      %s\n", pending)

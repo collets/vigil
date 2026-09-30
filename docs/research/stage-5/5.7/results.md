@@ -105,15 +105,52 @@ does not state what was not observed. The four are:
 
 The remaining eleven were observed in full. `controller-kill-leaves-unknown-outcome`
 is among them, and its detail is written from the observed durable state rather
-than from an assumed landing: on this run the loss landed with
-`submission_state=not_attempted` and `run_state=prepared`, so the report says
-exactly that. Where a kill lands is a race against the synthetic driver's speed,
-so the description is derived from the values each run observes and never claims a
-boundary it did not see — including the `writing` state, which it describes as
-in-flight and possibly already delivered rather than as "no effect". The
-uncertain-outcome branch, where a resubmission is an unproven repeat and must be
-refused, is carried by the accepted Stage 5.2 crash matrix and is not claimed
-here.
+than from an assumed landing. Where a kill lands is a race against the synthetic
+driver's speed, and **both landings occur**: across repeated runs on this host the
+loss landed with `submission_state=not_attempted`/`run_state=prepared` on some runs
+and with `submission_state=writing`/`run_state=starting` on others. Each detail is
+derived from the values that run observed, and the recorded run below is one
+sample of a racy observation rather than a stable result.
+
+The in-flight `writing` landing is the one worth reading carefully. It does **not**
+mean no effect occurred: the run had journaled that it was about to submit and had
+recorded no outcome, so the prompt may already have been delivered. The report
+says exactly that. The genuinely uncertain branch, where a resubmission would be an
+unproven repeat, is carried by the accepted Stage 5.2 crash matrix and is not
+claimed here.
+
+**What the harness asserts about replay safety is deliberately narrow**, because
+it is checked against a racy landing. `verifiesReplayBoundary` is written from what
+production's own `Inspect` actually guarantees:
+
+- `uncertain` is the one state production withholds `start` for, so that is the
+  only hard check — a resubmission would be an unproven repeat.
+- `writing` is *pending reconciliation*, not already unsafe to resubmit. Production
+  offers both `start` and `reconcile` for a `writing` run, so requiring `start` to
+  be absent would assert a property the product does not have. The check that
+  cannot false-positive is the narrower one: `reconcile` must be offered on a run
+  that has not finished. A `completed` run offers only `inspect` and has nothing
+  left to reconcile, so it is exempt.
+- a resolved state resolves the outcome, so offering `start` is the safe path.
+- an absent or unrecognised state establishes nothing and is never reported as
+  resolving an outcome. `decodeIsReadable` requires `submission_state` for this
+  reason: a safety reason derived from an absent value would claim an outcome
+  nobody observed, and would do so silently if the field were ever renamed in
+  production.
+
+The refusal to resubmit an unproven generation is enforced in production in
+`Submit` and `Reconcile`, deterministically and independently of where a kill
+lands; the accepted Stage 5.2 crash matrix covers it. Asserting it from a racy kill
+landing instead was a defect an earlier revision of this harness shipped, and it
+aborted the qualification on a majority of runs while reporting a replay-safety
+defect in the product that does not exist. The check is now also non-fatal: a
+landing that does not satisfy it is recorded as a limitation, never asserted.
+
+`TestReplayBoundaryAgreesWithProductionInspect` pins the correspondence by
+transcribing production's `Inspect` switch and requiring the harness to accept every
+combination the product can emit. That test exists because a check which only
+exercises the harness's own rule cannot catch the harness asserting something the
+product does not do.
 
 Also observed in full: pause refusing five
 distinct dispatch commands and `continue` restoring them; a bounded stop
@@ -147,7 +184,23 @@ review evidence afterwards rather than reusing the prior result.
 
 ## Requirements
 
-All R01–R71 are classified: 49 `automated`, 14 carried forward, 8 gates.
+All R01–R71 are classified: 48 `automated`, **1 `partial`**, 14 carried forward, 8
+gates.
+
+R41 is the partial one, and it is partial rather than automated because of the
+evidence, not the disclosure. R41 requires delivery to *end* at
+merge/pull-request creation. This run's delivery stopped earlier — at the
+draft-request stage, because 5.7-F1 blocked commit and push — so the boundary R41
+names was never exercised. The row records the one fact the run did observe (no
+merge command, endpoint or transport exists anywhere in the product command
+surface) alongside an explicit statement of what was not observed, and it appears
+in the report's `requirement_gaps` list.
+
+Requirement gaps are reported under their own key rather than folded into the
+milestone/recovery gap list, because a requirement is a different kind of claim
+from a case and conflating them would let a reader mistake one for the other. Each
+section's printed total now names every class it holds, so the line's own
+arithmetic reconciles (8 + 20 + 71).
 
 **The citation check verifies resolvability only.** Each carried citation is
 confirmed to name a record that is readable in this checkout; an absent record

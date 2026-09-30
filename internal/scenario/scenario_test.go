@@ -260,6 +260,12 @@ func TestRequirementCoverageIsTotalAndClassified(t *testing.T) {
 			if strings.TrimSpace(entry.Detail) == "" {
 				t.Fatalf("requirement %s claims evidence with no detail", entry.ID)
 			}
+		case Partial:
+			// A partial requirement must say what was not observed, or it reads
+			// as a pass to anyone scanning the evidence classes.
+			if !strings.Contains(strings.ToUpper(entry.Detail), "NOT OBSERVED") {
+				t.Fatalf("requirement %s is partial without stating what was not observed", entry.ID)
+			}
 		case EvidencePendingStage8, EvidenceUnmet:
 			if strings.TrimSpace(entry.Blocker) == "" {
 				t.Fatalf("requirement %s is pending with no named blocker", entry.ID)
@@ -291,7 +297,7 @@ func TestControllerKillLandingReportsOnlyObservedState(t *testing.T) {
 		{submission: "delivered", mustSay: []string{"delivered"}},
 		{submission: "proven_not_delivered", mustSay: []string{"not delivered", "no prompt was sent"}},
 		{submission: "not_attempted", mustSay: []string{"no prompt was sent"}, mustNotSay: []string{"in flight"}},
-		{submission: "writing", writer: "unconfirmed", mustSay: []string{"in flight", "may already have been delivered", "unresolved", "not claimed here"}, mustNotSay: []string{"no effect occurred"}},
+		{submission: "writing", writer: "unconfirmed", mustSay: []string{"in flight", "may already have been delivered", "not claimed here"}, mustNotSay: []string{"no effect occurred"}},
 		{submission: "something-else", mustSay: []string{"unrecognised"}},
 	}
 	for _, test := range tests {
@@ -307,45 +313,174 @@ func TestControllerKillLandingReportsOnlyObservedState(t *testing.T) {
 				t.Errorf("submission_state=%q: landing %q must not claim %q", test.submission, got, unwanted)
 			}
 		}
+		// The function receives only the inspection, so it must make no claim
+		// about the resource journal. The caller reads that separately and it may
+		// be empty, so a claim here would be about data this function cannot see.
+		for _, unavailable := range []string{"resource state below", "retained resource", "held resource", "confirms effects"} {
+			if strings.Contains(got, unavailable) {
+				t.Errorf("submission_state=%q: landing %q claims the resource journal, which this function cannot observe", test.submission, got)
+			}
+		}
 	}
 }
 
-func TestUnresolvedSubmissionMustNotOfferStart(t *testing.T) {
-	base := ExecutionView{RunID: "run", RunState: "starting", AllowedNext: []string{"inspect", "start"}}
-	// Both unresolved states must fail when a start is offered.
-	for _, submission := range []string{"uncertain", "writing"} {
-		view := base
-		view.SubmissionState = submission
-		if safe, detail := view.forbidsUncertainReplay(); safe {
-			t.Errorf("submission_state=%q offered start but was accepted as safe: %s", submission, detail)
+// productionAllowedNext reproduces the command list that production's own
+// `Runner.Inspect` emits for a (run_state, submission_state) pair.
+//
+// It is transcribed from internal/supervisor/reconcile.go, which special-cases
+// exactly one submission state (`uncertain`) and otherwise switches on run_state.
+// Keeping the transcription here is deliberate: the harness's replay-safety check
+// is only meaningful if it is checked against what the product actually returns,
+// and a test that only exercises the harness's own rule cannot catch the harness
+// asserting a property the product does not have. That is precisely the defect a
+// previous revision of this check shipped, so the correspondence is pinned here.
+//
+// If production's switch changes, this table is wrong and the test must be
+// updated with it — that is the intended failure mode.
+func productionAllowedNext(runState, submissionState string) []string {
+	switch {
+	case submissionState == "uncertain":
+		return []string{"inspect", "reconcile", "stop"}
+	case runState == "completed":
+		return []string{"inspect"}
+	case runState == "prepared" || runState == "starting" || runState == "active":
+		return []string{"inspect", "start", "reconcile", "stop"}
+	default:
+		return []string{"inspect", "reconcile"}
+	}
+}
+
+func TestPartialRequirementIsAGapAndReachesTheReport(t *testing.T) {
+	matrix := NewMatrix()
+	matrix.Requirements = requirementCoverage()
+	// R41 discloses that its boundary was not exercised, so it must be classed
+	// partial and must appear in the requirement gap list — not merely disclose
+	// the gap in prose while reading as a pass.
+	var r41 *MatrixEntry
+	for index, row := range matrix.Requirements {
+		if row.ID == "R41" {
+			r41 = &matrix.Requirements[index]
 		}
 	}
-	// A run with no start offered is safe regardless of state.
-	for _, submission := range []string{"uncertain", "writing", "delivered", "not_attempted", "proven_not_delivered"} {
-		view := ExecutionView{RunID: "run", RunState: "completed", SubmissionState: submission, AllowedNext: []string{"inspect"}}
-		if safe, detail := view.forbidsUncertainReplay(); !safe {
-			t.Errorf("submission_state=%q with no start offered was refused: %s", submission, detail)
+	if r41 == nil {
+		t.Fatal("R41 is absent from the coverage audit")
+	}
+	if r41.Evidence != Partial {
+		t.Fatalf("R41 discloses an unexercised boundary but is classed %q, not %q", r41.Evidence, Partial)
+	}
+	// Every requirement row the audit produces must itself be decided; the
+	// milestone and recovery sections are still unresolved here because no
+	// walkthrough has run.
+	for _, row := range matrix.Requirements {
+		switch row.Evidence {
+		case EvidenceAutomated, EvidenceReused, Partial, EvidencePendingStage8, EvidenceUnmet:
+		default:
+			t.Fatalf("requirement %s has an undecided evidence class %q", row.ID, row.Evidence)
+		}
+		if row.Evidence == Partial && !strings.Contains(strings.ToUpper(row.Detail), "NOT OBSERVED") {
+			t.Fatalf("requirement %s is partial without stating what was not observed", row.ID)
 		}
 	}
-	// An unreadable inspection is never safe.
-	for _, view := range []ExecutionView{
-		{},
-		{RunID: "run", RunState: "starting"},
-		{RunID: "run", RunState: "starting", SubmissionState: "writing"},
+	matrix.RequirementGapList = matrix.RequirementGaps()
+	found := false
+	for _, gap := range matrix.RequirementGapList {
+		if gap == "R41: partial" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("a partial requirement is absent from the requirement gap list: %v", matrix.RequirementGapList)
+	}
+	// A requirement gap must never be folded into the milestone/recovery list:
+	// they are different claims, and conflating them would let a reader mistake
+	// one for the other.
+	for _, gap := range matrix.Gap() {
+		if strings.HasPrefix(gap, "R41") {
+			t.Fatalf("a requirement gap was folded into the case gap list: %q", gap)
+		}
+	}
+}
+
+func TestReplayBoundaryAgreesWithProductionInspect(t *testing.T) {
+	// Every combination production can emit must be accepted by the harness's
+	// check. A combination the product genuinely produces and the harness
+	// rejects would mean the harness is asserting a property the product lacks,
+	// which is a defect in the evidence rather than in the product.
+	runStates := []string{"prepared", "starting", "active", "completed", "paused", "failed"}
+	submissionStates := []string{"not_attempted", "writing", "uncertain", "delivered", "proven_not_delivered"}
+	for _, runState := range runStates {
+		for _, submissionState := range submissionStates {
+			view := ExecutionView{
+				RunID:           "run",
+				RunState:        runState,
+				SubmissionState: submissionState,
+				AllowedNext:     productionAllowedNext(runState, submissionState),
+			}
+			safe, detail := view.verifiesReplayBoundary()
+			if !safe {
+				t.Errorf("production Inspect emits %v for run_state=%q submission_state=%q, and the harness rejected that: %s",
+					view.AllowedNext, runState, submissionState, detail)
+			}
+		}
+	}
+}
+
+func TestReplayBoundaryRejectsOnlyWhatProductionWouldViolate(t *testing.T) {
+	// `uncertain` is the one state production withholds `start` for. If it ever
+	// offered one, the harness must catch that — a resubmission would be an
+	// unproven repeat of a delivery whose outcome is already recorded as unknown.
+	uncertainOfferingStart := ExecutionView{
+		RunID: "run", RunState: "starting", SubmissionState: "uncertain",
+		AllowedNext: []string{"inspect", "start", "reconcile", "stop"},
+	}
+	if safe, detail := uncertainOfferingStart.verifiesReplayBoundary(); safe {
+		t.Errorf("an uncertain submission offering start was accepted: %s", detail)
+	}
+	// `writing` must offer `reconcile`, which is how an in-flight submission is
+	// resolved. A view without it is not something production produces.
+	writingWithoutReconcile := ExecutionView{
+		RunID: "run", RunState: "starting", SubmissionState: "writing",
+		AllowedNext: []string{"inspect", "start", "stop"},
+	}
+	if safe, detail := writingWithoutReconcile.verifiesReplayBoundary(); safe {
+		t.Errorf("an in-flight submission with no reconcile offered was accepted: %s", detail)
+	}
+	// An unreadable or uninterpretable inspection is never safe, and never
+	// reported as resolving an outcome.
+	for name, view := range map[string]ExecutionView{
+		"empty":                {},
+		"no run state":         {RunID: "run", AllowedNext: []string{"inspect", "start"}},
+		"no submission state":  {RunID: "run", RunState: "starting", AllowedNext: []string{"inspect", "start"}},
+		"no commands":          {RunID: "run", RunState: "starting", SubmissionState: "writing"},
+		"unrecognised state":   {RunID: "run", RunState: "starting", SubmissionState: "some_future_state", AllowedNext: []string{"inspect", "start"}},
+		"absent with commands": {RunID: "run", RunState: "starting", AllowedNext: []string{"inspect", "start"}},
 	} {
-		if safe, _ := view.forbidsUncertainReplay(); safe {
-			t.Errorf("an unreadable inspection was treated as safe: %+v", view)
+		safe, detail := view.verifiesReplayBoundary()
+		if safe {
+			t.Errorf("%s: an unestablished inspection was treated as safe", name)
+		}
+		if strings.Contains(detail, "resolves the outcome") {
+			t.Errorf("%s: an unestablished state was reported as resolving the outcome: %s", name, detail)
 		}
 	}
-	// A resolved state may legitimately be offered a start; the reason must be
-	// reported from the state, not assumed.
-	resolved := ExecutionView{RunID: "run", RunState: "prepared", SubmissionState: "not_attempted", AllowedNext: []string{"inspect", "start"}}
-	safe, detail := resolved.forbidsUncertainReplay()
+	// The reason must cite the state it was derived from, in every branch.
+	resolved := ExecutionView{RunID: "run", RunState: "prepared", SubmissionState: "not_attempted",
+		AllowedNext: productionAllowedNext("prepared", "not_attempted")}
+	safe, detail := resolved.verifiesReplayBoundary()
 	if !safe {
 		t.Fatalf("a pre-submission run offering start was refused: %s", detail)
 	}
 	if !strings.Contains(detail, "not_attempted") {
 		t.Fatalf("the safety reason does not cite the observed submission state: %s", detail)
+	}
+	writing := ExecutionView{RunID: "run", RunState: "starting", SubmissionState: "writing",
+		AllowedNext: productionAllowedNext("starting", "writing")}
+	safe, detail = writing.verifiesReplayBoundary()
+	if !safe {
+		t.Fatalf("an in-flight run in the state production produces was refused: %s", detail)
+	}
+	if !strings.Contains(detail, "writing") {
+		t.Fatalf("the in-flight reason does not cite the observed submission state: %s", detail)
 	}
 }
 

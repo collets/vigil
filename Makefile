@@ -6,7 +6,7 @@ export GOSUMDB := sum.golang.org
 export GOPATH := $(CURDIR)/.cache/gopath
 export GOCACHE := $(CURDIR)/.cache/go-build
 
-.PHONY: build build-boundary hello dashboard fmt check check-race docs-check tidy cross-build build-scenario scenario scenario-live scenario-clean
+.PHONY: build build-boundary hello dashboard fmt check check-race docs-check tidy cross-build build-scenario scenario scenario-live scenario-clean scenario-guard-check
 tidy:
 	$(GO) mod tidy
 build:
@@ -48,7 +48,10 @@ SCENARIO_ROOT ?= /tmp/vigil-stage-5.7-scenario
 # containing a quote or a shell metacharacter cannot be interpolated into the
 # recipe text and executed before the guard has checked anything.
 export SCENARIO_ROOT
+# Exported for the same reason as SCENARIO_ROOT: a value containing a quote or a
+# shell metacharacter must never be interpolated into the recipe text.
 SCENARIO_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null)
+export SCENARIO_COMMIT
 
 build-scenario:
 	CGO_ENABLED=0 $(GO) build -o bin/vigil-scenario ./cmd/vigil-scenario
@@ -79,7 +82,7 @@ scenario: build-scenario
 	@rm -rf -- "$$SCENARIO_ROOT"
 	@mkdir -p -- "$$SCENARIO_ROOT"
 	./bin/vigil-scenario --binary bin/vigil --root "$$SCENARIO_ROOT" \
-		--source-commit $(SCENARIO_COMMIT) --verbose
+		--source-commit "$$SCENARIO_COMMIT" --verbose
 
 # The same offline walkthrough, with the bounded local-inference capability
 # permitted. Be precise about what this does: the opt-in lets the run *probe* the
@@ -92,7 +95,7 @@ scenario-live: build-scenario
 	@$(call scenario_root_guard)
 	@mkdir -p -- "$$SCENARIO_ROOT"
 	./bin/vigil-scenario --binary bin/vigil --root "$$SCENARIO_ROOT" \
-		--source-commit $(SCENARIO_COMMIT) --allow-local-inference --verbose
+		--source-commit "$$SCENARIO_COMMIT" --allow-local-inference --verbose
 
 # Removes only the agent-owned disposable scenario root, and only under the same
 # guard as the run itself. The guard is also exercised automatically by

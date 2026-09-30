@@ -59,7 +59,6 @@ func requirementCoverage() []MatrixEntry {
 		"R36": "a rejected approval left the operation without a consumable grant",
 		"R37": "the ranked queue was authoritative and advancement was explicit",
 		"R40": "a restore naming three nonexistent identities was refused before touching any repository",
-		"R41": "no merge command, endpoint or transport exists anywhere in the product command surface, so automated delivery cannot end in an automatic merge. NOT observed: the run's own delivery stopped at the draft-request stage because 5.7-F1 blocked commit and push, so the merge/pull-request creation boundary itself was not exercised",
 		"R42": "an explicitly declared harness/model profile with a credential reference and no credential value was persisted and read back through the production commands; guided onboarding is out of scope",
 		"R44": "the operator's index, worktree and HEAD were unchanged across the whole delivery rehearsal",
 		"R45": "task-level evidence was read back through the production inspection commands",
@@ -76,6 +75,15 @@ func requirementCoverage() []MatrixEntry {
 		"R68": "a narrative failure left the accepted task accepted and reran no development",
 		"R69": "every harness interaction in this run went through an application-launched session of the labelled synthetic driver; no unmanaged or externally launched session was ever adopted. Live native session ownership is Stage 8's",
 		"R70": "the first 100 pending decisions and latest history were readable through production commands",
+	}
+	// partial lists requirements this run only partially demonstrated. The
+	// narrower observation happened through the production path, but the full
+	// property the requirement names did not, so the row is a gap rather than a
+	// pass. Keeping it in the automated map and disclosing the gap in the prose
+	// would leave it reading as a pass to anyone scanning the evidence classes,
+	// which is the confusion the class exists to prevent.
+	partial := map[string]string{
+		"R41": "no merge command, endpoint or transport exists anywhere in the product command surface, so automated delivery cannot end in an automatic merge. NOT observed: the run's own delivery stopped at the draft-request stage because 5.7-F1 blocked commit and push, so the merge/pull-request creation boundary named by this requirement was not exercised",
 	}
 	// reused lists requirements whose evidence lives in an accepted predecessor
 	// slice, with that slice's record as the source.
@@ -116,6 +124,10 @@ func requirementCoverage() []MatrixEntry {
 		case automated[id] != "":
 			entry.Evidence = EvidenceAutomated
 			entry.Detail = automated[id]
+			entry.Source = "stage-5.7 autonomous walkthrough"
+		case partial[id] != "":
+			entry.Evidence = Partial
+			entry.Detail = partial[id]
 			entry.Source = "stage-5.7 autonomous walkthrough"
 		case reused[id] != "":
 			// A carried-forward citation is only usable when the record it names

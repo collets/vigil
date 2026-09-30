@@ -117,7 +117,13 @@ func (w *walkthrough) auditRequirements() {
 	}
 	w.report.Matrix.Requirements = append(w.report.Matrix.Requirements, coverage...)
 	counts := w.report.Matrix.Counts("requirements")
-	w.note(fmt.Sprintf("Requirement coverage recorded: %d requirements, of which %d carry this run's automated evidence, %d are carried from an accepted predecessor record, and %d remain owned gates.",
-		len(coverage), counts[EvidenceAutomated], counts[EvidenceReused],
+	// Every class is named, including the partial ones. A note that totals only
+	// the passing classes would read as though this run demonstrated more than it
+	// did, which is the specific overstatement the class exists to prevent.
+	w.note(fmt.Sprintf("Requirement coverage recorded: %d requirements, of which %d carry this run's full automated evidence, %d are partial (a narrower observation was made and the detail says what was not observed), %d are carried from an accepted predecessor record, and %d remain owned gates.",
+		len(coverage), counts[EvidenceAutomated], counts[Partial], counts[EvidenceReused],
 		counts[EvidencePendingStage8]+counts[EvidenceUnmet]))
+	// The requirement gaps are recorded in the report so they cannot be omitted
+	// from a reading of it.
+	w.report.Matrix.RequirementGapList = w.report.Matrix.RequirementGaps()
 }
