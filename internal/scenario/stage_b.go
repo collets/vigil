@@ -76,7 +76,14 @@ func (w *walkthrough) configureProject(ctx context.Context) {
 	w.driver.MustApply(ctx, "profile.put", "profile-001", "profile.put", ScenarioProfile(w.config.HarnessVersion, w.config.Model))
 	w.assert("profile-declared", true, ProfileID, "the harness profile is declared with a credential reference and no credential value")
 
-	endpoint := w.driver.MustInvoke(ctx, "resources endpoint", "resources", "endpoint", EndpointID, w.route.BaseURL, "--capacity", "1", "--single-host")
+	// The endpoint is reserved against a loopback identity. When no route is
+	// configured on this host a documented placeholder is registered and recorded as
+	// one, so the reservation is reproducible and nobody reads it as a probed route.
+	endpointURL, endpointIsPlaceholder := DeclaredEndpointURL(w.route)
+	endpoint := w.driver.MustInvoke(ctx, "resources endpoint", "resources", "endpoint", EndpointID, endpointURL, "--capacity", "1", "--single-host")
+	if endpointIsPlaceholder {
+		w.note("No loopback route is configured on this host, so the endpoint was registered against the documented placeholder " + placeholderEndpointURL + " rather than a probed route. Nothing connects to it: every execution in this rehearsal used the labelled synthetic fixture driver.")
+	}
 	var registered EndpointRecord
 	if err := Decode(endpoint, &registered); err != nil {
 		panic(&ScenarioAbort{Step: "resources endpoint", Err: err})

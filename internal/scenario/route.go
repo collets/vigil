@@ -24,6 +24,31 @@ const (
 	routeProbeRedirects = 0
 )
 
+// DeclaredEndpointURL returns the URL the walkthrough registers as its production
+// endpoint.
+//
+// The endpoint is an *identity* the application reserves capacity against. With the
+// synthetic fixture driver nothing ever connects to it, so the URL need not be
+// reachable — it need only be a stable, credential-free loopback address.
+//
+// It previously came straight from the inherited OPENAI_BASE_URL, which made the
+// walkthrough unreproducible on any machine without a prepared route configured:
+// the endpoint registration failed on an empty URL. Native macOS validation is the
+// case that exposed it. When a loopback route *is* configured, that route is used,
+// so the report's recorded route identity stays meaningful; otherwise a documented
+// placeholder is used and recorded as a placeholder rather than passed off as a
+// route that was probed.
+func DeclaredEndpointURL(route LocalRoute) (url string, placeholder bool) {
+	if isLoopbackBaseURL(route.BaseURL) {
+		return strings.TrimRight(route.BaseURL, "/"), false
+	}
+	return placeholderEndpointURL, true
+}
+
+// placeholderEndpointURL is the fixed loopback address registered when no route is
+// configured. It is deliberately unmistakable and never contacted.
+const placeholderEndpointURL = "http://127.0.0.1:1/v1"
+
 func loopbackGet(url string) ([]byte, error) {
 	if !isLoopbackBaseURL(url) {
 		return nil, fmt.Errorf("refusing to contact a non-loopback route")

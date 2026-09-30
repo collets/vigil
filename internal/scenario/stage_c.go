@@ -123,9 +123,11 @@ func (w *walkthrough) newProbeProject(ctx context.Context, name string) (*probeP
 	// Each probe project has its own private state directory and therefore its own
 	// coordination database. The profile's endpoint must be registered in *this*
 	// directory, or the run's resource reservation has no capacity authority to
-	// reserve against. The route URL is never contacted by the synthetic driver.
+	// reserve against. The URL is never contacted by the synthetic driver, so the
+	// documented placeholder is used rather than whatever route this host happens to
+	// have configured; the shared constant keeps the two call sites from drifting.
 	if _, err := driver.Invoke(ctx, "resources endpoint ("+name+")", "resources", "endpoint", EndpointID,
-		"http://127.0.0.1:1/v1", "--capacity", "1", "--single-host"); err != nil {
+		placeholderEndpointURL, "--capacity", "1", "--single-host"); err != nil {
 		return nil, fmt.Errorf("endpoint registration: %w", err)
 	}
 	if _, err := driver.RefreshRevision(ctx); err != nil {
