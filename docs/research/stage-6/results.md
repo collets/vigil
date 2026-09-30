@@ -637,8 +637,9 @@ reaches commit, push and draft delivery end to end after this change.
 **These gates were re-run after each remediation**, not only before the first
 one (see [`6.1-review.md`](6.1-review.md)). `make check`, `make check-race`,
 `make docs-check`, `make build`, `make cross-build` and `make build-boundary` all
-pass at the final SHA, and `git diff --check` is clean. Both remediations are
-documentation-only, so the same `internal/`-unchanged argument holds.
+pass at the final SHA, and `git diff --check` is clean. Every remediation commit
+in this slice is documentation-only, so the same `internal/`-unchanged argument
+holds for all of them rather than for a fixed number of them.
 
 The second review noted, correctly, that `make docs-check` is a weaker gate than
 the obligations it is credited with: it has **no table-structure check**, so it
