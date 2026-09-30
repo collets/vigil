@@ -123,7 +123,7 @@ than only as a rendering instruction.
 | P11 | Separate process completion from task acceptance | A successful process exit alone does not mark the task as accepted |
 | P12 | Make recovery explicit | After interruption, stale runs are reconciled or shown as unknown rather than silently relaunched |
 
-P13–P18 were added by [Stage 6.1](../plans/stage-6/6.1-parity-gap-analysis.md) on 2026-09-30. Its audit found R11, R45, R46, R47 and R70 **not measurable as written**: "primary", "prioritize", "actionable", "compact", "optionally", "detailed", "navigable" and "show" named no bound, no ordering and no source, so none of them could fail — which is how a four-of-85 interface sat under them across two accepted stages. The five requirement rows were narrowed to specific, testable clauses and the conditions below were added. No requirement was removed, renumbered or relaxed; each amendment adds a criterion and lowers nothing.
+P13–P18 were added by [Stage 6.1](../plans/stage-6/6.1-parity-gap-analysis.md) on 2026-09-30. Its audit found R11, R45, R46, R47 and R70 **not measurable as written**: "primary", "prioritize", "actionable", "compact", "optionally", "detailed", "navigable" and "show" named no bound, no ordering and no source, so none of them could fail — which is how an interface expressing four of the 82 distinct capabilities sat under them across two accepted stages. The five requirement rows were narrowed to specific, testable clauses and the conditions below were added. No requirement was removed, renumbered or relaxed; each amendment adds a criterion and lowers nothing.
 
 | ID | Requirement | Observable acceptance condition |
 | --- | --- | --- |
