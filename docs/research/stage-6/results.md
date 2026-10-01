@@ -821,11 +821,20 @@ So the honest reading of the original failure is **not** that it was a
 wall-clock-synchronisation flake in a test. It was a defect in the containment
 supervisor, described above and fixed, and all three call sites share it.
 
-**Flake 1's own fixture is still unfixed.** `internal/cli`'s PTY test still uses
-fixed sleeps (`120ms` before `3`, `40ms` before the answer, `250ms` before `q`).
-That is a separate defect with a separate fix — event-driven synchronisation
-instead of sleeps — and it is left logged here rather than bundled into a
-containment change it has nothing to do with. It is a candidate for 6.2.
+**Flake 1's own fixture is still unfixed, and it is the most active of the
+three.** `internal/cli`'s PTY test still uses fixed sleeps (`120ms` before `3`,
+`40ms` before the answer, `250ms` before `q`) to drive the real dashboard binary.
+Its rate is now measured rather than observed once: **3 failures in 6 runs** of
+`go test -race -count=1` against that test, both at `495a5a6` and after the
+containment fix, so the containment change did not cause it and the earlier "1 in
+about 10" figure was simply a small sample. No data race is involved.
+
+That makes `make check-race` unreliable rather than occasionally noisy, which is
+why it is called out here rather than left as a footnote. It is a separate defect
+with a separate fix — event-driven synchronisation instead of sleeps, so the test
+waits for the prompt it expects instead of hoping the keystroke landed in time —
+and it is not bundled into a containment change it has nothing to do with. It is
+the obvious first candidate for 6.2, and the rate above is the thing to hold it to.
 
 ### Native macOS: attempted and blocked
 
