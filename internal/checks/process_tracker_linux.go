@@ -144,6 +144,14 @@ func (p *processContainment) started(ctx context.Context) error {
 	return nil
 }
 
+// The configuration writer is a goroutine in this process writing to a pipe the
+// supervisor reads. It is not an external event, so it has no natural deadline;
+// the bound below exists only to stop a genuine hang from wedging the caller, and
+// a one-second bound is far too tight for that purpose on a loaded machine, where
+// scheduling a goroutine that is already runnable can take far longer than it does
+// on an idle one.
+const configWriterRetireTimeout = 30 * time.Second
+
 func (p *processContainment) waitForConfigWriter() error {
 	if p.writeDone == nil {
 		return nil
@@ -153,7 +161,7 @@ func (p *processContainment) waitForConfigWriter() error {
 		p.writeDone = nil
 		p.configWrite = nil
 		return err
-	case <-time.After(time.Second):
+	case <-time.After(configWriterRetireTimeout):
 		_ = p.configWrite.Close()
 		err := <-p.writeDone
 		p.writeDone = nil

@@ -725,19 +725,54 @@ in `internal/checks`, `internal/cli` and `internal/quality` all funnel through. 
 this is very likely **one load-sensitive mechanism with three call sites**, not
 three independent flakes.
 
-The mechanism is consistent with hard-coded wall-clock budgets: the tracker waits
-`time.After(time.Second)` for its configuration writer to retire
-(`process_tracker_linux.go:150`), and the supervisor's containment path gives the
-stop a `5*time.Second` budget (`internal/supervisor/runner.go:551`) after which it
-reports `containment failed` (`runner.go:574`). Both are load-sensitive by
-construction. This is stated as *consistent with* the observed failure, not proven:
-it was seen once, and the chain from a slow stop to exit 125 was not isolated.
+### What this turned out to be, and the fix
 
-**It is not fixed here and it is not 6.1's to fix** — the package predates this
-slice and is byte-identical to the accepted baseline. It matters for the next
-slice: 6.2 adds supervisor and TUI tests, so it will run into this. Whoever picks
-it up should treat it as a reliability defect in containment timing, not as three
-tests to individually stabilise.
+Investigated after acceptance, on `fix/containment-timeout`. **All three flakes
+are one defect**, and it is not primarily a timing problem.
+
+`internal/checks/supervisor_linux.go` scans `/proc` for descendants, reaps them,
+signals them, and repeats. Two things in that loop were wrong:
+
+1. **A teardown race was reported as a containment failure.** The scan tolerates a
+   process that has gone, but it only recognised `ENOENT`. A process that is
+   *mid-teardown* — still in the readdir snapshot, gone by the time its `stat` is
+   read — makes that read fail with **`ESRCH`**, which fell through to a hard error.
+   The supervisor then exited 125 and the caller reported "descendant containment
+   could not be proven" for a process that had already gone. The window between
+   scan and read is exactly the window that widens under load, which is why this
+   presented as a flake that passed when idle.
+2. **A zombie was counted as a live descendant.** A zombie has terminated and
+   released every resource it held and remains in `/proc` only until reaped, so
+   counting it asserts a containment failure for a process that cannot hold
+   anything.
+
+Both are now fixed: `processGone` recognises `ENOENT` and `ESRCH` alike, and
+zombies are excluded. Two supporting changes make the failure honest rather than
+load-dependent: the retirement budgets are named durations (5s SIGTERM grace, 5s
+SIGKILL settle) instead of iteration counts that were wall-clock budgets in
+disguise — `100` attempts of a 10ms sleep is one second, and one second shrinks in
+practice as the machine gets busier — and the configuration writer's wait is a
+30-second backstop instead of one second, because it is waiting on an in-process
+goroutine that has no natural deadline.
+
+**Honest limits on the evidence.** The original failure was **not reproduced** —
+it appeared once, in a cold tree, and never again in roughly forty subsequent runs
+including twenty targeted and six full-suite runs under a sustained load average of
+23. So this fix is not proven to eliminate the observed flake. What *is* proven: a
+test added for this purpose failed during a full `make check` run with `read
+/proc/<pid>/stat: no such process`, which is defect 1 above, observed live; and
+each part of the fix is pinned by a test that fails on the pre-fix behaviour —
+`TestProcessGoneToleratesBothTeardownErrnos` breaks when the errno policy is
+narrowed, `TestLinuxDescendantsExcludesZombies` breaks when zombie filtering is
+removed, and `TestDescendantBudgetsAreDurations` breaks when the budgets are put
+back to their old values. `TestCleanupDescendantsEscalatesToKill` exists to prove
+the opposite failure was not bought instead: a descendant that ignores `SIGTERM` is
+still escalated to `SIGKILL` and still reported if it survives, so the more patient
+budgets have not cost any detection.
+
+A racing-exit canary (`TestLinuxDescendantsToleratesRacingExits`) is included but
+is **not** a deterministic reproducer — it exercises the window without reliably
+landing in it.
 
 None of the three flakes is fixed here. Both are pre-existing defects in test
 **synchronisation**, not in product behaviour, and fixing them would mean

@@ -140,8 +140,31 @@ func terminateProcessTree(root *os.Process) error {
 	return result
 }
 
+// Descendant retirement budgets. Both are deliberately generous and both are
+// expressed as durations rather than as loop counts.
+//
+// An iteration count is a wall-clock budget in disguise: `100` attempts of a 10ms
+// sleep is one second, and that second shrinks in practice as the machine gets
+// busier, because the thing being waited for -- the kernel tearing a process tree
+// down, and this process reaping it -- takes longer under load rather than failing.
+// That made this check pass on an idle machine and fail on a saturated one, which
+// is the worst possible failure mode for a containment assertion: it reports a
+// safety violation that is really a timing artefact.
+//
+// SIGTERM asks a process to stop, so a grace period is real work. SIGKILL is
+// uncatchable, so after it is delivered the only remaining work is teardown and
+// reaping, which is bounded but not quickly. Five seconds is far longer than
+// either needs on an idle machine and still short enough that a genuinely
+// surviving descendant is reported rather than waited on indefinitely.
+const (
+	descendantTerminateGrace = 5 * time.Second
+	descendantKillSettle     = 5 * time.Second
+	descendantPollInterval   = 10 * time.Millisecond
+)
+
 func cleanupDescendants(root int) error {
-	for attempt := 0; attempt < 100; attempt++ {
+	termDeadline := time.Now().Add(descendantTerminateGrace)
+	for {
 		if err := reapAdopted(); err != nil {
 			return err
 		}
@@ -157,7 +180,10 @@ func cleanupDescendants(root int) error {
 				return err
 			}
 		}
-		time.Sleep(10 * time.Millisecond)
+		if !time.Now().Before(termDeadline) {
+			break
+		}
+		time.Sleep(descendantPollInterval)
 	}
 	pids, err := linuxDescendants(root)
 	if err != nil {
@@ -168,7 +194,8 @@ func cleanupDescendants(root int) error {
 			return err
 		}
 	}
-	for attempt := 0; attempt < 200; attempt++ {
+	killDeadline := time.Now().Add(descendantKillSettle)
+	for {
 		if err := reapAdopted(); err != nil {
 			return err
 		}
@@ -179,7 +206,10 @@ func cleanupDescendants(root int) error {
 		if len(pids) == 0 {
 			return nil
 		}
-		time.Sleep(10 * time.Millisecond)
+		if !time.Now().Before(killDeadline) {
+			break
+		}
+		time.Sleep(descendantPollInterval)
 	}
 	return errors.New("supervisor descendants did not retire")
 }
@@ -219,7 +249,12 @@ func linuxDescendants(root int) ([]observedLinuxProcess, error) {
 		}
 		raw, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "stat"))
 		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
+			// The process was in the readdir snapshot but has gone by the time we
+			// read it. Both ENOENT and ESRCH mean that, and neither is a defect:
+			// skip it and let the next scan confirm. Returning the error here is
+			// what turned a normal exit race into "descendant containment could
+			// not be proven".
+			if processGone(err) {
 				continue
 			}
 			return nil, err
@@ -231,6 +266,16 @@ func linuxDescendants(root int) ([]observedLinuxProcess, error) {
 		fields := strings.Fields(string(raw[end+1:]))
 		if len(fields) < 20 {
 			return nil, errors.New("incomplete process status while cleaning descendants")
+		}
+		// A zombie has already terminated and released every resource it held. It
+		// stays visible in /proc only until this process reaps it, and reapAdopted
+		// has already drained those by the time this runs. Reporting one as a live
+		// descendant asserts a containment failure for a process that cannot be
+		// holding anything, and because reap-then-scan is inherently racy, the
+		// window in which a freshly orphaned process is a not-yet-reaped zombie is
+		// exactly the window that widens under load.
+		if state := fields[0]; state == "Z" || state == "X" {
+			continue
 		}
 		parent, err := strconv.Atoi(fields[1])
 		if err != nil {
@@ -254,6 +299,21 @@ func linuxDescendants(root int) ([]observedLinuxProcess, error) {
 	return result, nil
 }
 
+// processGone reports whether err means "this process no longer exists", which is
+// a success for containment purposes rather than a failure.
+//
+// Two different errnos mean exactly that, and tolerating only one of them turns an
+// ordinary teardown race into a hard containment failure. ENOENT is what /proc
+// returns once the directory entry is gone. ESRCH is what it returns for a process
+// that is mid-teardown and was still present in the readdir snapshot the scan was
+// built from -- the window between the scan and the read, which is precisely the
+// window that widens under load. A process that has gone cannot be holding
+// anything, so in both cases the correct answer is to stop tracking it rather than
+// to fail the check.
+func processGone(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ESRCH)
+}
+
 func signalObservedProcess(process observedLinuxProcess, signal syscall.Signal) error {
 	pidfd, err := unix.PidfdOpen(process.pid, 0)
 	if errors.Is(err, syscall.ESRCH) {
@@ -264,7 +324,7 @@ func signalObservedProcess(process observedLinuxProcess, signal syscall.Signal) 
 	}
 	defer unix.Close(pidfd)
 	current, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(process.pid), "stat"))
-	if errors.Is(err, os.ErrNotExist) {
+	if processGone(err) {
 		return nil
 	}
 	if err != nil {
