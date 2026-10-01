@@ -746,28 +746,61 @@ signals them, and repeats. Two things in that loop were wrong:
    counting it asserts a containment failure for a process that cannot hold
    anything.
 
-Both are now fixed: `processGone` recognises `ENOENT` and `ESRCH` alike, and
-zombies are excluded. Two supporting changes make the failure honest rather than
-load-dependent: the retirement budgets are named durations (5s SIGTERM grace, 5s
-SIGKILL settle) instead of iteration counts that were wall-clock budgets in
-disguise — `100` attempts of a 10ms sleep is one second, and one second shrinks in
-practice as the machine gets busier — and the configuration writer's wait is a
-30-second backstop instead of one second, because it is waiting on an in-process
-goroutine that has no natural deadline.
+Both are now fixed: zombies are excluded from the scan, and `processGone`
+recognises `ENOENT` and `ESRCH` alike at all three `/proc` read sites — the stat
+read in `linuxDescendants` and both identity reads in `signalObservedProcess`. The
+third of those was widened in the first commit without being mentioned in its
+message or here; it is safe in that direction, because the pidfd is already open
+and `PidfdSendSignal`'s own `ESRCH` was always tolerated, but it is an
+undisclosed tolerance on the signalling path and is recorded as one here.
 
-**Honest limits on the evidence.** The original failure was **not reproduced** —
-it appeared once, in a cold tree, and never again in roughly forty subsequent runs
+The retirement budgets were also made named durations rather than iteration counts
+— `100` attempts of a 10ms sleep is a one-second wall-clock budget in disguise —
+but **they keep their original values, 1s SIGTERM grace and 2s SIGKILL settle, and
+were deliberately not raised.** A first attempt raised them to 5s and 5s, and the
+review that followed showed why that was wrong: the supervisor's worst case became
+10.25s against `processContainmentShutdownGrace` of 4s, so the parent would
+SIGKILL the supervisor mid-cleanup and report containment unproven for a tree that
+was retiring correctly — the fix manufacturing the symptom it exists to remove. The
+patience bought nothing, because the defect was the teardown race rather than an
+exhausted budget. The configuration writer's wait is likewise unchanged at one
+second; a 30s version was tried and reverted, since a check's timeout is enforced by
+its caller and a longer hang-detector there only converts a fast failure into a
+slow one. What survives from both attempts is that the budgets are now durations,
+so the relationship to the parent's grace is expressible, and
+`TestDescendantBudgetsFitTheSupervisorShutdown` pins it.
+
+**Honest limits on the evidence.** The original failure was **not reproduced** — it
+appeared once, in a cold tree, and never again in roughly forty subsequent runs
 including twenty targeted and six full-suite runs under a sustained load average of
-23. So this fix is not proven to eliminate the observed flake. What *is* proven: a
-test added for this purpose failed during a full `make check` run with `read
-/proc/<pid>/stat: no such process`, which is defect 1 above, observed live; and
-each part of the fix is pinned by a test that fails on the pre-fix behaviour —
-`TestProcessGoneToleratesBothTeardownErrnos` breaks when the errno policy is
-narrowed, `TestLinuxDescendantsExcludesZombies` breaks when zombie filtering is
-removed, and `TestDescendantBudgetsAreDurations` breaks when the budgets are put
-back to their old values. `TestCleanupDescendantsEscalatesToKill` exists to prove
-the opposite failure was not bought instead: a descendant that ignores `SIGTERM` is
-still escalated to `SIGKILL` and still reported if it survives, so the more patient
+23. So this fix is not proven to eliminate the observed flake, and neither is the
+`ESRCH` mechanism *established*: the first reviewer forced it 215 times in 45 seconds
+of fork churn, while a second reviewer running 13,680 samples of the same
+readdir-then-read sequence saw none, so the frequency is real but unquantified and
+the mechanism rests on the one live failure plus that forced reproduction.
+
+What is pinned, and what is not, stated precisely:
+
+- `TestProcessGoneToleratesBothTeardownErrnos` breaks when the errno policy is
+  narrowed; `TestLinuxDescendantsSkipsProcessVanishedMidTeardown` drives `ESRCH`
+  into a real scan through an injected read seam and breaks the same way;
+  `TestLinuxDescendantsStillReportsRealReadFailures` breaks if the tolerance ever
+  becomes "ignore every error"; `TestLinuxDescendantsExcludesZombies` breaks when
+  zombie filtering is removed; and
+  `TestDescendantBudgetsFitTheSupervisorShutdown` breaks if the budgets are raised
+  past the parent's patience or shrunk below their original values.
+  and `TestKillPhaseSignalsEveryPassItObserves` breaks if the SIGKILL is moved back
+  out of the settle loop, which it was: with signalling stubbed the descendant
+  survives, the loop runs to its deadline, and a loop that signalled only once
+  before itself records exactly one delivery.
+- **Not part of the fix, and therefore unpinned:** the configuration writer's
+  timeout. A 30-second version was tried and reverted, so the value in the tree is
+  the original one second and nothing asserts it. It is called out here because its
+  first appearance was an undisclosed change, not because it is load-bearing.
+- `TestCleanupDescendantsEscalatesToKill` proves the opposite failure was not
+  bought instead: a descendant that ignores `SIGTERM` is still escalated to
+  `SIGKILL` and still reported if it survives, so the budgets have not been traded
+  away for patience.
 budgets have not cost any detection.
 
 A racing-exit canary (`TestLinuxDescendantsToleratesRacingExits`) is included but

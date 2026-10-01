@@ -117,27 +117,30 @@ func TestCleanupDescendantsEscalatesToKill(t *testing.T) {
 // symptom it exists to remove.
 //
 // The parent gives the supervisor processContainmentShutdownGrace to finish after
-// signalling it, and then SIGKILLs it. If this loop's worst case reaches that
-// grace, the parent kills the supervisor *mid-cleanup*, `completed()` sees a
-// signalled exit, and the caller reports "descendant containment could not be
-// proven" for a tree that was about to clean up correctly.
+// signalling it, and then SIGKILLs it. That grace starts at the parent's SIGTERM,
+// which is also when the supervisor begins its own work: it first runs
+// terminateProcessTree, which sleeps for its own settle interval, and only then
+// enters cleanupDescendants. So the parent's patience is spent on both, and the
+// model has to include the first or the headroom is overstated.
 //
 // This is the relationship that made raising the budgets a mistake: at 5s + 5s the
 // loop needed 10.25s against a 4s grace. The values are back at their originals,
 // and this test is what stops anyone from raising them again without meeting it.
 func TestDescendantBudgetsFitTheSupervisorShutdown(t *testing.T) {
-	// One scan's worth of slack, so the last iteration's sleep cannot push the
-	// total over the edge. Measured at well under a millisecond per scan.
-	const scanAllowance = 500 * time.Millisecond
-	worst := descendantTerminateGrace + descendantKillSettle + scanAllowance
+	// The settle interval terminateProcessTree sleeps before cleanupDescendants
+	// starts, plus one poll interval, plus measured scan cost. Scan cost is
+	// sub-millisecond at p50 and single-digit milliseconds at p99 on a machine
+	// with a populated /proc, so this is generous rather than tight.
+	const treeSettleAndScan = 250*time.Millisecond + 10*time.Millisecond + 50*time.Millisecond
+	worst := descendantTerminateGrace + descendantKillSettle + treeSettleAndScan
 	grace := processContainmentShutdownGrace()
 	if worst >= grace {
-		t.Fatalf("descendant retirement can take %s (terminate %s + settle %s + scan "+
-			"allowance %s) but the parent only allows %s before it SIGKILLs the "+
-			"supervisor; raise the parent's grace rather than the budgets here, or the "+
-			"parent will kill the supervisor mid-cleanup and report containment "+
-			"unproven for a tree that was retiring correctly",
-			worst, descendantTerminateGrace, descendantKillSettle, scanAllowance, grace)
+		t.Fatalf("the supervisor's post-SIGTERM work can take %s (terminate %s + settle "+
+			"%s + tree settle/scan %s) but the parent only allows %s before it "+
+			"SIGKILLs the supervisor; raise the parent's grace rather than the budgets "+
+			"here, or the parent will kill the supervisor mid-cleanup and report "+
+			"containment unproven for a tree that was retiring correctly",
+			worst, descendantTerminateGrace, descendantKillSettle, treeSettleAndScan, grace)
 	}
 	if descendantPollInterval >= descendantTerminateGrace {
 		t.Fatalf("poll interval %s must be well below the SIGTERM grace %s, or the "+
@@ -266,6 +269,50 @@ func TestLinuxDescendantsStillReportsRealReadFailures(t *testing.T) {
 	if _, err := linuxDescendants(os.Getpid()); err == nil {
 		t.Fatal("a permission failure must still fail the scan; tolerating it would " +
 			"make the containment check report success without having looked")
+	}
+}
+
+// The kill phase must signal on every pass, not only against a snapshot taken
+// before the loop.
+//
+// A descendant forked after that snapshot would otherwise be detected for the whole
+// settle window and never signalled, so the longer the window the longer it lives.
+// Pinned by counting, not by reading: with signalling stubbed out the descendant
+// never dies, the kill loop runs to its deadline, and a loop that only signalled
+// before itself would record exactly one SIGKILL.
+func TestKillPhaseSignalsEveryPassItObserves(t *testing.T) {
+	if testing.Short() {
+		t.Skip("deliberately runs the kill phase to its deadline")
+	}
+	child := exec.Command("/bin/sleep", "30")
+	if err := child.Start(); err != nil {
+		t.Skipf("cannot spawn a child here: %v", err)
+	}
+	pid := child.Process.Pid
+	t.Cleanup(func() {
+		_ = child.Process.Kill()
+		_, _ = child.Process.Wait()
+	})
+
+	var kills int
+	real := signalProcess
+	t.Cleanup(func() { signalProcess = real })
+	signalProcess = func(process observedLinuxProcess, sig syscall.Signal) error {
+		if process.pid == pid && sig == syscall.SIGKILL {
+			kills++
+		}
+		return nil // deliberately does not signal, so the child survives the loop
+	}
+
+	if err := cleanupDescendants(os.Getpid()); err == nil {
+		t.Fatal("a descendant that ignores every signal must be reported, not silently accepted")
+	}
+	// One pass per poll interval across the settle window, so a loop that re-signals
+	// records many; a loop that signalled once before itself records exactly one.
+	if kills < 2 {
+		t.Fatalf("the kill phase delivered %d SIGKILL(s) to a descendant present for the "+
+			"whole settle window; it must signal on every pass it observes one, or a "+
+			"descendant forked after the initial snapshot is never signalled at all", kills)
 	}
 }
 

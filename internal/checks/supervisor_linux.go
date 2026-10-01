@@ -176,7 +176,7 @@ func cleanupDescendants(root int) error {
 			return nil
 		}
 		for _, process := range pids {
-			if err := signalObservedProcess(process, syscall.SIGTERM); err != nil {
+			if err := signalProcess(process, syscall.SIGTERM); err != nil {
 				return err
 			}
 		}
@@ -205,7 +205,7 @@ func cleanupDescendants(root int) error {
 		// never signalled, and the longer that window is the longer it lives.
 		// SIGKILL is idempotent and uncatchable, so repeating it costs nothing.
 		for _, process := range pids {
-			if err := signalObservedProcess(process, syscall.SIGKILL); err != nil {
+			if err := signalProcess(process, syscall.SIGKILL); err != nil {
 				return err
 			}
 		}
@@ -238,6 +238,11 @@ type observedLinuxProcess struct {
 	parent    int
 	startTime string
 }
+
+// signalProcess is the single exit point for descendant signalling, and a seam so
+// a test can count what the retirement loop delivers without having to keep a
+// process alive across a real SIGKILL.
+var signalProcess = signalObservedProcess
 
 // readProcessStat is a seam so the teardown race can be driven deterministically.
 //
