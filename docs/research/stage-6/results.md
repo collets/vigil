@@ -654,10 +654,11 @@ for a later slice to close.
 
 ### A pre-existing race flake observed, and how it was attributed
 
-**Two** distinct flakes have now been observed in this slice's test runs, in two
-different packages, and both are named here because the disclosure's purpose is
-that the next agent meets them already documented. Neither is a regression: this
-slice changed no code, and `internal/` is byte-identical to `27182de`.
+**Three** distinct flakes have now been observed in this slice's test runs and in
+the acceptance run on `main`, across three different packages, and all three are
+named here because the disclosure's purpose is that the next agent meets them
+already documented. None is a regression: this slice changed no code, and
+`internal/` is byte-identical to `27182de`.
 
 **Flake 1 — `internal/cli`, observed by the implementing agent.** `make check-race`
 failed once during this slice, with
@@ -697,7 +698,48 @@ byte-identical to `27182de` — and it is recorded rather than dismissed, becaus
 the cost of a one-in-N containment test is precisely that a future reader cannot
 tell an intermittent failure from a real one.
 
-Neither flake is fixed here. Both are pre-existing defects in test
+**Flake 3 — `internal/quality`, observed on `main` after acceptance.** A single
+`make check` run in a **freshly created worktree** failed
+`TestCompleteRepairFreshReviewAndAcceptanceCycle`
+(`internal/quality/quality_integration_test.go:477`) with
+`check descendant containment could not be proven … exit status 125`, and
+`supervisor reported containment failure`. It did not reproduce: **5/5** isolated
+runs of that test, **3/3** further full `make check` runs on the same commit, and
+**4/4** full runs on the untouched Stage 5.7 baseline all passed. It was the first
+run in a cold tree, i.e. the most heavily loaded.
+
+It is attributed rather than assumed:
+
+| Check | Result |
+| --- | --- |
+| `git diff 27182de..main -- internal/quality` | empty — the package is byte-identical to the accepted baseline, so this slice cannot have caused it |
+| Isolated runs of the failing test | 5/5 pass |
+| Full `make check` on `main` after the first run | 3/3 pass |
+| Full `make check` on `27182de` (untouched) | 4/4 pass |
+
+**All three flakes share one signature and one source.** Each is
+`exit status 125` plus `supervisor reported containment failure`, and both strings
+come from a single place — `internal/checks/process_tracker_linux.go`
+(`linuxContainmentFailureExit = 125` and the error at line 173) — which the tests
+in `internal/checks`, `internal/cli` and `internal/quality` all funnel through. So
+this is very likely **one load-sensitive mechanism with three call sites**, not
+three independent flakes.
+
+The mechanism is consistent with hard-coded wall-clock budgets: the tracker waits
+`time.After(time.Second)` for its configuration writer to retire
+(`process_tracker_linux.go:150`), and the supervisor's containment path gives the
+stop a `5*time.Second` budget (`internal/supervisor/runner.go:551`) after which it
+reports `containment failed` (`runner.go:574`). Both are load-sensitive by
+construction. This is stated as *consistent with* the observed failure, not proven:
+it was seen once, and the chain from a slow stop to exit 125 was not isolated.
+
+**It is not fixed here and it is not 6.1's to fix** — the package predates this
+slice and is byte-identical to the accepted baseline. It matters for the next
+slice: 6.2 adds supervisor and TUI tests, so it will run into this. Whoever picks
+it up should treat it as a reliability defect in containment timing, not as three
+tests to individually stabilise.
+
+None of the three flakes is fixed here. Both are pre-existing defects in test
 **synchronisation**, not in product behaviour, and fixing them would mean
 changing `internal/`, which this slice's verified "zero code changed" claim
 forbids. They are candidates for 6.2 alongside the two doccheck additions that
