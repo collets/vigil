@@ -1,7 +1,7 @@
 # Start here: reading Vigil's documentation
 
 <!-- vigil-tier: entry -->
-<!-- vigil-status: stage=5.7; stage_accepted=true; implementation_commit=522cb967f732b578a66c051cf8938dd00584d238 -->
+<!-- vigil-status: stage=6.1; stage_accepted=true; implementation_commit=bad613950b11de53130487fdb24e0a10d40d1480 -->
 
 Vigil is a local control panel that runs existing agent harnesses (Codex, Hermes)
 through a Go core with SQLite state. It is **pre-release**: the offline core
@@ -10,9 +10,11 @@ scope, and production
 check, model and reviewer dispatch are deliberately disabled. This page tells you
 which documents to read, and — more importantly — which ones you can skip.
 
-**Stage 6.1 is implemented, was rejected by its first
-independent review, was returned conditional by each of thirteen further reviews, and all
-fourteen rounds of findings are remediated pending one more confirming review.** It is the terminal interface
+**Stage 6.1 is independently accepted at `bad6139` for its autonomous scope.** It was
+rejected by its first independent review, returned conditional by each of thirteen
+further, and all fourteen rounds of findings are remediated. Acceptance rests on the
+measurements — fourteen independent reviewers re-derived every figure from source
+and found none wrong — not on a clean final round. It is the terminal interface
 parity gap analysis, so it wrote no interface code: it measured the interface
 and the product surface from the code and the built binary, found that the
 interface fully expresses 4 of the 82 distinct capabilities the 85-row register

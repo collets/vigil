@@ -1,7 +1,7 @@
 # Stage 5.1–5.7 execution plans
 
 <!-- vigil-tier: plan -->
-<!-- vigil-status: stage=5.7; stage_accepted=true; implementation_commit=522cb967f732b578a66c051cf8938dd00584d238 -->
+<!-- vigil-status: stage=6.1; stage_accepted=true; implementation_commit=bad613950b11de53130487fdb24e0a10d40d1480 -->
 
 Prepared 2026-09-20 against foundation commit `930ed37`. These seven plans organize the **remaining** Stage 5 work; they do not mark it implemented or move unfinished requirements into Stage 6. Recheck the checkout and newer evidence before starting.
 
@@ -114,11 +114,10 @@ No immediate answer is required to begin implementation. A plan may be autonomou
     the evidence exists and its limitations are recorded, **not** because the slice
     is accepted.
 - [ ] Stage 6 terminal interface parity and its complete feature list.
-      **6.1 is implemented, was rejected by its first independent review,
-      returned conditional by each of thirteen further reviews, and all fourteen rounds
-      of findings are remediated pending one more confirming review**; the box
-      stays unticked: 6.1 was the gap analysis, and Stage 6 still has 6.2–6.9 to
-      implement. The measured gap, the parity register and the feature list are
+      **6.1 is independently accepted at `bad6139` for its autonomous scope**, after a
+      first review rejected it and thirteen further reviews returned conditional;
+      all fourteen rounds of findings are remediated; the box stays unticked
+      because 6.1 was the gap analysis and Stage 6 still has 6.2–6.9 to implement. The measured gap, the parity register and the feature list are
       in [6.1's analysis](../stage-6/6.1-parity-gap-analysis.md) and
       [the results document](../../research/stage-6/results.md).
 - [ ] Stage 7 user-facing documentation website.

@@ -1,7 +1,7 @@
 # Initial harness capability investigation
 
 <!-- vigil-tier: core -->
-<!-- vigil-status: stage=5.7; stage_accepted=true; implementation_commit=522cb967f732b578a66c051cf8938dd00584d238 -->
+<!-- vigil-status: stage=6.1; stage_accepted=true; implementation_commit=bad613950b11de53130487fdb24e0a10d40d1480 -->
 
 Investigated 2026-09-20. Recommendation: Codex app-server over stdio and Hermes TUI gateway over stdio for the first adapters. Both retain the original harness. The Go application owns task state, scheduling, approval policy, and acceptance.
 

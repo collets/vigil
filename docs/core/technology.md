@@ -1,7 +1,7 @@
 # Technology proposal
 
 <!-- vigil-tier: core -->
-<!-- vigil-status: stage=5.7; stage_accepted=true; implementation_commit=522cb967f732b578a66c051cf8938dd00584d238 -->
+<!-- vigil-status: stage=6.1; stage_accepted=true; implementation_commit=bad613950b11de53130487fdb24e0a10d40d1480 -->
 
 Status: Go and the foundation stack accepted, 2026-09-19; status reconciled through 2026-09-27. Linux and macOS are the initial targets. The decision has held: the application is still Go, still uses SQLite with embedded forward-only migrations, and still has no ORM. What has changed is scale, not stack — the original hello-world scaffold has grown into the persisted core implemented and independently accepted through Stage 5.6 at `b0a085b` (see [next steps](../process/next-steps.md)). Stage 5.7 is independently accepted for its autonomous scope; production execution/model qualification and delivery authority remain gated.
 

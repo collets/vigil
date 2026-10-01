@@ -1,7 +1,7 @@
 # Minimal architecture
 
 <!-- vigil-tier: core -->
-<!-- vigil-status: stage=5.7; stage_accepted=true; implementation_commit=522cb967f732b578a66c051cf8938dd00584d238 -->
+<!-- vigil-status: stage=6.1; stage_accepted=true; implementation_commit=bad613950b11de53130487fdb24e0a10d40d1480 -->
 
 Status: Stage 4 specified on 2026-09-20. The [application core specification](core-spec.md), [draft schemas](../spec/project.sql), and [implementation backlog/requirement map](../plans/stage-5/stage-5-plan.md) are the detailed contracts. [Linux](../research/stage-3/results.md) and [macOS](../research/stage-3.5/results.md) runtime findings constrain strict execution.
 

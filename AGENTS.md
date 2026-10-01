@@ -1,16 +1,20 @@
 # AGENTS.md
 
-<!-- vigil-status: stage=5.7; stage_accepted=true; implementation_commit=522cb967f732b578a66c051cf8938dd00584d238 -->
+<!-- vigil-status: stage=6.1; stage_accepted=true; implementation_commit=bad613950b11de53130487fdb24e0a10d40d1480 -->
 
 Instructions for any agent working in this repository. Read this before changing code.
 
 Vigil is a local control panel that runs existing agent harnesses (Codex, Hermes)
 through a Go core with SQLite state. It is **pre-release**: the offline core through
 Stage 5.7 is implemented and independently accepted at implementation commit
-`522cb96`, Stage 6.1's parity gap analysis is implemented, was **rejected** by its
-first independent review, was returned **conditional** by each of thirteen further
-reviews, and has all fourteen rounds of findings remediated pending one more
-confirming review, and production dispatch is deliberately disabled.
+`522cb96`, and **Stage 6.1's parity gap analysis is independently accepted at
+`bad6139`** for its autonomous scope. It was **rejected** by its first independent
+review and returned **conditional** by each of thirteen further; all fourteen
+rounds of findings are remediated. Acceptance rests on the measurements, which
+fourteen independent reviewers re-derived from source without finding one wrong,
+and not on a clean final round — the bookkeeping findings of rounds five to
+fourteen are recorded in its review file and were judged process noise.
+Production dispatch remains deliberately disabled.
 
 **Each stage's acceptance covers the autonomous part only.** Stage 5.7's walkthrough
 found that the Stage 5.2/5.6 delivery path was unreachable and fixed it under
