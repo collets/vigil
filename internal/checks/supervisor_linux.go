@@ -140,25 +140,25 @@ func terminateProcessTree(root *os.Process) error {
 	return result
 }
 
-// Descendant retirement budgets. Both are deliberately generous and both are
-// expressed as durations rather than as loop counts.
+// Descendant retirement budgets.
 //
-// An iteration count is a wall-clock budget in disguise: `100` attempts of a 10ms
-// sleep is one second, and that second shrinks in practice as the machine gets
-// busier, because the thing being waited for -- the kernel tearing a process tree
-// down, and this process reaping it -- takes longer under load rather than failing.
-// That made this check pass on an idle machine and fail on a saturated one, which
-// is the worst possible failure mode for a containment assertion: it reports a
-// safety violation that is really a timing artefact.
+// These are the pre-existing values, unchanged. They are now named durations
+// rather than loop counts, which is the whole point: `100` attempts of a 10ms
+// sleep is a one-second wall-clock budget in disguise, and a disguised one cannot
+// be related to the budget it has to fit inside. As durations the relationship is
+// expressible, and TestDescendantBudgetsFitTheSupervisorShutdown expresses it, so
+// the two cannot drift apart again.
 //
-// SIGTERM asks a process to stop, so a grace period is real work. SIGKILL is
-// uncatchable, so after it is delivered the only remaining work is teardown and
-// reaping, which is bounded but not quickly. Five seconds is far longer than
-// either needs on an idle machine and still short enough that a genuinely
-// surviving descendant is reported rather than waited on indefinitely.
+// They are deliberately NOT more generous. The failure that prompted this change
+// was a teardown race, not an exhausted budget, so patience bought nothing; and
+// raising them pushes this loop past processContainmentShutdownGrace, at which
+// point the parent SIGKILLs the supervisor mid-cleanup and manufactures a fresh
+// instance of the very symptom being fixed. A descendant that has ignored SIGTERM
+// for a second will be SIGKILLed regardless, and SIGKILL is uncatchable, so all
+// that remains after it is delivered is teardown and reaping, not cooperation.
 const (
-	descendantTerminateGrace = 5 * time.Second
-	descendantKillSettle     = 5 * time.Second
+	descendantTerminateGrace = 1 * time.Second
+	descendantKillSettle     = 2 * time.Second
 	descendantPollInterval   = 10 * time.Millisecond
 )
 
@@ -185,15 +185,8 @@ func cleanupDescendants(root int) error {
 		}
 		time.Sleep(descendantPollInterval)
 	}
-	pids, err := linuxDescendants(root)
-	if err != nil {
-		return err
-	}
-	for _, process := range pids {
-		if err := signalObservedProcess(process, syscall.SIGKILL); err != nil {
-			return err
-		}
-	}
+	// SIGKILL phase. The snapshot and the signal are taken inside the loop, so
+	// there is no window between "decide whom to kill" and "kill them".
 	killDeadline := time.Now().Add(descendantKillSettle)
 	for {
 		if err := reapAdopted(); err != nil {
@@ -205,6 +198,16 @@ func cleanupDescendants(root int) error {
 		}
 		if len(pids) == 0 {
 			return nil
+		}
+		// Re-signal on every pass rather than only against the snapshot taken
+		// before the loop. A descendant forked between that snapshot and signal
+		// delivery would otherwise be detected for the whole settle window but
+		// never signalled, and the longer that window is the longer it lives.
+		// SIGKILL is idempotent and uncatchable, so repeating it costs nothing.
+		for _, process := range pids {
+			if err := signalObservedProcess(process, syscall.SIGKILL); err != nil {
+				return err
+			}
 		}
 		if !time.Now().Before(killDeadline) {
 			break
@@ -236,6 +239,19 @@ type observedLinuxProcess struct {
 	startTime string
 }
 
+// readProcessStat is a seam so the teardown race can be driven deterministically.
+//
+// A process caught mid-teardown -- present in the readdir snapshot, gone by the
+// time its stat is read -- makes this read fail with ESRCH rather than ENOENT,
+// because the kernel detaches the task from the PID hash before it invalidates the
+// /proc dentry. That happens a few hundred times per minute of churn on a loaded
+// machine and essentially never on an idle one, which is why the resulting failure
+// looked like a flake. Reproducing it by spawning processes is a matter of luck, so
+// the read is indirected and a test substitutes the errno.
+var readProcessStat = func(pid string) ([]byte, error) {
+	return os.ReadFile(filepath.Join("/proc", pid, "stat"))
+}
+
 func linuxDescendants(root int) ([]observedLinuxProcess, error) {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
@@ -247,7 +263,7 @@ func linuxDescendants(root int) ([]observedLinuxProcess, error) {
 		if err != nil || pid <= 1 || pid == os.Getpid() {
 			continue
 		}
-		raw, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "stat"))
+		raw, err := readProcessStat(entry.Name())
 		if err != nil {
 			// The process was in the readdir snapshot but has gone by the time we
 			// read it. Both ENOENT and ESRCH mean that, and neither is a defect:

@@ -774,23 +774,25 @@ A racing-exit canary (`TestLinuxDescendantsToleratesRacingExits`) is included bu
 is **not** a deterministic reproducer — it exercises the window without reliably
 landing in it.
 
-None of the three flakes is fixed here. Both are pre-existing defects in test
-**synchronisation**, not in product behaviour, and fixing them would mean
-changing `internal/`, which this slice's verified "zero code changed" claim
-forbids. They are candidates for 6.2 alongside the two doccheck additions that
-same constraint already defers.
+**Scope note, corrected after the first write of this section.** It originally
+concluded that none of the three could be fixed here because doing so would change
+`internal/`, which the slice's then-current "zero code changed" claim forbade. That
+was true of Stage 6.1 and stopped being true once acceptance happened and the fix
+was authorised separately: the flakes were fixed after acceptance, on
+`fix/containment-timeout`, and this section originally still said otherwise. A
+document asserting a fix has not landed while the fix sits in the same file is
+worse than one that never mentioned it, and `make docs-check` cannot see the
+contradiction.
 
-So the failure is a **pre-existing low-rate timing flake** in a test whose
-synchronisation is wall-clock rather than event-driven, not a regression from
-this change. It is recorded here rather than omitted, because the next agent
-will hit it too, and because the honest reading of a flaky test is that the
-*test* is defective, not that the run is inconvenient.
+So the honest reading of the original failure is **not** that it was a
+wall-clock-synchronisation flake in a test. It was a defect in the containment
+supervisor, described above and fixed, and all three call sites share it.
 
-**It is not fixed by Stage 6.1.** Replacing fixed sleeps with event-driven
-synchronisation would be a test change in `internal/cli`, which is outside this
-slice's scope (documentation and planning) and outside the branch's diff. It is
-logged here as a finding for the next agent who edits `internal/cli`. It does
-not block Stage 6.1, which changed no code the test exercises.
+**Flake 1's own fixture is still unfixed.** `internal/cli`'s PTY test still uses
+fixed sleeps (`120ms` before `3`, `40ms` before the answer, `250ms` before `q`).
+That is a separate defect with a separate fix — event-driven synchronisation
+instead of sleeps — and it is left logged here rather than bundled into a
+containment change it has nothing to do with. It is a candidate for 6.2.
 
 ### Native macOS: attempted and blocked
 

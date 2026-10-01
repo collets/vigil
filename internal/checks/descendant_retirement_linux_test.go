@@ -30,7 +30,7 @@ func TestLinuxDescendantsExcludesZombies(t *testing.T) {
 	// asked to, leaving an unreaped zombie that only this process can reap.
 	child := exec.Command("/bin/sleep", "0")
 	if err := child.Start(); err != nil {
-		t.Fatalf("start child: %v", err)
+		t.Skipf("cannot spawn a short-lived child here: %v", err)
 	}
 	pid := child.Process.Pid
 	t.Cleanup(func() {
@@ -83,7 +83,7 @@ func TestCleanupDescendantsEscalatesToKill(t *testing.T) {
 	child := exec.Command("/bin/sh", "-c", script)
 	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := child.Start(); err != nil {
-		t.Fatalf("start stubborn child: %v", err)
+		t.Skipf("cannot spawn a shell here: %v", err)
 	}
 	pid := child.Process.Pid
 	t.Cleanup(func() {
@@ -113,25 +113,45 @@ func TestCleanupDescendantsEscalatesToKill(t *testing.T) {
 	}
 }
 
-// The budgets are durations on purpose. An iteration count is a wall-clock
-// budget in disguise, and a disguised one is what made this flake load-dependent.
-func TestDescendantBudgetsAreDurations(t *testing.T) {
-	if descendantTerminateGrace <= 0 || descendantKillSettle <= 0 || descendantPollInterval <= 0 {
-		t.Fatal("descendant budgets must be positive durations")
+// The budgets must fit inside the parent's patience, or the fix manufactures the
+// symptom it exists to remove.
+//
+// The parent gives the supervisor processContainmentShutdownGrace to finish after
+// signalling it, and then SIGKILLs it. If this loop's worst case reaches that
+// grace, the parent kills the supervisor *mid-cleanup*, `completed()` sees a
+// signalled exit, and the caller reports "descendant containment could not be
+// proven" for a tree that was about to clean up correctly.
+//
+// This is the relationship that made raising the budgets a mistake: at 5s + 5s the
+// loop needed 10.25s against a 4s grace. The values are back at their originals,
+// and this test is what stops anyone from raising them again without meeting it.
+func TestDescendantBudgetsFitTheSupervisorShutdown(t *testing.T) {
+	// One scan's worth of slack, so the last iteration's sleep cannot push the
+	// total over the edge. Measured at well under a millisecond per scan.
+	const scanAllowance = 500 * time.Millisecond
+	worst := descendantTerminateGrace + descendantKillSettle + scanAllowance
+	grace := processContainmentShutdownGrace()
+	if worst >= grace {
+		t.Fatalf("descendant retirement can take %s (terminate %s + settle %s + scan "+
+			"allowance %s) but the parent only allows %s before it SIGKILLs the "+
+			"supervisor; raise the parent's grace rather than the budgets here, or the "+
+			"parent will kill the supervisor mid-cleanup and report containment "+
+			"unproven for a tree that was retiring correctly",
+			worst, descendantTerminateGrace, descendantKillSettle, scanAllowance, grace)
 	}
 	if descendantPollInterval >= descendantTerminateGrace {
-		t.Fatalf("poll interval %s must be well below the grace period %s, or the "+
+		t.Fatalf("poll interval %s must be well below the SIGTERM grace %s, or the "+
 			"grace period cannot be honoured", descendantPollInterval, descendantTerminateGrace)
 	}
-	// The pre-fix code allowed 100*10ms for SIGTERM and 200*10ms for SIGKILL and
-	// still failed under load, so anything at or below that is not a fix.
-	if descendantTerminateGrace <= time.Second {
-		t.Fatalf("SIGTERM grace %s is no more generous than the pre-fix one second, "+
-			"which was observed failing under load", descendantTerminateGrace)
+	// The budgets must not shrink below the values that were in place before this
+	// change either; a smaller wait is a weaker check, not a stricter one.
+	if descendantTerminateGrace < time.Second {
+		t.Fatalf("SIGTERM grace %s is below the pre-existing one second, which "+
+			"weakens the check rather than fixing it", descendantTerminateGrace)
 	}
-	if descendantKillSettle <= 2*time.Second {
-		t.Fatalf("SIGKILL settle %s is no more generous than the pre-fix two seconds, "+
-			"which was observed failing under load", descendantKillSettle)
+	if descendantKillSettle < 2*time.Second {
+		t.Fatalf("SIGKILL settle %s is below the pre-existing two seconds, which "+
+			"weakens the check rather than fixing it", descendantKillSettle)
 	}
 }
 
@@ -187,6 +207,75 @@ func TestLinuxDescendantsToleratesRacingExits(t *testing.T) {
 		}
 		_ = reapAdopted()
 	}
+}
+
+// The ESRCH tolerance is the claimed root cause, so drive it into the scan
+// deterministically rather than hoping a spawned process lands in the window.
+//
+// Spawning churn reproduces the errno only a few hundred times per minute under
+// load, and never on an idle machine, which is exactly why the bug presented as a
+// flake. The read is indirected through readProcessStat, so the race is injected
+// instead of waited for. This is the test that makes the claim falsifiable.
+func TestLinuxDescendantsSkipsProcessVanishedMidTeardown(t *testing.T) {
+	// A real, live child, so there is a genuine entry for the scan to find.
+	child := exec.Command("/bin/sleep", "30")
+	if err := child.Start(); err != nil {
+		t.Skipf("cannot spawn a child here: %v", err)
+	}
+	pid := child.Process.Pid
+	t.Cleanup(func() {
+		_ = child.Process.Kill()
+		_, _ = child.Process.Wait()
+	})
+
+	// Sanity: the child is found while its stat reads normally.
+	found, err := linuxDescendants(os.Getpid())
+	if err != nil {
+		t.Fatalf("baseline scan: %v", err)
+	}
+	if !containsPID(found, pid) {
+		t.Skipf("child %d not visible in the scan on this system; cannot exercise the race", pid)
+	}
+
+	// Now make every stat read fail the way a mid-teardown process does, and
+	// require the scan to tolerate it rather than fail. Pre-fix this returned the
+	// error, which surfaced as "descendant containment could not be proven".
+	real := readProcessStat
+	t.Cleanup(func() { readProcessStat = real })
+	var injected int
+	readProcessStat = func(string) ([]byte, error) {
+		injected++
+		return nil, &os.PathError{Op: "open", Path: "/proc/x/stat", Err: syscall.ESRCH}
+	}
+	if _, err := linuxDescendants(os.Getpid()); err != nil {
+		t.Fatalf("scan failed on a process that vanished mid-teardown: %v", err)
+	}
+	if injected == 0 {
+		t.Fatal("the seam was never called, so the test proved nothing")
+	}
+}
+
+// The scan must still report a genuine read failure, or the tolerance above has
+// become a blanket "ignore errors" and the check no longer means anything.
+func TestLinuxDescendantsStillReportsRealReadFailures(t *testing.T) {
+	real := readProcessStat
+	t.Cleanup(func() { readProcessStat = real })
+	readProcessStat = func(string) ([]byte, error) {
+		return nil, &os.PathError{Op: "open", Path: "/proc/x/stat", Err: syscall.EACCES}
+	}
+	if _, err := linuxDescendants(os.Getpid()); err == nil {
+		t.Fatal("a permission failure must still fail the scan; tolerating it would " +
+			"make the containment check report success without having looked")
+	}
+}
+
+func containsPID(list []observedLinuxProcess, pid int) bool {
+	for _, p := range list {
+		if p.pid == pid {
+			return true
+		}
+	}
+	return false
 }
 
 func processState(pid int) (string, error) {
