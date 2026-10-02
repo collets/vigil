@@ -26,9 +26,12 @@ import (
 //     candidate.
 //   - Rounds 1–9 reviewed the eight checkpoints and then the candidate itself;
 //     they are not remediation reviews. Every round from 10 onward reviews one
-//     remediation, so the number of remediation reviews is the applied count
-//     less the one commit no review has seen. Together:
-//     reviewed = 9 + (applied − 1) = applied + 8.
+//     or more remediations, so the number of remediation reviews is the reviewed
+//     count less 9.
+//   - At least one applied remediation is always unreviewed: the commit being
+//     written is itself one. There may be more than one, because a remediation
+//     can be committed and then refined before the review that covers both —
+//     which is what happened twice here when the gate below was itself wrong.
 //   - The **outstanding** ordinal is the applied ordinal, because the
 //     outstanding review is the one that will review the newest commit.
 //   - The rounds table carries exactly one row per review plus one row for the
@@ -62,15 +65,16 @@ func TestStage63ReviewRecordCountsMatchHistory(t *testing.T) {
 	if len(reviewed) > len(rows) {
 		t.Fatalf("%d rounds carry a verdict but only %d rows exist", len(reviewed), len(rows))
 	}
-	if want := applied + stage63NonRemediationRounds - 1; len(reviewed) != want {
-		t.Errorf("%d remediation commits exist and %d rounds carry a verdict; %d is required. "+
-			"The applied count includes the commit being written, and it has not been reviewed, "+
-			"so the applied count is %d and %d remediation reviews have run",
-			applied, len(reviewed), want, applied, len(reviewed)-stage63NonRemediationRounds)
-	}
-	if want := applied + stage63NonRemediationRounds; len(rows) != want {
+	if want := len(reviewed) + 1; len(rows) != want {
 		t.Errorf("rounds table has %d rows; %d is required (%d reviewed + 1 pending)",
 			len(rows), want, len(reviewed))
+	}
+	// At least one applied remediation must be unreviewed — the commit being
+	// written is itself one — or the record could never be describing a
+	// candidate under review.
+	if remediationReviews := len(reviewed) - stage63NonRemediationRounds; remediationReviews >= applied {
+		t.Errorf("%d remediation reviews have run over %d remediation commits; at least one commit must be unreviewed",
+			remediationReviews, applied)
 	}
 	// The three claims the rounds keep getting wrong. Each is asserted against
 	// its own sentence rather than the whole document, because a bare
