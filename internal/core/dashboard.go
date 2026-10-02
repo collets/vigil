@@ -16,6 +16,13 @@ type DashboardSnapshot struct {
 	Plans     []PlanDetail     `json:"plan_details"`
 	Inbox     []InboxEntry     `json:"inbox"`
 	Events    []Event          `json:"events"`
+	// Progression, Run and Usage are the Stage 6.3 first-class read
+	// models. They are selected in the same snapshot transaction as
+	// every field above, so a screen never mixes a queue read from one
+	// revision with a task read from another.
+	Progression ProgressionDetail `json:"progression"`
+	Run         *ActiveRunDetail  `json:"run,omitempty"`
+	Usage       UsageSummary      `json:"usage"`
 }
 
 type TaskDetail struct {
@@ -49,21 +56,21 @@ func (e *Engine) Dashboard(ctx context.Context) (DashboardSnapshot, error) {
 		return snapshot, err
 	}
 	defer tx.Rollback()
-	if snapshot.Readiness, err = e.readiness(ctx, tx); err != nil {
+	detail, readiness, tasks, plans, inbox, events, err := readProgressionSnapshot(ctx, tx)
+	if err != nil {
 		return snapshot, err
 	}
-	_ = tx.QueryRowContext(ctx, `SELECT id FROM runs WHERE state IN('prepared','starting','active','stopping','unknown') ORDER BY created_at DESC,id DESC LIMIT 1`).Scan(&snapshot.ActiveRun)
-	if snapshot.Queue, err = readPlanQueue(ctx, tx); err != nil {
-		return snapshot, err
-	}
-	if snapshot.Tasks, snapshot.Plans, err = readDashboardDetails(ctx, tx); err != nil {
-		return snapshot, err
-	}
-	if snapshot.Inbox, err = readInbox(ctx, tx); err != nil {
-		return snapshot, err
-	}
-	snapshot.Events, err = readEvents(ctx, tx, 0, true)
-	return snapshot, err
+	snapshot.Readiness = readiness
+	snapshot.ActiveRun = detail.ActiveRun
+	snapshot.Queue = detail.Queue
+	snapshot.Tasks = tasks
+	snapshot.Plans = plans
+	snapshot.Inbox = inbox
+	snapshot.Events = events
+	snapshot.Progression = detail
+	snapshot.Run = detail.Run
+	snapshot.Usage = detail.Usage
+	return snapshot, nil
 }
 
 func readPlanQueue(ctx context.Context, tx *sql.Tx) ([]PlanQueueEntry, error) {
