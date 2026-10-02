@@ -101,15 +101,11 @@ func qualityRollup(task core.TaskDetail) string {
 	return line
 }
 
-// runBudgetLine renders the run's budget accounting. An unobserved budget
-// renders as explicitly unavailable, never as a zero (P16). The attempt
-// and task figures are shown separately because they answer different
-// questions and comparing them across scopes misreports what remains.
 // runBudgetLines renders the run's budget accounting, one line per scope.
-// They are separate lines rather than one assembled string because the
-// combined line exceeds a narrow frame and truncates away the task figure —
-// which would be the honesty failure in a different guise. An unobserved
-// budget renders as explicitly unavailable, never as a zero (P16).
+// Separate lines rather than one assembled string because the combined line
+// is ~118 columns and truncates away the task figure at the 110 columns this
+// screen is measured at — the honesty failure in a different guise. An
+// unobserved budget renders as explicitly unavailable, never as a zero (P16).
 func runBudgetLines(run *core.ActiveRunDetail) []string {
 	if !run.BudgetObserved {
 		return []string{"Budgets: unavailable (no recorded segment)"}
@@ -230,8 +226,10 @@ func overviewLines(m *model, s *core.DashboardSnapshot) []string {
 	// The task read is bounded at 100 rows in plan order, so a project
 	// whose active plan's tasks fall past that bound would otherwise
 	// render "Current task: none" with no hint that anything was hidden.
+	// The full set is on Tasks, which reads readiness with no LIMIT;
+	// Detail reads the same bounded rows, so it is deliberately not named.
 	if len(s.Tasks) >= taskWindowCap {
-		lines = append(lines, fmt.Sprintf("  …task window holds the latest %d rows; the full set is in Tasks and Detail", taskWindowCap))
+		lines = append(lines, fmt.Sprintf("  …task window holds the latest %d rows; the full set is on Tasks", taskWindowCap))
 	}
 	lines = append(lines, "")
 	// Actionable request list with kind, age and blocking state. Enter

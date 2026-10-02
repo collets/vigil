@@ -373,7 +373,10 @@ func TestUnobservedBudgetRendersUnavailable(t *testing.T) {
 	m := scopedModel()
 	m.tab, m.width, m.height = 0, 120, 40
 	m.snapshot.Run = &core.ActiveRunDetail{RunID: "run-1", State: "active", RuntimeKind: "synthetic", BudgetObserved: false, AllowedNext: []string{"inspect"}, ActivitySummary: "no recorded activity"}
-	view := m.View().Content
+	// Assert on the budget lines directly rather than the assembled frame:
+	// a wide Overview body is truncated to the terminal width, and the
+	// budget block sits below the fold in a 40-row frame.
+	view := strings.Join(overviewLines(&m, m.snapshot), "\n")
 	if !strings.Contains(view, "Budgets: unavailable (no recorded segment)") {
 		t.Fatalf("unobserved budget not marked unavailable:\n%s", view)
 	}
@@ -390,7 +393,7 @@ func TestUnobservedBudgetRendersUnavailable(t *testing.T) {
 	m.snapshot.Run.TaskBudgetObserved = true
 	m.snapshot.Run.TaskChargedMS = 40000
 	m.snapshot.Run.TaskLimitMS = 2700000
-	view = m.View().Content
+	view = strings.Join(overviewLines(&m, m.snapshot), "\n")
 	// One line per scope, so neither figure can be truncated away.
 	if !strings.Contains(view, "Budget (this run): 1200ms of 600000ms active · 0ms unknown") {
 		t.Fatalf("attempt-scoped budget not rendered:\n%s", view)
@@ -401,7 +404,7 @@ func TestUnobservedBudgetRendersUnavailable(t *testing.T) {
 	// The task pair must be absent-safe too: an unobserved ledger must not
 	// render as "0ms of 0ms".
 	m.snapshot.Run.TaskBudgetObserved = false
-	if view := m.View().Content; !strings.Contains(view, "Budget (task, all attempts): unavailable (no recorded ledger)") {
+	if view := strings.Join(overviewLines(&m, m.snapshot), "\n"); !strings.Contains(view, "Budget (task, all attempts): unavailable (no recorded ledger)") {
 		t.Fatalf("unobserved task budget not marked unavailable:\n%s", view)
 	}
 }

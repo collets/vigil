@@ -335,9 +335,10 @@ reads `active_segments`, the table the supervisor actually writes, and carries
 answer different questions and comparing them across scopes misreports what
 remains: the attempt's charged time pairs with the attempt limit, and the
 task-cumulative charge pairs with the task ceiling. They are separate **lines**
-rather than one assembled string, because the combined string exceeds a
-120-column frame and truncates the task figure away — the same honesty failure
-in a different guise. With a run present the block reads:
+rather than one assembled string, because the combined line is ~118 columns and
+truncates the task figure away at the 110 columns this screen is measured at —
+the same honesty failure in a different guise. With a run present the block
+reads:
 
 ```text
 Budget (this run): 1200ms of 600000ms active · 0ms unknown
@@ -1302,6 +1303,13 @@ notices were reworded. **None of those four was re-measured natively**, so no
 macOS behaviour is claimed for them. They are Linux-verified by the unit tests
 named in §6 and by the round-10 review; a later native capture at the accepted
 SHA would close this, and 6.9 should take it.
+
+**The same qualification applies on the Linux side, and it is stated here rather
+than left for a reader to infer.** The §2.9 History block shows the *current*
+header layout, but its seven event rows and timestamps are the ones captured at
+`f4196fb`; the header line was edited, not re-captured, because the relocation
+happened after that measurement. Its rows are real measurements; its header is
+the code as it now stands.
 
 **One macOS-specific measurement note, recorded because it changed the method
 rather than the result.** The Linux capture harness reads the master end only

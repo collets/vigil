@@ -231,6 +231,13 @@ func TestActiveRunDetailExposesBudgetsSessionAndAllowedNext(t *testing.T) {
 	if run.TaskLimitMS != 2700000 || run.TaskChargedMS != 40000 {
 		t.Fatal("task-cumulative budget wrong", run)
 	}
+	// The fixture inserts a task ledger, so the flag must be true here.
+	// Without this assertion a broken budget_ledgers query would leave it
+	// false everywhere and both screens would render "unavailable" for
+	// every run, with the whole suite still green.
+	if !run.TaskBudgetObserved {
+		t.Fatal("task budget should be observed when a ledger row exists")
+	}
 	found := false
 	for _, next := range run.AllowedNext {
 		if next == "stop" {

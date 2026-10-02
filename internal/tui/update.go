@@ -23,7 +23,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.task = min(m.task, max(0, len(msg.snapshot.Tasks)-1))
 			m.historyCursor = min(m.historyCursor, max(0, len(filteredEvents(msg.snapshot.Events, m.historyFilter))-1))
 			m.queueCursor = min(m.queueCursor, max(0, min(maxRenderedQueue, len(msg.snapshot.Queue))-1))
-			m.ovInbox = min(m.ovInbox, max(0, min(maxRenderedRequests, len(msg.snapshot.Inbox)-1)))
+			m.ovInbox = min(m.ovInbox, max(0, min(maxRenderedRequests, len(msg.snapshot.Inbox))-1))
 			if len(msg.snapshot.Tasks) == 0 || len(msg.snapshot.Tasks[m.task].ManualCriteria) == 0 {
 				m.criterion = 0
 			} else {
