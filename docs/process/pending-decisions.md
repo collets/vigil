@@ -33,6 +33,9 @@ The [Stage 5.1–5.7 plan index](../plans/stage-5/README.md#user-input-and-auton
   Stage 5.7's Linux-only evidence missed a `realpath -m` portability defect that
   made the scenario runner unusable on the only platform where native
   validation is required, and the interface is Stage 6's actual deliverable.
+  Re-attempted for 6.2 on 2026-10-02 with the same result (`ping` answers;
+  `ssh -o BatchMode=yes -o ConnectTimeout=8` as the local user and as `admin`
+  both refused), so all 6.2 measurements stay Linux-only.
 - **Two "product gaps" Stage 6.1 reported were wrong, and the item is withdrawn
   (2026-09-30):** 6.1 initially recorded that the application observes **no
   cost or usage** and persists **no implementation summary**, filed both as

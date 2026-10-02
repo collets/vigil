@@ -2,17 +2,21 @@
 
 <!-- vigil-tier: evidence -->
 
-Status: **skeleton created by Stage 6.1; not complete.** This document is a
-required deliverable of [Stage 6](../../plans/stage-6/stage-6.md) outcome 3: the
-complete feature list of the terminal interface, with every screen, every
-action, every key binding, the command each action maps to, and its requirement
-coverage. Stage 7 documents from it and Stage 8 tests against it, so it is
-**accumulated** as the sub-stages land rather than written at the end.
+Status: **6.2 re-measured; feature list accumulates.** Stage 6.1 produced the
+measured evidence in §§1–4 and the skeleton feature list in §5. Stage 6.2
+rebuilt the shell (screen stack, focus model, scoped keys, confirmations,
+help, palette, project switcher), re-ran the interface capture against the
+new shell (§2.8), closed 6.1-F14/F16/F17/F18/F21, marked §5.1 rows 1.1–1.12
+done, and installed the mechanical parity check. No product surface changed,
+so the §4 `Today` column is re-verified unchanged rather than rewritten.
+Sections 6.3–6.9 own every remaining `planned` row, and §5 fills as each
+lands.
 
 Sections 1–4 below are the measured evidence Stage 6.1 produced and are
-complete. Section 5, the feature list, has its "today" column measured and
-complete; every planned row is present but marked not implemented. Section 6 is
-the validation record. The independent adversarial review of 6.1 is
+complete as of 6.1; §2.8 adds the 6.2 re-measurement. Section 5, the feature list, has its "today" column measured and
+complete; every planned row is present but marked not implemented except the
+twelve 6.2 rows, which are marked done. Section 6 is the validation record
+(6.1's record plus 6.2's). The independent adversarial review of 6.1 is
 [`6.1-review.md`](6.1-review.md).
 
 Do not read this document as a specification: it records what was observed.
@@ -175,6 +179,79 @@ truncated before the binding list ends. The tab bar is cut at 40 columns. At
 entirely by height. This is defect 6.1-F16. The `NN|` prefixes are the measured
 line widths.
 
+### 2.8 Re-measurement after 6.2 (shell rebuilt)
+
+Measured from the rebuilt binary at the 6.2 candidate, same method: a fresh
+disposable fixture (`/tmp/opencode/vigil-62/repo`, committed marker, no
+remote), state outside every checkout, production-path seeding
+(`project.configure`, `profile.put`, `plan.put`, `queue`, `pause`), and the
+real `vigil dashboard` binary under a pseudo-terminal. Fixture project
+`ed0018c7b084f111176f8518d57fe8de`, paused at revision 6 for the captures;
+the key-effect probes below then moved it to revision 7 (`ready`).
+
+No product surface changed in 6.2 — the twenty action strings and their
+command bindings are byte-identical — so this section records the new
+structure, not new reach. The §4 `Today` column is re-verified unchanged.
+
+Overview at 110×40 (verbatim, ANSI stripped):
+
+```text
+Vigil  [1 Overview]  2 Tasks  3 Inbox  4 History  5 Detail
+Persisted state · interactive controls · Focus: Overview · ed0018c7b084f111176f8518d57fe8de
+
+> Project: ed0018c7b084f111176f8518d57fe8de
+Root: /tmp/opencode/vigil-62/repo
+Revision 6 · paused
+
+Execution is unavailable until all runtime and readiness gates pass.
+Runtime: exact trusted execution qualification is required at effect start
+Runtime: no selected live combination has the complete production launch/recovery evidence set
+
+1 tasks · 0 pending/expired decisions
+
+p pause · c continue · a advance · u queue · s stop (confirm) · ? help · q quit  (1–9/9)
+```
+
+What changed against §2.1: every frame names its focus (`Focus: Overview ·
+…`), the project row carries the focus marker, and the footer is rendered
+from the focused screen's binding registry rather than a static string. What
+did not change: the four fully expressed and nine partially expressed
+capabilities are exactly the same set — that is 6.2's regression boundary,
+and the parity test now enforces it mechanically.
+
+Narrow terminals (verbatim footers and tab bars; `NN|` prefixes are measured
+widths):
+
+```text
+ 60| 5 bindings · ? for all keys
+ 40| 5 bindings · ? for all keys
+ 40| Vigil [Overview] ?
+```
+
+At 60 and 40 columns the binding line degrades to a count plus a pointer to
+the in-application help screen instead of cutting mid-list, and the tab bar
+degrades to the current screen plus a help pointer instead of cutting
+mid-name. No binding string is cut at 40, 60, 80, 110 or 200 columns; the
+unit test asserts all five widths on all five screens plus the help,
+confirm, palette and project overlays. Body text still truncates with `…` at
+narrow widths, as before — the guarantee covers the binding set and the
+screen bar, not prose.
+
+Key effects re-measured (persisted state re-read after each run):
+
+| Keys | Observed | Persisted effect |
+| --- | --- | --- |
+| `4` then `p` | no feedback, no mutation | none — revision stays 6, state stays `paused`. 6.1-F17 closed |
+| `s` then `y` (no active run) | `stop failed: no active persisted run` | none |
+| `s` then `Esc` | `confirmation abandoned locally` | none |
+| `c` (Overview) | `continue succeeded` | revision 6 → 7, state → `ready` |
+| `q` (no active run) | exits | none |
+| `?` then `Esc` | help opens, then closes | none |
+
+`4` then `p` is the same probe that persisted a pause in 6.1; it now
+persists nothing. `esc` at the root backs out (nothing to pop) and never
+quits; `q` quits explicitly, confirming first when a run is recorded.
+
 ## 3. Product surface measured
 
 | Group | Count | Source |
@@ -217,7 +294,10 @@ Classification rule, from
   row is excluded for technical impossibility**; all six are shell/subprocess
   mechanics or scope decisions.
 
-`Today` is the measured state of the interface at `27182de`.
+`Today` is the measured state of the interface at `27182de`, re-verified
+unchanged at the 6.2 candidate: 6.2 moved the interface's structure, not its
+reach, and the parity test (`internal/parity`) now fails when any row below
+is missing, duplicated or unclassified.
 
 ### 4.1 Root commands
 
@@ -405,18 +485,18 @@ conditions in [`core/requirements.md`](../../core/requirements.md).
 
 | # | Screen / capability | Keys | Command | Requirements | Today | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1.1 | Screen stack with push/pop, no history loss | — | — | R46 | absent | planned (6.2) |
-| 1.2 | Focus model: every screen has one focus, visible at all times | — | — | R46, R11 | 5 shared indices | planned (6.2) |
-| 1.3 | Global command palette reaching every registered action | — | — | R11, R70 | absent | planned (6.2) |
-| 1.4 | In-application help listing the full binding set for the focused screen | — | — | R70, R11 | footer only, truncated (6.1-F16) | planned (6.2) |
-| 1.5 | Keys scoped to the focused screen; no cross-screen state mutation | — | — | R12, R15 | 6.1-F17 | planned (6.2) |
-| 1.6 | Destructive actions require an explicit confirmation step | — | — | R12, R28 | absent | planned (6.2) |
-| 1.7 | `esc` backs out one level; quit is an explicit action | — | — | R15 | `esc` quits (6.1-F18) | planned (6.2) |
-| 1.8 | Quit confirmation when a run is active or work is unsaved | — | — | R15, R25 | absent | planned (6.2) |
-| 1.9 | Bounded text entry with an explicit length limit and a visible counter | — | — | P10 | 4096 bytes, no counter | planned (6.2) |
-| 1.10 | Project selection when more than one project is registered | — | — | R13, R07 | absent | planned (6.2) |
-| 1.11 | Narrow-terminal layout that does not truncate the binding set | — | — | R70 | 6.1-F16 | planned (6.2) |
-| 1.12 | `internal/tui` split into one file per screen plus a shared shell | — | — | R46 | one 700-line file (6.1-F21) | planned (6.2) |
+| 1.1 | Screen stack with push/pop, no history loss | `1-5`/`tab` replace, overlays push, `esc` pops one level; pending text is never lost silently (`Esc` abandons local input explicitly, per the preserved input semantics) | — | R46 | absent | **done** |
+| 1.2 | Focus model: every screen has one focus, visible at all times | every frame carries `Focus: <screen> · <item>` in the status line; History gained a cursor | — | R46, R11 | 5 shared indices | **done** |
+| 1.3 | Global command palette reaching every registered action | `:` | all twenty actions plus navigation, filtered as typed; a row runs only from its owning screen, otherwise it names that screen | R11, R70 | absent | **done** |
+| 1.4 | In-application help listing the full binding set for the focused screen | `?` | focused screen plus parents plus globals, with the command each action maps to | R70, R11 | footer only, truncated (6.1-F16) | **done** |
+| 1.5 | Keys scoped to the focused screen; no cross-screen state mutation | project controls on Overview only; inbox decisions on Inbox only; quality on Tasks/Detail; History owns none | — | R12, R15 | 6.1-F17 | **done** |
+| 1.6 | Destructive actions require an explicit confirmation step | `s` then `Enter`/`y` | `stop` confirms against the exact revision and run ID; `checkpoint-clear`, `checkpoint-restore`, `delivery-cancel`, `delivery-reconcile`, `retention-expire` are registered for their screens | R12, R28 | absent | **done** |
+| 1.7 | `esc` backs out one level; quit is an explicit action | `esc`/`q` | `esc` pops one level and never quits; `q` quits | R15 | `esc` quits (6.1-F18) | **done** |
+| 1.8 | Quit confirmation when a run is active or work is unsaved | `q` then `Enter`/`y` | `q` confirms when a run is recorded; text mode keeps explicit `Esc`-abandons plus documented `ctrl+c` emergency quit | R15, R25 | absent | **done** |
+| 1.9 | Bounded text entry with an explicit length limit and a visible counter | `i` then `Enter` | 4096-byte cap enforced in bytes at entry, `n/4096 bytes` counter on screen, charset policy in help | P10 | 4096 bytes, no counter | **done** |
+| 1.10 | Project selection when more than one project is registered | `P` then `Enter` | registry listing with a current marker; switching re-opens the target engine and closes the previous one | R13, R07 | absent | **done** |
+| 1.11 | Narrow-terminal layout that does not truncate the binding set | — | binding line and screen bar degrade to count plus help pointer; asserted at 40/60/80/110/200 columns | R70 | 6.1-F16 | **done** |
+| 1.12 | `internal/tui` split into one file per screen plus a shared shell | — | `model`, `screen`, `update`, `view`, one file per screen, `actions`, `help`, `textentry`, `confirm`, `projects`, `palette`, `run`; no non-test file over 400 lines, enforced by test | R46 | one 700-line file (6.1-F21) | **done** |
 
 ### 5.2 Main dashboard
 
@@ -611,6 +691,9 @@ limitation. The correction is kept in the record at
 rather than quietly edited away.
 
 ## 6. Validation
+
+The 6.1 record below is unchanged. The 6.2 record follows it under
+"Stage 6.2 validation".
 
 | Gate | Command | Result |
 | --- | --- | --- |
@@ -868,6 +951,63 @@ guessing.
   places where Linux evidence is weakest.
 - The pending-decisions record carries this as a user gate, not as a
   completion claim.
+
+### Stage 6.2 validation
+
+Run at the 6.2 candidate SHA on Linux x86-64 with pinned Go 1.27.1.
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| Vet and full suite | `make check` | pass |
+| Documentation gate | `make docs-check` | pass |
+| Race | `make check-race` | pass twice in a row; one earlier full run failed two CLI PTY tests under load (see flake note) |
+| Builds and cross-builds | `make build`, `make build-boundary`, `make cross-build` | pass |
+| Whitespace | `git diff --check` | clean |
+| Product regression | `make scenario` | `aborted: false`, 333 steps, 50 assertions, **no `unmet` row** |
+| Boundary guard | `make scenario-guard-check` | pass |
+| Parity check | `go test ./internal/parity/` | 85 rows, 67 E / 12 C / 6 X; tree and kind walk green |
+| Deliberate unregistration | `go test ./internal/parity/ -run TestDeliberateUnregistrationFails` | fails as required when an entry is removed or duplicated, and when a 6.2 row is left planned; recorded by the test itself |
+| Key-effect re-measurement | §2.8 PTY probes | `4`+`p` persists nothing; `s` confirms; `c` advances 6 → 7 |
+| Native macOS | capture at the candidate SHA | **blocked, same authentication gate**: `ping -c1 -W2 192.168.0.155` answers (0% loss); `ssh -o BatchMode=yes -o ConnectTimeout=8` as the local user and as `admin` both return `Permission denied (publickey,password,keyboard-interactive)`. Recorded as an open user gate, not as coverage |
+| Independent adversarial review | checkpoints A–C, then D–E | recorded in the 6.2 handoff below |
+
+6.1-F14, F16, F17, F18 and F21 are closed with permanent tests
+(`TestProjectControlsScopedToOwningScreen`, `TestBindingLineNeverTruncates`
+plus `TestOverlaysNeverTruncate`, `TestEscPopsInsteadOfQuitting`,
+`TestTUIFilesStaySmall` and the screen-stack behaviour they exercise). The
+exact set of twenty action strings and their command bindings is unchanged
+(`TestActionStringsUnchanged`), and the nine pre-existing `internal/tui`
+tests still pass: seven in `dashboard_test.go` (one retargeted from tab 3 to
+tab 0 with its intent — asynchronous mutation with unblocked input —
+unchanged and recorded) and two in `dashboard_pty_linux_test.go`.
+
+The PTY flake disclosure in §6 above still stands: the clarification PTY
+test uses fixed sleeps, and the 6.2 quit-confirmation change adds one more
+keystroke (`qy` instead of `q`) to the two CLI PTY helpers that drive a
+fixture holding a prepared run. No new flake was observed in this slice's
+runs.
+
+One full `make check-race` run in this slice failed
+`TestDashboardSyntheticInteractionRunsPersistedClarificationThroughPTY` and
+`TestDashboardRecoveryChoiceRunsPersistedCommandThroughPTY` (both "did not
+execute the persisted … route/choice"), while the same tests passed 1/1
+without race, 2/2 under race in isolation, and the next two full
+`make check-race` runs passed. That is 1 failure in 3 full runs with
+isolated passes on both sides — the documented fixed-sleep mechanism (keys
+landing before the snapshot loads under load), not a new defect: in both
+cases the dashboard exited cleanly with the request unacted-on, which is
+what a pre-load keypress produces with or without the quit change. The added
+`y` is inert in that state (empty inbox, or quit-armed where `y` confirms
+the quit rather than acting). The rate stays within the disclosed sample and
+is recorded here rather than averaged away.
+
+### Native macOS at 6.2: attempted and still blocked
+
+Re-attempted for 6.2 on 2026-10-02. Same result: the host answers ping, SSH
+authentication refuses this machine's key for every inferable account, and no
+password or keyboard-interactive route exists non-interactively. The 6.1
+table above is therefore still current, and every 6.2 measurement stays
+Linux-only. The user gate in pending decisions is unchanged.
 
 ## 7. Handoff
 

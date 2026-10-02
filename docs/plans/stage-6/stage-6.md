@@ -2,7 +2,7 @@
 
 <!-- vigil-tier: plan -->
 
-Status: **6.1 complete; 6.2–6.9 planned, not started.** Established 2026-09-29
+Status: **6.1 complete; 6.2 implemented and under independent review; 6.3–6.9 planned, not started.** Established 2026-09-29
 by explicit user scope revision. Stage 6 does not exist in the original roadmap
 (which defines Stages 1–5 only); the user directed that it follow Stage 5.7.
 
@@ -79,7 +79,7 @@ At the end of Stage 6:
 | Sub-stage | Purpose | Autonomous |
 | --- | --- | --- |
 | [6.1](6.1-parity-gap-analysis.md) | Parity gap analysis; amend the requirements it finds untestable — **complete** | yes |
-| [6.2](6.2-interface-architecture-and-parity-register.md) | Interface architecture, key safety, and the mechanical parity register | yes |
+| [6.2](6.2-interface-architecture-and-parity-register.md) | Interface architecture, key safety, and the mechanical parity register — **implemented, under independent review** | yes |
 | [6.3](6.3-main-dashboard.md) | Main dashboard, live run state and navigable history | yes |
 | [6.4](6.4-actionable-inbox.md) | The complete human decision surface | yes |
 | [6.5](6.5-quality-review-and-evidence-views.md) | Quality, review, evidence and human acceptance views | yes |
