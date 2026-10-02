@@ -2,6 +2,11 @@
 
 <!-- vigil-tier: evidence -->
 
+**Linux-side capture qualification.** §2.9's History block mixes measurement
+and current code — its rows are the `f4196fb` capture, its header and footer are
+the code after the window-state relocation. The native capture's narrower
+limitation is recorded under §6.
+
 Status: **6.3 measured; feature list accumulates.** Stage 6.1 produced the
 measured evidence in §§1–4 and the skeleton feature list in §5. Stage 6.2
 rebuilt the shell (screen stack, focus model, scoped keys, confirmations,
@@ -1307,9 +1312,10 @@ SHA would close this, and 6.9 should take it.
 **The same qualification applies on the Linux side, and it is stated here rather
 than left for a reader to infer.** The §2.9 History block shows the *current*
 header layout, but its seven event rows and timestamps are the ones captured at
-`f4196fb`; the header line was edited, not re-captured, because the relocation
-happened after that measurement. Its rows are real measurements; its header is
-the code as it now stands.
+`f4196fb`; the header line was edited, not re-captured, and the blank line that
+separated the rows from the footer was removed, because both changes landed
+after that measurement. Its rows are real measurements; its header and footer
+are the code as it now stands.
 
 **One macOS-specific measurement note, recorded because it changed the method
 rather than the result.** The Linux capture harness reads the master end only

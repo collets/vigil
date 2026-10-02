@@ -101,7 +101,9 @@ func qualityRollup(task core.TaskDetail) string {
 	return line
 }
 
-// runBudgetLines renders the run's budget accounting, one line per scope.
+// runBudgetLines renders the run's budget accounting as separate lines:
+// the attempt's active budget, its wall budget, and the task-cumulative
+// budget.
 // Separate lines rather than one assembled string because the combined line
 // is ~118 columns and truncates away the task figure at the 110 columns this
 // screen is measured at — the honesty failure in a different guise. An

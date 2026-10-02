@@ -334,6 +334,29 @@ func TestQueueCursorBoundedOnLoad(t *testing.T) {
 	if m.queueCursor >= maxRenderedQueue {
 		t.Fatalf("queue cursor %d past window %d after load", m.queueCursor, maxRenderedQueue)
 	}
+	// The same for the request cursor: it had its own load clamp with a
+	// different shape, one past the rendered window, reachable the moment a
+	// third writer appeared.
+	inbox := make([]core.InboxEntry, 0, 25)
+	for i := 1; i <= 25; i++ {
+		inbox = append(inbox, core.InboxEntry{ID: fmt.Sprintf("req-%02d", i), Kind: "approval"})
+	}
+	m = model{ctx: context.Background(), snapshot: &core.DashboardSnapshot{Inbox: inbox}, width: 120, height: 40, tab: 0}
+	for i := 0; i < 24; i++ {
+		updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+		m = updated.(model)
+	}
+	shrunkInbox := inbox[:3]
+	updated, _ = m.Update(loaded{snapshot: core.DashboardSnapshot{Inbox: shrunkInbox}})
+	m = updated.(model)
+	if m.ovInbox >= len(shrunkInbox) {
+		t.Fatalf("request cursor %d past the shrunken inbox %d", m.ovInbox, len(shrunkInbox))
+	}
+	updated, _ = m.Update(loaded{snapshot: core.DashboardSnapshot{Inbox: inbox}})
+	m = updated.(model)
+	if m.ovInbox >= maxRenderedRequests {
+		t.Fatalf("request cursor %d past window %d after load", m.ovInbox, maxRenderedRequests)
+	}
 }
 
 // TestOverviewEnterCannotOpenAnUnrenderedRequest is the P2-1 regression:
@@ -373,10 +396,12 @@ func TestUnobservedBudgetRendersUnavailable(t *testing.T) {
 	m := scopedModel()
 	m.tab, m.width, m.height = 0, 120, 40
 	m.snapshot.Run = &core.ActiveRunDetail{RunID: "run-1", State: "active", RuntimeKind: "synthetic", BudgetObserved: false, AllowedNext: []string{"inspect"}, ActivitySummary: "no recorded activity"}
-	// Assert on the budget lines directly rather than the assembled frame:
-	// a wide Overview body is truncated to the terminal width, and the
-	// budget block sits below the fold in a 40-row frame.
-	view := strings.Join(overviewLines(&m, m.snapshot), "\n")
+	// Assert through the REAL render path. An earlier draft asserted on
+	// overviewLines directly, on the premise that the budget block sat
+	// below the fold — it does not, at 120x40 it renders at rows 18-20 —
+	// so that draft stopped exercising View() for the very P16 property
+	// this test exists to pin. Both renderers are checked.
+	view := m.View().Content
 	if !strings.Contains(view, "Budgets: unavailable (no recorded segment)") {
 		t.Fatalf("unobserved budget not marked unavailable:\n%s", view)
 	}
@@ -393,7 +418,7 @@ func TestUnobservedBudgetRendersUnavailable(t *testing.T) {
 	m.snapshot.Run.TaskBudgetObserved = true
 	m.snapshot.Run.TaskChargedMS = 40000
 	m.snapshot.Run.TaskLimitMS = 2700000
-	view = strings.Join(overviewLines(&m, m.snapshot), "\n")
+	view = m.View().Content
 	// One line per scope, so neither figure can be truncated away.
 	if !strings.Contains(view, "Budget (this run): 1200ms of 600000ms active · 0ms unknown") {
 		t.Fatalf("attempt-scoped budget not rendered:\n%s", view)
@@ -404,7 +429,7 @@ func TestUnobservedBudgetRendersUnavailable(t *testing.T) {
 	// The task pair must be absent-safe too: an unobserved ledger must not
 	// render as "0ms of 0ms".
 	m.snapshot.Run.TaskBudgetObserved = false
-	if view := strings.Join(overviewLines(&m, m.snapshot), "\n"); !strings.Contains(view, "Budget (task, all attempts): unavailable (no recorded ledger)") {
+	if view := m.View().Content; !strings.Contains(view, "Budget (task, all attempts): unavailable (no recorded ledger)") {
 		t.Fatalf("unobserved task budget not marked unavailable:\n%s", view)
 	}
 }

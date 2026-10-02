@@ -2,7 +2,9 @@
 
 <!-- vigil-tier: plan -->
 
-Status: **6.1 complete; 6.2 complete and accepted; 6.3–6.9 planned, not started.** Established 2026-09-29
+Status: **6.1 and 6.2 complete, 6.2 accepted; 6.3 implemented on its task
+branch and pending its candidate review; 6.4–6.9 planned, not started.**
+Established 2026-09-29
 by explicit user scope revision. Stage 6 does not exist in the original roadmap
 (which defines Stages 1–5 only); the user directed that it follow Stage 5.7.
 
