@@ -173,6 +173,7 @@ left as the reviewer saw them, so a quoted path may no longer exist — see
 | [`research/stage-5/5.7/results.md`](research/stage-5/5.7/results.md) | Stage 5.7 autonomous qualification evidence, the evidence matrix, and **finding 5.7-F1** (the delivery path was unreachable; fixed in the Stage 5.2/5.6 slice) |
 | [`research/stage-6/results.md`](research/stage-6/results.md) | **Stage 6 results:** the measured interface inventory with screen captures, the 85-entry **parity register**, the closed **exclusion register**, and the **feature list** — Stage 6's required deliverable. Skeleton created by 6.1; completed by 6.9 |
 | [`research/stage-6/6.1-review.md`](research/stage-6/6.1-review.md) | Stage 6.1 independent adversarial review record, findings and verdict |
+| [`research/stage-6/6.3-review.md`](research/stage-6/6.3-review.md) | Stage 6.3 independent adversarial review record: the per-checkpoint rounds and the candidate verdict |
 | [`research/stage-6/6.2-review.md`](research/stage-6/6.2-review.md) | Stage 6.2 independent acceptance review record, condition and verdict |
 | `research/stage-5/5.2/review-probes/`, `research/stage-5/5.3/review-probes/`, `research/stage-5/5.4/review-probes/` | Retained inert review probes (`.go.txt`) |
 

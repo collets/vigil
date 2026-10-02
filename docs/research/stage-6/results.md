@@ -1203,7 +1203,7 @@ Run at the 6.3 candidate SHA on Linux x86-64 with pinned Go 1.27.1.
 | Truncation regression (6.1-F20) | `go test ./internal/tui/ -run TestHistoryAnnouncesWindowCap` | pass: cap + `--after` cursor announced |
 | Honesty marker | `go test ./internal/tui/ -run TestUnavailableMarkerRendersForUnobservedCost` | pass: unobserved renders `unavailable`, never zero |
 | Interface capture | PTY at 110, 80, 60 and 40 columns against a fresh fixture | §2.9 verbatim; no binding cut at any width |
-| Native macOS | the same capture, natively, at the candidate SHA | recorded below |
+| Native macOS | the same capture, natively, at `f4196fb` | **pass on macOS 26.6.2 arm64** (see below) |
 | Independent adversarial review | checkpoints A–D, then the candidate | recorded below |
 
 P15 is asserted by `TestMainDashboardShowsP15WithoutNavigation` against a
@@ -1222,6 +1222,38 @@ passed twice over. No package or test name is on record for the failure,
 so it cannot be attributed to the documented fixed-sleep PTY mechanism the
 way 6.2's was; it is recorded here as one unattributed full-suite failure
 in three runs rather than averaged away.
+
+### Native macOS at 6.3: obtained 2026-10-02
+
+Host macOS 26.6.2 arm64, Homebrew Go 1.27.1 (`go version go1.27.1
+darwin/arm64`), matching the pinned toolchain, at the candidate `f4196fb`
+(verified exact by `git rev-parse` on arrival). The Mac has no GitHub key,
+so the candidate travelled as a SHA-verified bundle (`git bundle create`
+with a complete history, `git clone` of that bundle into an agent-owned
+detached worktree at `/tmp/vigil-63-native`); the normal checkout
+(`/Users/simonecoletta/development/vigil`, `19ebc42`) was never touched and
+verified unchanged afterwards. Only agent-owned temporary paths were removed
+on exit. No credential, config or checkout changed.
+
+| Native check | Result |
+| --- | --- |
+| Native build at `f4196fb` | pass; binary runs (`vigil --help` lists all commands) |
+| Full suite `go test -count=1 ./...` | pass, no failures in any package |
+| PTY capture, fresh disposable fixture (`/tmp/vigil-63-repo`), production-path seeding | 110×40 Overview **byte-identical in structure to Linux**, including `Active plan: plan-a · queued · rank 0 (position 1/2)`, `Current task: t1 r1 · draft`, `Blocker: none`, `Run: no run is active`, `Cost/usage: unavailable (no observation)`, the ranked queue with `u queues at rank 0`, and the quality roll-ups; 80 columns truncates prose with `…`; 60 and 40 degrade to `5 bindings · ? for all keys` and `Vigil [Overview] ?`; no binding cut at any width |
+| Run screen (`R`) | renders `Run: no run is active` and the `esc backs out` footer; `esc` returns to Overview |
+| History (`4`, `F`, `Enter`) | `History · showing 7 of 9 events · filter: command_applied`, `Complete window (9 events).`, and event detail `Applied: project.initialize · actor human` — identical behaviour to Linux |
+| Key-effect probes, persisted state re-read | `4` then `p`: no change — revision stays 7, state stays `paused` (6.1-F17/6.2 scoping holds natively) |
+| Fixture hygiene | disposable fixture outside every checkout; agent paths removed; normal checkout verified unchanged |
+
+**One macOS-specific measurement note, recorded because it changed the method
+rather than the result.** The Linux capture harness reads the master end only
+after the child exits. On macOS a read of the master returns `EIO` once the
+last slave is closed *even with data still buffered*, so the first version of
+the capture reported `bytes=0` for every width on the Mac while the binary was
+in fact rendering correctly — a harness defect that looked exactly like a
+program defect. The capture now drains the master from a reader thread while
+the child is still alive. Anyone re-measuring on macOS should read that before
+concluding anything about a zero-byte capture.
 
 ## 7. Handoff
 
