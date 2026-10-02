@@ -960,7 +960,7 @@ Run at the 6.2 candidate SHA on Linux x86-64 with pinned Go 1.27.1.
 | --- | --- | --- |
 | Vet and full suite | `make check` | pass |
 | Documentation gate | `make docs-check` | pass |
-| Race | `make check-race` | pass twice in a row; one earlier full run failed two CLI PTY tests under load (see flake note) |
+| Race | `make check-race` | pass twice in a row at the candidate, plus two earlier passes on the way there; one earlier full run failed two CLI PTY tests under load (see flake note) |
 | Builds and cross-builds | `make build`, `make build-boundary`, `make cross-build` | pass |
 | Whitespace | `git diff --check` | clean |
 | Product regression | `make scenario` | `aborted: false`, 333 steps, 50 assertions, **no `unmet` row** |
