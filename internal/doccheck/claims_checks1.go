@@ -34,35 +34,18 @@ func checkReviewStateAgreement(root string) error {
 	if err != nil {
 		return err
 	}
-	furtherPattern := regexp.MustCompile(`(?i)([a-z0-9]+)\s+further\s+reviews?`)
-	roundsPattern := regexp.MustCompile(`(?i)([a-z0-9]+)\s+rounds?\s+of\s+findings`)
 	furtherDocs, roundsDocs := 0, 0
 	for _, file := range files {
 		raw, err := osReadFile(file)
 		if err != nil {
 			return err
 		}
-		content := stripClaimsCode(raw)
-		for _, match := range furtherPattern.FindAllStringSubmatch(content, -1) {
-			n, ok := parseCountToken(match[1])
-			if !ok {
-				continue
-			}
-			furtherDocs++
-			if n != further {
-				return fmt.Errorf("%s claims %d further reviews, verdict table derives %d", file, n, further)
-			}
+		gotFurther, gotRounds, err := checkReviewCounts(stripClaimsCode(raw), rounds, further)
+		if err != nil {
+			return fmt.Errorf("%s: %v", file, err)
 		}
-		for _, match := range roundsPattern.FindAllStringSubmatch(content, -1) {
-			n, ok := parseCountToken(match[1])
-			if !ok {
-				continue
-			}
-			roundsDocs++
-			if n != rounds {
-				return fmt.Errorf("%s claims %d rounds of findings, verdict table derives %d", file, n, rounds)
-			}
-		}
+		furtherDocs += gotFurther
+		roundsDocs += gotRounds
 	}
 	if furtherDocs == 0 {
 		return fmt.Errorf("no document states the further-review count")
@@ -71,6 +54,35 @@ func checkReviewStateAgreement(root string) error {
 		return fmt.Errorf("no document states the rounds-of-findings count")
 	}
 	return nil
+}
+
+// checkReviewCounts verifies one document's further-review and rounds-of-
+// findings claims against the derived values, returning how many of each it
+// states. Unparsable tokens are skipped; disagreeing ones fail.
+func checkReviewCounts(content string, rounds, further int) (furtherDocs, roundsDocs int, err error) {
+	furtherPattern := regexp.MustCompile(`(?i)([a-z0-9]+)\s+further\s+reviews?`)
+	roundsPattern := regexp.MustCompile(`(?i)([a-z0-9]+)\s+rounds?\s+of\s+findings`)
+	for _, match := range furtherPattern.FindAllStringSubmatch(content, -1) {
+		n, ok := parseCountToken(match[1])
+		if !ok {
+			continue
+		}
+		furtherDocs++
+		if n != further {
+			return 0, 0, fmt.Errorf("claims %d further reviews, verdict table derives %d", n, further)
+		}
+	}
+	for _, match := range roundsPattern.FindAllStringSubmatch(content, -1) {
+		n, ok := parseCountToken(match[1])
+		if !ok {
+			continue
+		}
+		roundsDocs++
+		if n != rounds {
+			return 0, 0, fmt.Errorf("claims %d rounds of findings, verdict table derives %d", n, rounds)
+		}
+	}
+	return furtherDocs, roundsDocs, nil
 }
 
 // C1b: the record header's per-round severity account matches the findings
@@ -126,6 +138,12 @@ func checkMethodPartition(root string) error {
 		return fmt.Errorf("method partition sentence not found")
 	}
 	window := flat[max(0, index-600) : index+100]
+	return verifyMethodPartition(window)
+}
+
+// verifyMethodPartition asserts a text window holds three round groups that
+// partition rounds 1..14 exactly once with sizes 1, 4 and 9.
+func verifyMethodPartition(window string) error {
 	groupPattern := regexp.MustCompile(`\(rounds? ([0-9,\s]+and [0-9]+|[0-9]+)\)`)
 	groups := groupPattern.FindAllStringSubmatch(window, -1)
 	if len(groups) != 3 {
@@ -168,22 +186,7 @@ func checkRoundOneFindings(root string) error {
 	if err != nil {
 		return err
 	}
-	first := tables[0]
-	idPattern := regexp.MustCompile(`6\.1-R([0-9]+)`)
-	var ids []int
-	tally := map[string]int{}
-	for _, row := range first {
-		match := idPattern.FindStringSubmatch(row)
-		if len(match) < 2 {
-			continue
-		}
-		n, _ := strconv.Atoi(match[1])
-		ids = append(ids, n)
-		cells := strings.Split(strings.Trim(row, "|"), "|")
-		if len(cells) > 1 {
-			tally[strings.Trim(strings.TrimSpace(cells[1]), "*")]++
-		}
-	}
+	ids, tally := tallyFindingsTable(tables[0])
 	if len(ids) != 15 {
 		return fmt.Errorf("first findings table has %d rows, want 15", len(ids))
 	}
@@ -198,6 +201,26 @@ func checkRoundOneFindings(root string) error {
 	return nil
 }
 
+// tallyFindingsTable extracts round-1-style finding IDs and the severity
+// tally from one findings table's data rows.
+func tallyFindingsTable(rows []string) (ids []int, tally map[string]int) {
+	idPattern := regexp.MustCompile(`6\.1-R([0-9]+)`)
+	tally = map[string]int{}
+	for _, row := range rows {
+		match := idPattern.FindStringSubmatch(row)
+		if len(match) < 2 {
+			continue
+		}
+		n, _ := strconv.Atoi(match[1])
+		ids = append(ids, n)
+		cells := strings.Split(strings.Trim(row, "|"), "|")
+		if len(cells) > 1 {
+			tally[strings.Trim(strings.TrimSpace(cells[1]), "*")]++
+		}
+	}
+	return ids, tally
+}
+
 // C4: the verdict table carries no restated severity totals.
 func checkVerdictTableClean(root string) error {
 	record, err := readDoc(root, "docs/research/stage-6/6.1-review.md")
@@ -209,23 +232,32 @@ func checkVerdictTableClean(root string) error {
 		return err
 	}
 	joined := strings.Join(rows, "\n")
-	// Finding IDs (6.1-P1..P6 ranges) and explicit no-finding statements
-	// ("no P0") are not tallies; strip both before looking for totals.
+	if match := findTallyShape(joined); match != "" {
+		return fmt.Errorf("verdict table restates severity total %q", match)
+	}
+	return nil
+}
+
+// tallyShapes are the cross-round total forms. Per-round outcome prose
+// ("no P0", "one P1") is allowed: each round's counts are verified
+// mechanically by C1b instead.
+var tallyShapes = []string{`×\s*P[0-3]`, `\b\d+\s*P[0-3]\s*/`, `P[0-3]\s*/\s*P[0-3]`, `\b[2-9]\d*\s+P[0-3]\b`, `\b\d+\s+P[0-3]\b.*\b\d+\s+P[0-3]\b`}
+
+// findTallyShape strips finding IDs and explicit no-finding statements,
+// then returns the first tally shape found, if any.
+func findTallyShape(joined string) string {
 	idRangePattern := regexp.MustCompile(`6\.1-[A-Z0-9]+-?[0-9]+(…|\.\.\.|-)\S*`)
 	joined = idRangePattern.ReplaceAllString(joined, "")
 	idPattern := regexp.MustCompile(`6\.1-[A-Z0-9]+-?[0-9]+`)
 	joined = idPattern.ReplaceAllString(joined, "")
 	noPattern := regexp.MustCompile(`(?i)no P[0-3](, no P[0-3])*`)
 	joined = noPattern.ReplaceAllString(joined, "")
-	// Only tally shapes fail here: a cross-round total such as 3xP0 or
-	// 4 P0 / 3 P1. Per-round outcome prose ("no P0", "one P1") is allowed:
-	// each round's counts are verified mechanically by C1b instead.
-	for _, shape := range []string{`×\s*P[0-3]`, `\b\d+\s*P[0-3]\s*/`, `P[0-3]\s*/\s*P[0-3]`, `\b[2-9]\d*\s+P[0-3]\b`, `\b\d+\s+P[0-3]\b.*\b\d+\s+P[0-3]\b`} {
+	for _, shape := range tallyShapes {
 		if match := regexp.MustCompile(shape).FindString(joined); match != "" {
-			return fmt.Errorf("verdict table restates severity total %q", match)
+			return match
 		}
 	}
-	return nil
+	return ""
 }
 
 // C5: R01..R71 contiguous with no interrupting prose.
@@ -247,9 +279,21 @@ func checkRequirementsContiguous(root string) error {
 	if start < 0 || end < 0 || end <= start {
 		return fmt.Errorf("R01-R71 block not found")
 	}
+	if err := verifyRequirementsBlock(lines[start : end+1]); err != nil {
+		return err
+	}
+	if end-start+1 != 71 {
+		return fmt.Errorf("block holds %d lines, want 71", end-start+1)
+	}
+	return nil
+}
+
+// verifyRequirementsBlock asserts a line slice is a contiguous R01-based
+// requirement table with no interrupting prose.
+func verifyRequirementsBlock(block []string) error {
 	idPattern := regexp.MustCompile(`^\|\s*R([0-9]+)\s*\|`)
 	next := 1
-	for _, line := range lines[start : end+1] {
+	for _, line := range block {
 		trimmed := strings.TrimSpace(line)
 		if !strings.HasPrefix(trimmed, "|") {
 			return fmt.Errorf("non-table line inside the R01-R71 block: %q", trimmed)
@@ -263,9 +307,6 @@ func checkRequirementsContiguous(root string) error {
 			return fmt.Errorf("requirement R%02d out of order, want R%02d", n, next)
 		}
 		next++
-	}
-	if next != 72 {
-		return fmt.Errorf("block holds %d requirements, want 71", next-1)
 	}
 	return nil
 }

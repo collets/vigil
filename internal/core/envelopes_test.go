@@ -105,21 +105,7 @@ func applySource(t *testing.T, source string) string {
 	return source[start:]
 }
 
-func indexOfApply(source string) int {
-	for i := 0; i+len(source) > i; i++ {
-		target := "func (e *Engine) Apply("
-		if len(source)-i < len(target) {
-			return -1
-		}
-		if source[i:i+len(target)] == target {
-			return i
-		}
-	}
-	return -1
-}
 
-// TestApplyRejectsUnknownEnvelopeKind shows the list is authoritative at
-// runtime: anything outside EnvelopeKinds is rejected before dispatch.
 func TestApplyRejectsUnknownEnvelopeKind(t *testing.T) {
 	if ValidEnvelopeKind("planning.proposal.invent") {
 		t.Fatal("bogus kind validates")

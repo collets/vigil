@@ -13,7 +13,10 @@ import (
 func inboxBindings() []Binding {
 	return []Binding{
 		{Key: "y", Action: "allow", Command: "permission.grant"},
-		{Key: "n", Action: "deny/reject/cancel", Command: "permission.grant"},
+		// No command: n resolves per focused kind (deny grants with a deny
+		// decision, proposal rows reject, inputs dismiss or cancel), so no
+		// single command describes it.
+		{Key: "n", Action: "deny/reject/cancel", Command: ""},
 		{Key: "g", Action: "apply-proposal", Command: "planning.proposal.apply"},
 		{Key: "v", Action: "request-revision", Command: "planning.proposal.decide"},
 		{Key: "x", Action: "exact-resume", Command: "project execution-recovery-choose"},

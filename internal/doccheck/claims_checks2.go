@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -361,27 +360,25 @@ func checkStillReadsGone(root string) error {
 	if err != nil {
 		return err
 	}
-	stillPattern := regexp.MustCompile(`(?i)still\s+(reads?|said|holds|claims?|contains?)\s+"([^"]{8,})"`)
-	docPattern := regexp.MustCompile("(`?[a-zA-Z0-9_./-]+\\.md`?)")
 	scanned := 0
+	seenExclusions := map[string]bool{}
 	for _, table := range tables {
 		for _, row := range table {
 			scanned++
-			match := stillPattern.FindStringSubmatch(row)
-			if match == nil {
+			quoted, named, ok := findStillClaim(row)
+			if !ok {
 				continue
 			}
-			quoted := match[2]
+			excluded := false
 			for _, kept := range documentedNonChanges {
 				if strings.Contains(quoted, kept) || strings.Contains(kept, quoted) {
-					return fmt.Errorf("non-change exclusion hit unexpectedly for %q", quoted)
+					seenExclusions[kept] = true
+					excluded = true
 				}
 			}
-			docMatch := docPattern.FindStringSubmatch(row)
-			if docMatch == nil {
+			if excluded {
 				continue
 			}
-			named := strings.Trim(docMatch[1], "`")
 			named = strings.TrimPrefix(named, "docs/research/stage-6/")
 			candidates := []string{named, "docs/research/stage-6/" + named, "docs/" + named}
 			var content string
@@ -403,6 +400,11 @@ func checkStillReadsGone(root string) error {
 	}
 	if scanned == 0 {
 		return fmt.Errorf("no finding cells scanned")
+	}
+	for _, kept := range documentedNonChanges {
+		if !seenExclusions[kept] {
+			return fmt.Errorf("documented non-change never exercised: %q", kept)
+		}
 	}
 	return nil
 }
@@ -439,27 +441,8 @@ func checkFindingIDs(root string) error {
 		}
 	}
 	expectedRounds := []string{"R", "R2F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R14"}
-	if len(tableIDs) != len(expectedRounds) {
-		return fmt.Errorf("findings cover %d rounds, want %d", len(tableIDs), len(expectedRounds))
-	}
-	for _, round := range expectedRounds {
-		ids, ok := tableIDs[round]
-		if !ok {
-			return fmt.Errorf("round %s has no findings table", round)
-		}
-		sort.Ints(ids)
-		for i, id := range ids {
-			if id != i+1 {
-				return fmt.Errorf("round %s IDs are not contiguous from 1", round)
-			}
-		}
-		seen := map[int]bool{}
-		for _, id := range ids {
-			if seen[id] {
-				return fmt.Errorf("round %s duplicates ID %d", round, id)
-			}
-			seen[id] = true
-		}
+	if err := roundIDsContiguous(tableIDs, expectedRounds); err != nil {
+		return err
 	}
 	rows, err := verdictRows(record)
 	if err != nil {

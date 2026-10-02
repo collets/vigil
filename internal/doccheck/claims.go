@@ -8,9 +8,15 @@
 // silently matches nothing cannot report success forever; and a harness
 // failure is read first as a bug in the harness and only second as a defect
 // in the tree — the first run reported six failures of which only two were
-// real. Each check below therefore has a negative unit test proving it can
-// fail, and deviations from the review record's specification are stated
-// where they occur rather than smoothed over.
+// real, and calibration after that found seven more harness bugs before the
+// eighteenth check passed for the right reason. Negative coverage comes in
+// two honest tiers, stated per test rather than claimed wholesale: checks
+// with a pure core (C1, C1b, C2, C3, C4, C5, C8, C9, C10, C12, C13, C15,
+// C16, C17, C18) are mutation-tested through that core; checks bound to
+// git, STATUS or the live tree (C6 via the parity package, C7, C11, C14)
+// are tested through their resolvers and regexes plus a live-tree positive.
+// Deviations from the review record's specification are stated where they
+// occur rather than smoothed over.
 package doccheck
 
 import (
@@ -34,6 +40,90 @@ func gitResolve(root, rev string) error {
 
 func gitAncestor(root, from, to string) bool {
 	return exec.Command("git", "-C", root, "merge-base", "--is-ancestor", from, to).Run() == nil
+}
+
+// firstControlChar returns the line and rune of the first control character
+// outside the legitimate Markdown set (tab and newline). Every other Cc
+// character fails, including DEL.
+func firstControlChar(content string) (line int, r rune, found bool) {
+	for index, candidate := range content {
+		if candidate == '\n' || candidate == '\t' {
+			continue
+		}
+		if candidate < 0x20 || candidate == 0x7f {
+			return 1 + strings.Count(content[:index], "\n"), candidate, true
+		}
+	}
+	return 0, 0, false
+}
+
+// countStatusMarkers returns the canonical markers outside code in content.
+func countStatusMarkers(content string) []string {
+	return statusMarkerClaims.FindAllString(stripClaimsCode(content), -1)
+}
+
+// contradictsAcceptance reports whether live prose denies the recorded
+// acceptance of a stage.
+func contradictsAcceptance(content, stage string) bool {
+	denied := regexp.MustCompile(`(?i)stage ` + regexp.QuoteMeta(stage) + ` is not accepted|not accepted[^.]{0,40}stage ` + regexp.QuoteMeta(stage))
+	return denied.MatchString(stripClaimsCode(content))
+}
+
+// witnessHolds reports whether a quoted needle occurs more often in the
+// corpus than inside its own row — i.e. something outside the row witnesses it.
+func witnessHolds(corpus, row, needle string) bool {
+	return strings.Count(corpus, needle) > strings.Count(row, needle)
+}
+
+// roundIDsContiguous asserts per-round finding IDs are unique and start at 1.
+func roundIDsContiguous(tableIDs map[string][]int, expected []string) error {
+	if len(tableIDs) != len(expected) {
+		return fmt.Errorf("findings cover %d rounds, want %d", len(tableIDs), len(expected))
+	}
+	for _, round := range expected {
+		ids, ok := tableIDs[round]
+		if !ok {
+			return fmt.Errorf("round %s has no findings table", round)
+		}
+		sort.Ints(ids)
+		seen := map[int]bool{}
+		for i, id := range ids {
+			if id != i+1 {
+				return fmt.Errorf("round %s IDs are not contiguous from 1", round)
+			}
+			if seen[id] {
+				return fmt.Errorf("round %s duplicates ID %d", round, id)
+			}
+			seen[id] = true
+		}
+	}
+	return nil
+}
+
+// distinctSectionNumbers counts distinct C-number headers, folding suffixed
+// variants (C1b) into their number.
+func distinctSectionNumbers(combined string) int {
+	seen := map[string]bool{}
+	for _, match := range regexp.MustCompile(`(?m)^// C(\d+)[ab]?: `).FindAllStringSubmatch(combined, -1) {
+		seen[match[1]] = true
+	}
+	return len(seen)
+}
+
+// findStillClaim extracts a "still <verb> <quoted>" assertion from a finding
+// cell, if it makes one.
+func findStillClaim(row string) (quoted, doc string, ok bool) {
+	stillPattern := regexp.MustCompile(`(?i)still\s+(reads?|said|holds|claims?|contains?|states?)\b[^"]{0,80}?"([^"]{8,})"`)
+	match := stillPattern.FindStringSubmatch(row)
+	if match == nil {
+		return "", "", false
+	}
+	docPattern := regexp.MustCompile("(`?[a-zA-Z0-9_./-]+\\.md`?)")
+	docMatch := docPattern.FindStringSubmatch(row)
+	if docMatch == nil {
+		return "", "", false
+	}
+	return match[2], strings.Trim(docMatch[1], "`"), true
 }
 
 type claimCheck struct {

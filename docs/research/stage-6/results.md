@@ -473,10 +473,10 @@ observation the operator actually makes.
 
 ## 5. Feature list
 
-**Skeleton.** Every row that Stage 6 plans is present. `Today` is measured and
+**Accumulating.** Every row that Stage 6 plans is present. `Today` is measured and
 final. `Screen`, `Keys` and `Command` are filled in by the owning sub-stage as
 it lands; `Status` becomes `done` only when that sub-stage's completion criteria
-are met. 6.9 audits that no row is left `planned`.
+are met — twelve rows (1.1–1.12) are done as of 6.2. 6.9 audits that no row is left `planned`.
 
 Requirement coverage uses the amended R11/R45/R46/R47/R70 and the P13–P18
 conditions in [`core/requirements.md`](../../core/requirements.md).
@@ -1026,7 +1026,8 @@ plan for the sub-stage it is running:
 | 6.8 Setup, definitions and resources | [`6.8-setup-definitions-and-resources.md`](../../plans/stage-6/6.8-setup-definitions-and-resources.md) |
 | 6.9 Parity closure and feature list | [`6.9-parity-closure-and-feature-list.md`](../../plans/stage-6/6.9-parity-closure-and-feature-list.md) |
 
-State as written: 6.1 complete, 6.2–6.9 planned and not started. The parity
+State as written: 6.1 complete, 6.2 implemented and under independent
+review, 6.3–6.9 planned and not started. The parity
 register in §4 is authoritative for classification; the feature list in §5 is
 authoritative for what exists and what is owed; §6 is authoritative for what was
 actually run.

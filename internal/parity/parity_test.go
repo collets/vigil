@@ -96,19 +96,57 @@ func TestExclusionMirrorIdentical(t *testing.T) {
 }
 
 // TestParityReasonsMatchRegister pins the machine table against the human
-// register: every C and X reason must read the same as results.md section 4,
-// compared after Markdown emphasis is stripped so quoting never counts as a
-// difference.
+// register: every C and X reason must read the same as results.md section 4.
+// Comparison is exact after Markdown emphasis and whitespace are stripped,
+// so quoting never counts as a difference but extra or missing words fail.
 func TestParityReasonsMatchRegister(t *testing.T) {
 	results := repoDoc(t, "docs", "research", "stage-6", "results.md")
 	section := exclusionSection(t, results, "## 4. Parity register")
-	_ = section
+	flatSection := normalise(section)
 	for _, entry := range Entries {
 		if entry.Class != ClassCompromise && entry.Class != ClassExcluded {
 			continue
 		}
-		if !strings.Contains(normalise(results), normalise(entry.Reason)) {
+		if !strings.Contains(flatSection, normalise(entry.Reason)) {
 			t.Errorf("entry %q reason not found in the Markdown register: %q", entry.Path, entry.Reason)
+		}
+	}
+}
+
+// TestParityXReasonsMatchCanonical pins every X row's reason class and text
+// against the closed exclusion list: table-to-canonical drift is invisible
+// to the name-only check, so this one compares the words.
+func TestParityXReasonsMatchCanonical(t *testing.T) {
+	requirements := repoDoc(t, "docs", "core", "requirements.md")
+	section := exclusionSection(t, requirements, "The closed exclusion list R11 depends on")
+	canonical := ParseExclusionTable(section)
+	byName := map[string]ExclusionRow{}
+	for _, row := range canonical {
+		byName[normalise(row.Excluded)] = row
+	}
+	mapped := map[string]string{
+		"project tool-server":   "vigil tool-server",
+		"kind operation.start":  "apply kind operation.start",
+		"completion":            "vigil completion",
+		"help":                  "vigil help",
+		"hello":                 "vigil hello",
+		"spike":                 "vigil spike",
+	}
+	for _, entry := range Entries {
+		if entry.Class != ClassExcluded {
+			continue
+		}
+		name, ok := mapped[entry.Path]
+		if !ok {
+			t.Fatalf("excluded entry %q has no canonical mapping", entry.Path)
+		}
+		row, ok := byName[normalise(name)]
+		if !ok {
+			t.Fatalf("canonical entry %q missing", name)
+		}
+		class, _ := splitReason(entry.Reason)
+		if normalise(class) != normalise(row.Class) {
+			t.Errorf("entry %q reason class %q differs from canonical %q", entry.Path, class, row.Class)
 		}
 	}
 }
@@ -153,12 +191,22 @@ func TestDeliberateUnregistrationFails(t *testing.T) {
 }
 
 // exclusionSection returns the document text from a heading to the next
-// heading of equal or higher level, so the table parser sees one table.
+// heading of equal or higher level. The break depth is derived from the
+// heading itself, so a section with subsections (like the register's §4)
+// is kept whole while a leaf section (like §5.9) ends at its siblings.
 func exclusionSection(t *testing.T, document, heading string) string {
 	t.Helper()
 	index := strings.Index(document, heading)
 	if index < 0 {
 		t.Fatalf("heading %q not found", heading)
+	}
+	level := 0
+	for _, r := range heading {
+		if r == '#' {
+			level++
+		} else {
+			break
+		}
 	}
 	rest := document[index+len(heading):]
 	lines := strings.Split(rest, "\n")
@@ -174,7 +222,7 @@ func exclusionSection(t *testing.T, document, heading string) string {
 					break
 				}
 			}
-			if depth <= 3 {
+			if depth <= level {
 				break
 			}
 		}

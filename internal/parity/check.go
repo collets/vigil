@@ -28,6 +28,10 @@ func CheckCoverage(treeLeaves []string, kinds []string, entries []Entry) error {
 			return fmt.Errorf("entry %q is classified %d times", path, count)
 		}
 	}
+	// Note: this function rejects missing, duplicated and unclassified
+	// entries, but a spurious extra row passes it on its own. The 85-row
+	// count and 67/12/6 tally pins in the test are load-bearing parts of
+	// the same check, not redundant restatements.
 	for _, leaf := range treeLeaves {
 		if byPath[leaf] != 1 {
 			return fmt.Errorf("command %q is missing from the parity register", leaf)
@@ -59,12 +63,23 @@ func Tally(entries []Entry) (e, c, x int) {
 }
 
 // CheckLandedDone fails when an entry owned by a landed sub-stage is still
-// planned, or when an excluded entry is not decided. Landed sub-stages are
-// 6.2 only for now; later stages extend the landed set through LandedThrough.
+// planned, or when an excluded entry is not decided. The landed set is
+// derived from LandedThrough by ordered comparison, so bumping the constant
+// extends enforcement without touching this function.
 func CheckLandedDone(entries []Entry) error {
-	landed := map[string]bool{"6.2": true}
+	landed := func(owner string) bool {
+		var stage, minor int
+		if _, err := fmt.Sscanf(owner, "%d.%d", &stage, &minor); err != nil {
+			return false
+		}
+		var landedStage, landedMinor int
+		if _, err := fmt.Sscanf(LandedThrough, "%d.%d", &landedStage, &landedMinor); err != nil {
+			return false
+		}
+		return stage < landedStage || (stage == landedStage && minor <= landedMinor)
+	}
 	for _, entry := range entries {
-		if landed[entry.Owner] && entry.Status != StatusDone {
+		if landed(entry.Owner) && entry.Status != StatusDone {
 			return fmt.Errorf("entry %q is owned by landed sub-stage %s but still planned", entry.Path, entry.Owner)
 		}
 		if entry.Class == ClassExcluded && entry.Status != StatusDone {
@@ -138,7 +153,8 @@ func isDelimiter(cells []string) bool {
 func normalise(value string) string {
 	value = strings.ReplaceAll(value, "**", "")
 	value = strings.ReplaceAll(value, "`", "")
-	return strings.Join(strings.Fields(value), " ")
+	value = strings.TrimSuffix(strings.TrimSpace(value), ".")
+	return strings.ToLower(strings.Join(strings.Fields(value), " "))
 }
 
 // CheckExclusionMirror verifies the canonical list and its mirror carry the
@@ -209,6 +225,15 @@ func CheckXAgainstExclusionList(entries []Entry, canonical []ExclusionRow) error
 		}
 	}
 	return nil
+}
+
+// splitReason divides a register reason into its leading class sentence
+// ("Scope." / "Mechanism.") and the remaining text.
+func splitReason(reason string) (class, rest string) {
+	if index := strings.Index(reason, ". "); index > 0 && index < 20 {
+		return reason[:index+1], strings.TrimSpace(reason[index+1:])
+	}
+	return "", reason
 }
 
 // SortedPaths returns every entry path in order, for stable diagnostics.

@@ -4,40 +4,11 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"vigil/internal/parity"
 )
 
 func regexpCompile(pattern string) *regexp.Regexp { return regexp.MustCompile(pattern) }
-
-type claimErr string
-
-func (e claimErr) Error() string { return string(e) }
-
-const (
-	errNoMatch  = claimErr("no count claim matched")
-	errMismatch = claimErr("count mismatch")
-)
-
-func regexpFind(content, pattern string) string {
-	match := regexpCompile(pattern).FindStringSubmatch(content)
-	if match == nil {
-		return ""
-	}
-	return match[1]
-}
-
-func checkCountsAgainst(rounds int, further int, claim string) error {
-	pattern := `([a-z0-9]+)\s+further\s+reviews?`
-	match := regexpFind(claim, pattern)
-	if match == "" {
-		return errNoMatch
-	}
-	n, ok := parseCountToken(match)
-	if !ok || n != further {
-		return errMismatch
-	}
-	_ = rounds
-	return nil
-}
 
 func bareFMatch(content string) string {
 	return bareFPattern().FindString(content)
@@ -65,15 +36,18 @@ func TestClaimsHarness(t *testing.T) {
 // harness bugs first during calibration.
 
 func TestClaimsC1DetectsDisagreement(t *testing.T) {
-	// Two rounds derive one further review; a document claiming three fails.
-	if err := checkCountsAgainst(2, 1, "three further reviews"); err == nil {
-		t.Fatal("C1 logic passed a disagreeing count")
+	// Fourteen rounds derive thirteen further reviews; thirteen passes.
+	further, rounds, err := checkReviewCounts("thirteen further reviews and fourteen rounds of findings", 14, 13)
+	if err != nil || further != 1 || rounds != 1 {
+		t.Fatal("C1 core failed an agreeing document:", further, rounds, err)
 	}
-	if err := checkCountsAgainst(2, 1, "one further review"); err != nil {
-		t.Fatal("C1 logic failed an agreeing count:", err)
+	// Twelve further reviews against a thirteen derivation fails.
+	if _, _, err := checkReviewCounts("twelve further reviews", 14, 13); err == nil {
+		t.Fatal("C1 core passed a disagreeing count")
 	}
-	if err := checkCountsAgainst(2, 1, "no count here"); err == nil {
-		t.Fatal("C1 logic passed content with no claim")
+	// Thirteen rounds of findings against fourteen fails.
+	if _, _, err := checkReviewCounts("thirteen rounds of findings", 14, 13); err == nil {
+		t.Fatal("C1 core passed a disagreeing round count")
 	}
 }
 
@@ -82,27 +56,26 @@ func TestClaimsC3DetectsBrokenTally(t *testing.T) {
 		"| 6.1-R1 | P0 | x |",
 		"| 6.1-R2 | P0 | x |",
 	}
-	tally := map[string]int{}
-	for _, row := range rows {
-		cells := strings.Split(strings.Trim(row, "|"), "|")
-		tally[strings.TrimSpace(cells[1])]++
-	}
-	if tally["P0"] == 4 {
+	ids, tally := tallyFindingsTable(rows)
+	if len(ids) == 15 && tally["P0"] == 4 {
 		t.Fatal("broken tally passed")
+	}
+	full := []string{"| 6.1-R1 | P0 | x |"}
+	ids, _ = tallyFindingsTable(full)
+	if len(ids) != 1 || ids[0] != 1 {
+		t.Fatal("ID extraction wrong")
 	}
 }
 
 func TestClaimsC5DetectsInterruptingProse(t *testing.T) {
-	block := "| R01 | need |\nprose between rows\n| R02 | need |"
-	lines := strings.Split(block, "\n")
-	prose := false
-	for _, line := range lines[1:2] {
-		if !strings.HasPrefix(strings.TrimSpace(line), "|") {
-			prose = true
-		}
-	}
-	if !prose {
+	if err := verifyRequirementsBlock([]string{"| R01 | need |", "prose between rows", "| R02 | need |"}); err == nil {
 		t.Fatal("interrupting prose not detected")
+	}
+	if err := verifyRequirementsBlock([]string{"| R01 | need |", "| R03 | need |"}); err == nil {
+		t.Fatal("skipped requirement not detected")
+	}
+	if err := verifyRequirementsBlock([]string{"| R01 | need |", "| R02 | need |"}); err != nil {
+		t.Fatal("clean block failed:", err)
 	}
 }
 
@@ -143,6 +116,17 @@ func TestClaimsBareFDetection(t *testing.T) {
 	}
 }
 
+func TestClaimsC2DetectsOverlap(t *testing.T) {
+	window := "(round 1), (rounds 3 and 3), and (rounds 2, 4, 5 and 6)"
+	if err := verifyMethodPartition(window + " 1 + 9 + 4 = 14"); err == nil {
+		t.Fatal("overlapping partition passed")
+	}
+	good := "(round 1), (rounds 3, 7, 8, 9, 10, 11, 12, 13 and 14), and (rounds 2, 4, 5 and 6)"
+	if err := verifyMethodPartition(good); err != nil {
+		t.Fatal("true partition failed:", err)
+	}
+}
+
 func TestClaimsPartitionEvaluation(t *testing.T) {
 	if _, _, ok := evaluatePartition("no arithmetic here"); ok {
 		t.Fatal("non-partition parsed")
@@ -174,6 +158,15 @@ func TestClaimsC1bDetectsOutsideP0(t *testing.T) {
 	rows = []string{"| 6.1-X1 | P2 | x |"}
 	if countSeverity(rows, "P0") != 0 {
 		t.Fatal("phantom P0 counted")
+	}
+}
+
+func TestClaimsC4Shapes(t *testing.T) {
+	if findTallyShape("3×P0, 2×P1") == "" || findTallyShape("4 P0 / 3 P1") == "" || findTallyShape("6 P2") == "" {
+		t.Fatal("tally shapes missed")
+	}
+	if findTallyShape("no P0, one P1; remediated") != "" || findTallyShape("6.1-P1…P6, in review") != "" {
+		t.Fatal("outcome prose or ID range flagged as tally")
 	}
 }
 
@@ -224,18 +217,20 @@ func TestClaimsC9NamespaceRule(t *testing.T) {
 }
 
 func TestClaimsC10DetectsMissingMarker(t *testing.T) {
-	markers := statusMarkerClaims.FindAllString("no marker here", -1)
-	if len(markers) == 1 {
+	if len(countStatusMarkers("no marker here")) == 1 {
 		t.Fatal("phantom marker matched")
+	}
+	want := "<!-- vigil-status: stage=6.1; stage_accepted=true; implementation_commit=bad6139 -->"
+	if len(countStatusMarkers("prefix\n" + want + "\nsuffix")) != 1 {
+		t.Fatal("canonical marker missed")
 	}
 }
 
 func TestClaimsC13DetectsContradiction(t *testing.T) {
-	denied := regexpCompile(`(?i)stage 6\.1 is not accepted`)
-	if !denied.MatchString("Stage 6.1 is not accepted; stays at 5.7") {
+	if !contradictsAcceptance("Stage 6.1 is not accepted; stays at 5.7", "6.1") {
 		t.Fatal("contradiction missed")
 	}
-	if denied.MatchString("Stage 6.1 is independently accepted") {
+	if contradictsAcceptance("Stage 6.1 is independently accepted", "6.1") {
 		t.Fatal("acceptance prose flagged")
 	}
 }
@@ -249,6 +244,18 @@ func TestClaimsC14DetectsWrongShape(t *testing.T) {
 	n, _ := parseCountToken(match[1])
 	if n == 14 {
 		t.Fatal("wrong shape count passed")
+	}
+}
+
+func TestClaimsC15Witness(t *testing.T) {
+	row := "gamma six rows describe three capabilities delta"
+	corpus := row + " plus six rows describe three capabilities elsewhere"
+	flatNeedle := "six rows describe three capabilities"
+	if !witnessHolds(corpus, row, flatNeedle) {
+		t.Fatal("witness logic inverted")
+	}
+	if witnessHolds(row, row, flatNeedle) {
+		t.Fatal("row-only occurrence passed")
 	}
 }
 
@@ -267,15 +274,42 @@ func TestClaimsC15WitnessHolds(t *testing.T) {
 }
 
 func TestClaimsC17Contiguity(t *testing.T) {
-	ids := []int{1, 2, 4}
-	contiguous := true
-	for i, id := range ids {
-		if id != i+1 {
-			contiguous = false
-		}
-	}
-	if contiguous {
+	if err := roundIDsContiguous(map[string][]int{"R": {1, 2, 4}}, []string{"R"}); err == nil {
 		t.Fatal("gap passed as contiguous")
+	}
+	if err := roundIDsContiguous(map[string][]int{"R": {2, 1, 2}}, []string{"R"}); err == nil {
+		t.Fatal("duplicate passed as contiguous")
+	}
+	if err := roundIDsContiguous(map[string][]int{"R": {1, 2}}, []string{"R"}); err != nil {
+		t.Fatal("clean IDs failed:", err)
+	}
+}
+
+func TestClaimsC18Sections(t *testing.T) {
+	src := "// C1: one\n// C1b: folded\n// C2: two\n"
+	if n := distinctSectionNumbers(src); n != 2 {
+		t.Fatalf("header fold counted %d, want 2", n)
+	}
+}
+
+func TestClaimsC6DetectsMirrorDrift(t *testing.T) {
+	canonical := []parity.ExclusionRow{
+		{Excluded: "a", Class: "scope", Reason: "why"},
+		{Excluded: "b", Class: "scope", Reason: "why"},
+		{Excluded: "c", Class: "scope", Reason: "why"},
+		{Excluded: "d", Class: "scope", Reason: "why"},
+		{Excluded: "e", Class: "scope", Reason: "why"},
+		{Excluded: "f", Class: "scope", Reason: "why"},
+		{Excluded: "g", Class: "scope", Reason: "why"},
+		{Excluded: "h", Class: "scope", Reason: "why"},
+	}
+	mirror := append([]parity.ExclusionRow(nil), canonical...)
+	mirror[3].Reason = "different words"
+	if err := parity.CheckExclusionMirror(canonical, mirror); err == nil {
+		t.Fatal("mirror drift passed")
+	}
+	if err := parity.CheckExclusionMirror(canonical, canonical); err != nil {
+		t.Fatal("identical mirror failed:", err)
 	}
 }
 
@@ -288,5 +322,15 @@ func TestClaimsC18CountsHeaders(t *testing.T) {
 	}
 	if len(seen) != 2 {
 		t.Fatalf("header fold counted %d, want 2", len(seen))
+	}
+}
+
+func TestClaimsC16ExtractsAssertion(t *testing.T) {
+	quoted, doc, ok := findStillClaim(`| 6.1-X1 | P3 | The cell still states the rule that "exact words here" in ` + "`doc.md` | x |")
+	if !ok || quoted != "exact words here" || doc != "doc.md" {
+		t.Fatal("still-assertion not extracted:", quoted, doc, ok)
+	}
+	if _, _, ok := findStillClaim("| 6.1-X1 | P3 | ordinary cell without assertion |"); ok {
+		t.Fatal("plain cell matched as assertion")
 	}
 }

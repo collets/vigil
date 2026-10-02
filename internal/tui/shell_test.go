@@ -355,6 +355,17 @@ func TestOverlaysNeverTruncate(t *testing.T) {
 		if lines := strings.Split(m.View().Content, "\n"); strings.Contains(lines[len(lines)-1], "\u2026") {
 			t.Fatalf("projects footer truncated at width %d", width)
 		}
+		m = open()
+		updated, _ = m.Update(tea.KeyPressMsg{Code: ':', Text: ":"})
+		m = updated.(model)
+		view := m.View().Content
+		lines := strings.Split(view, "\n")
+		if strings.Contains(lines[len(lines)-1], "\u2026") {
+			t.Fatalf("palette footer truncated at width %d", width)
+		}
+		if strings.Contains(lines[0], "\u2026") {
+			t.Fatalf("tab bar truncated with palette open at width %d", width)
+		}
 	}
 }
 
