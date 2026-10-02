@@ -30,12 +30,16 @@ var DestructiveActions = []struct {
 }
 
 func confirmLines(c *confirmRequest) []string {
-	return []string{
+	lines := []string{
 		"Confirm " + clean(c.action) + ": " + clean(c.reason) + ".",
 		fmt.Sprintf("Revision %d · target %s", c.revision, clean(c.targetID)),
-		"",
-		"Enter/y confirms this exact action · Esc/n abandons it.",
 	}
+	// Feature 2.12: stop names its grace defaults. They are fixed here;
+	// the execution screen (6.6) makes them editable.
+	if c.action == "stop" {
+		lines = append(lines, fmt.Sprintf("Interrupt grace %s · terminate grace %s (fixed defaults)", StopInterruptGrace, StopTerminateGrace))
+	}
+	return append(lines, "", "Enter/y confirms this exact action · Esc/n abandons it.")
 }
 
 // needsConfirm reports whether an action string requires the dialog. Task

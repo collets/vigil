@@ -57,6 +57,15 @@ var actionSet = func() map[string]bool {
 	return set
 }()
 
+// StopGraces are the bounded native interrupt/terminate graces the
+// dashboard stop path requests. They are constants so the confirmation
+// dialog (feature 2.12) displays the exact values the mutator sends;
+// making them editable belongs to 6.6's execution screen.
+const (
+	StopInterruptGrace = 2 * time.Second
+	StopTerminateGrace = 5 * time.Second
+)
+
 // Treat persisted names/messages as text, never terminal control sequences.
 func clean(value string) string {
 	value = ansi.Strip(value)
@@ -102,7 +111,7 @@ func projectMutator(engine *core.Engine, coordination *coordinator.Coordinator, 
 			if s.ActiveRun == "" {
 				return fmt.Errorf("no active persisted run")
 			}
-			_, err := (&supervisor.Runner{Engine: engine}).RequestStop(ctx, supervisor.StopRequest{CommandID: store.ID(), ExpectedRevision: revision, RunID: s.ActiveRun, InterruptGrace: 2 * time.Second, TerminateGrace: 5 * time.Second})
+			_, err := (&supervisor.Runner{Engine: engine}).RequestStop(ctx, supervisor.StopRequest{CommandID: store.ID(), ExpectedRevision: revision, RunID: s.ActiveRun, InterruptGrace: StopInterruptGrace, TerminateGrace: StopTerminateGrace})
 			return err
 		default:
 			// Explicit queue selection from the Overview queue cursor:

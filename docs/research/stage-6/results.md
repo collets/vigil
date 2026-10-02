@@ -2,14 +2,18 @@
 
 <!-- vigil-tier: evidence -->
 
-Status: **6.2 re-measured; feature list accumulates.** Stage 6.1 produced the
+Status: **6.3 measured; feature list accumulates.** Stage 6.1 produced the
 measured evidence in §§1–4 and the skeleton feature list in §5. Stage 6.2
 rebuilt the shell (screen stack, focus model, scoped keys, confirmations,
 help, palette, project switcher), re-ran the interface capture against the
 new shell (§2.8), closed 6.1-F14/F16/F17/F18/F21, marked §5.1 rows 1.1–1.12
-done, and installed the mechanical parity check. No product surface changed,
-so the §4 `Today` column is re-verified unchanged rather than rewritten.
-Sections 6.3–6.9 own every remaining `planned` row, and §5 fills as each
+done, and installed the mechanical parity check. Stage 6.3 built the main
+dashboard, the run-detail screen and the navigable history (§2.9), closed
+6.1-F1/F2/F20, marked fourteen §5 rows done, left two §5 rows
+honestly partial (3.2, 3.4 — named below), and flipped the four 6.3 register
+rows to done. No product surface changed, so the §4 classes are re-verified
+unchanged and only the four 6.3 rows' `Today` entries move to full.
+Sections 6.4–6.9 own every remaining `planned` row, and §5 fills as each
 lands.
 
 Sections 1–4 below are the measured evidence Stage 6.1 produced and are
@@ -252,6 +256,135 @@ Key effects re-measured (persisted state re-read after each run):
 persists nothing. `esc` at the root backs out (nothing to pop) and never
 quits; `q` quits explicitly, confirming first when a run is recorded.
 
+### 2.9 Re-measurement after 6.3 (main dashboard, run screen, history)
+
+Measured from the rebuilt binary at the 6.3 candidate, same method: a fresh
+disposable fixture (`/tmp/opencode/vigil-63/repo`, committed marker, no
+remote), state outside every checkout, production-path seeding
+(`project.configure`, `profile.put`, two `plan.put`, two `queue`), and the
+real `vigil dashboard` binary under a pseudo-terminal with the window size
+set. Fixture project `cbcca28d897014c6ec8a4e722f7759c8`, paused at revision
+7 for the captures; the scoped probe below left it at revision 7
+(`paused`).
+
+No product surface changed in 6.3 — the CLI and envelope kinds are
+byte-identical — so this section records the new screens, not new reach.
+The §4 classes are re-verified unchanged; only the four 6.3 rows' `Today`
+entries move to full, and the parity test (`internal/parity`) now fails
+when any of them is still `planned` (`LandedThrough` is `6.3`).
+
+Overview at 110×40 (verbatim, ANSI stripped):
+
+```text
+Vigil  [1 Overview]  2 Tasks  3 Inbox  4 History  5 Detail
+Persisted state · interactive controls · Focus: Overview · cbcca28d897014c6ec8a4e722f7759c8
+
+> Project: cbcca28d897014c6ec8a4e722f7759c8
+Root: /tmp/opencode/vigil-63/repo
+Revision 7 · paused
+
+Runtime: exact trusted execution qualification is required at effect start
+Runtime: no selected live combination has the complete production launch/recovery evidence set
+
+Active plan: plan-a · queued · rank 0 (position 1/2)
+Ranked queue (ties order by plan ID):
+> plan-a · queued · rank 0 · u queues at rank 0
+  plan-b · queued · rank 1
+
+Current task: t1 r1 · draft
+Blocker: none
+
+Run: no run is active
+Cost/usage: unavailable (no observation)
+
+Quality per task:
+  t1           chk 0/0 blk 0 sug 0 man 0 ok
+  t2           chk 0/0 blk 0 sug 0 man 1 ok
+  t3           chk 0/0 blk 0 sug 0 man 0 ok
+
+Actionable requests (0 · Enter opens in Inbox):
+  No pending decisions.
+
+j/k select request · [/] select queue plan · Enter opens request · R run detail
+
+p pause · c continue · a advance · u queue · s stop (confirm) · ? help · q quit  (1–27/27)
+```
+
+What changed against §2.8: the Overview names the active plan, queue
+position, current task and blocker, run state, cost honesty marker,
+per-task quality roll-ups and the actionable list — the P15 screen — and
+`u` names its target plan and rank on screen. What did not change: the
+twenty action strings keep their meanings (`u` now carries the displayed
+`plan:rank`, which is why 6.1-F2 stays closed), and every 6.2 invariant
+(scoping, confirmations, help, palette, switcher) still holds.
+
+Narrow terminals (verbatim footers and tab bars; `NN|` prefixes are measured
+widths):
+
+```text
+ 60| 5 bindings · ? for all keys
+ 40| 5 bindings · ? for all keys
+ 40| Vigil [Overview] ?
+```
+
+At 60 and 40 columns the binding line degrades to a count plus a help
+pointer and the tab bar to the current screen plus a help pointer; no
+binding string is cut at 40, 60, 80, 110 or 200 columns (unit-pinned on
+all five root screens plus the run, event, help, confirm, palette and
+project overlays). Body text still truncates with `…` at narrow widths —
+the guarantee covers the binding set and the screen bar, not prose.
+
+Run screen (`R` from Overview, `esc` backs out; empty run shown):
+
+```text
+Run detail.
+
+Run: no run is active
+
+esc backs out
+```
+
+History (`4`, `F` cycles `command_applied`, `Enter` opens event 1):
+
+```text
+History · showing 7 of 9 events · filter: command_applied (F cycles, ends at all)
+
+> 1 · 15:17:11 · project.initialize · human
+  2 · 15:17:11 · project.configure · human
+  3 · 15:17:11 · profile.put · human
+  4 · 15:17:12 · plan.put · human
+  5 · 15:17:12 · plan.put · human
+  7 · 15:17:12 · plan.queue · human
+  9 · 15:17:12 · plan.queue · human
+
+Complete window (9 events).
+F filter · Enter opens event
+```
+
+Event detail (opened from the cursor above):
+
+```text
+Event detail.
+
+1 · 2026-10-02T15:17:11+02:00 · command_applied
+Command: initialize:cbcca28d897014c6ec8a4e722f7759c8
+Applied: project.initialize · actor human
+
+esc backs out
+```
+
+Key effects re-measured (persisted state re-read after each run):
+
+| Keys | Observed | Persisted effect |
+| --- | --- | --- |
+| `4` then `p` | no feedback, no mutation | none — revision stays 7, state stays `paused`. 6.2 scoping holds with the new History keys |
+| `R` then `esc` | run screen opens, then closes | none |
+| `F` then `Enter` then `esc` | filter cycles, event opens, then closes | none |
+| `q` (no active run) | exits | none |
+
+`4` then `p` is the 6.2 probe re-run against the 6.3 tree: History still
+owns no mutating key, including the new `F`/`Enter` navigation.
+
 ## 3. Product surface measured
 
 | Group | Count | Source |
@@ -324,9 +457,9 @@ is missing, duplicated or unclassified.
 | --- | --- | --- | --- | --- |
 | `init` | C | absent | Situation **(a)**: the root path is typed and validated, not browsed | 6.8 |
 | `list` | E | absent | — | 6.8 |
-| `status` | E | partial (view 1) | promoted to a readiness view | 6.3 |
+| `status` | E | full (main dashboard: plan, task, queue, run, quality, requests) | promoted to a readiness view | 6.3 |
 | `inbox` | E | partial (view 3) | extended in 6.4 | 6.4 |
-| `events` | E | partial (view 4) | extended in 6.3 | 6.3 |
+| `events` | E | full (filterable history, event detail, `--kind`) | extended in 6.3 | 6.3 |
 | `apply` (command) | C | absent | Situation **(a)**: the real command is `apply PROJECT_ID --file COMMAND.json`, so the operator supplies a filesystem path. In exchange the interface builds one typed form per envelope kind and never accepts a pasted envelope, so an unknown field or duplicate key cannot be submitted | 6.8 |
 | `discover` | E | absent | — | 6.8 |
 | `repository` | E | absent | — | 6.8 |
@@ -338,8 +471,8 @@ is missing, duplicated or unclassified.
 | `proposal-apply` | E | partial (`g`) | criteria-change authority added as an explicit confirmation | 6.4 |
 | `proposal-decide` | E | partial (`n`, `v`) | typed rationale replaces the hardcoded one | 6.4 |
 | `input-resolve` | E | **full** (`i`, `n`) | — | — |
-| `queue` | E | partial (`u`) | plan and rank become explicit selections | 6.3 |
-| `queue-list` | E | absent | rendered on the main dashboard | 6.3 |
+| `queue` | E | full (named plan at its shown rank) | plan and rank become explicit selections | 6.3 |
+| `queue-list` | E | full (ranked queue on the main dashboard) | rendered on the main dashboard | 6.3 |
 | `advance` | E | **full** (`a`) | — | — |
 | `pause` | E | **full** (`p`) | — | — |
 | `continue` | E | **full** (`c`) | — | — |
@@ -476,7 +609,14 @@ observation the operator actually makes.
 **Accumulating.** Every row that Stage 6 plans is present. `Today` is measured and
 final. `Screen`, `Keys` and `Command` are filled in by the owning sub-stage as
 it lands; `Status` becomes `done` only when that sub-stage's completion criteria
-are met — twelve rows (1.1–1.12) are done as of 6.2. 6.9 audits that no row is left `planned`.
+are met — twelve rows (1.1–1.12) are done as of 6.2, and fourteen more
+(2.1–2.8, 2.12, 2.13, 3.3, 3.5–3.7) as of 6.3. Rows 3.2 and 3.4 stay honestly
+partial: 6.3 renders task/plan identity, state, rank, blockers, issues and
+budgets wherever the read models carry them, but the full task detail
+(objective, criteria text, dependencies, context, scope, limits) and the full
+plan detail (specification, criteria, checks, reviewer profile) are not
+screens yet, so claiming them done would be false. 6.9 audits that no row is
+left `planned` without a named owner.
 
 Requirement coverage uses the amended R11/R45/R46/R47/R70 and the P13–P18
 conditions in [`core/requirements.md`](../../core/requirements.md).
@@ -502,31 +642,31 @@ conditions in [`core/requirements.md`](../../core/requirements.md).
 
 | # | Screen / capability | Keys | Command | Requirements | Today | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2.1 | Active plan with state and rank | — | `queue-list` | R45, R62 | absent | planned (6.3) |
-| 2.2 | Current task with state, revision and blocker | — | `status` | R45 | absent | planned (6.3) |
-| 2.3 | Ranked plan queue with the operator's position | — | `queue-list` | R45, R62 | never rendered (6.1-F2) | planned (6.3) |
-| 2.4 | Live run: ID, state, generation, wall/active budget | — | `execution-inspect` | R45, P04 | absent (6.1-F1) | planned (6.3) |
-| 2.5 | Live session identity and native request key when a session exists | — | `execution-inspect` | R45, P04 | absent | planned (6.3) |
-| 2.6 | Bounded, sanitized agent activity from persisted state | — | `events` | R45, P09 | absent | planned (6.3) |
-| 2.7 | Compact per-task quality status | — | `status` | R45, R24 | absent | planned (6.3) |
-| 2.8 | Actionable request list with kind, age and blocking state | — | `inbox` | R45, R51 | count only (6.1-F3) | planned (6.3) |
+| 2.1 | Overview: active plan with state and rank | — | `queue-list` | R45, R62 | present | **done** |
+| 2.2 | Overview: current task with state, revision and blocker | — | `status` | R45 | present | **done** |
+| 2.3 | Overview: ranked plan queue with the operator's position | `[ ]` | `queue-list` | R45, R62 | present (was never rendered, 6.1-F2) | **done** |
+| 2.4 | Overview + Run detail screen: live run ID, state, generation, wall/active budget | `R` | `execution-inspect` | R45, P04 | present (was absent, 6.1-F1) | **done** |
+| 2.5 | Run detail screen: live session identity and native request key when a session exists | `R` | `execution-inspect` | R45, P04 | present | **done** |
+| 2.6 | Overview summary + Run detail screen: bounded, sanitized agent activity from persisted state | `R` | `events` | R45, P09 | present | **done** |
+| 2.7 | Overview: compact per-task quality status | — | `status` | R45, R24 | present | **done** |
+| 2.8 | Overview: actionable request list with kind, age and blocking state | `Enter` | `inbox` | R45, R51 | present (was count only; the decision surface is 6.4's) | **done** |
 | 2.9 | Project revision and state, always visible | — | `status` | R45 | present | **done** |
 | 2.10 | Runtime and definition issues | — | `status` | R45, P02 | present | **done** |
 | 2.11 | Pause / continue / advance with visible effect | `p` `c` `a` | `pause` `continue` `advance` | R45, R56 | present and exact | **done** |
-| 2.12 | Stop with visible run selection and editable graces | `s` | `execution-stop` | R45, R56 | partial | planned (6.3) |
-| 2.13 | Queue a named plan at an explicit rank | `u` | `queue` | R62 | first queueable, no target shown | planned (6.3) |
+| 2.12 | Stop with visible run selection and editable graces (`s` confirms against the run screen's run; grace defaults shown, editing is 6.6's) | `s` | `execution-stop` | R45, R56 | run selection + grace defaults visible | **done** |
+| 2.13 | Overview: queue a named plan at an explicit rank | `u` | `queue` | R62 | named plan at its shown rank (was first queueable, no target shown) | **done** |
 
 ### 5.3 Tasks, plans and history
 
 | # | Screen / capability | Keys | Command | Requirements | Today | Status |
 | --- | --- | --- | --- | --- | --- | --- |
 | 3.1 | Task list with state, revision, issues and required checks | `2` | `status` | R06, R34 | present | **done** |
-| 3.2 | Task detail: objective, criteria, dependencies, context, scope, limits | — | `status`, `plan.put` form | R06, R34 | absent | planned (6.3) |
-| 3.3 | Plan list with state, rank and services budget | `5` | `queue-list` | R07, R62 | partial | planned (6.3) |
-| 3.4 | Plan detail: specification, criteria, checks, reviewer profile | — | `plan.put` form | R07, R26 | absent | planned (6.3) |
-| 3.5 | History list with filter | `4` | `events` | R06 | absent | planned (6.3) |
-| 3.6 | Event detail with sanitized payload | — | `events` | R06, P07 | absent | planned (6.3) |
-| 3.7 | Explicit notice when the 100-event window truncates | — | `events` | R06 | silent (6.1-F20) | planned (6.3) |
+| 3.2 | Task detail: objective, criteria, dependencies, context, scope, limits | — | `status`, `plan.put` form | R06, R34 | partial: id/state/revision/blocker/issues/checks/quality roll-up render on Tasks, Detail and Overview, but objective text, criteria text, dependencies, context, scope and limits are not shown | planned (6.3 gap: no task-detail screen; 6.9 audit owns the row) |
+| 3.3 | Detail (`5`) + Overview: plan list with state, rank and services budget | `5` | `queue-list` | R07, R62 | present (Detail lists rank/budget; Overview lists the ranked queue) | **done** |
+| 3.4 | Plan detail: specification, criteria, checks, reviewer profile | — | `plan.put` form | R07, R26 | absent: no plan-detail screen exists | planned (6.3 gap: no plan-detail screen; 6.9 audit owns the row) |
+| 3.5 | History list with filter | `4`, `F` | `events` | R06 | present (was absent) | **done** |
+| 3.6 | Event detail with sanitized payload | `Enter` | `events` | R06, P07 | present (was absent) | **done** |
+| 3.7 | Explicit notice when the 100-event window truncates | — | `events` | R06 | cap + continuation cursor announced (was silent, 6.1-F20) | **done** |
 
 ### 5.4 Actionable inbox
 
@@ -1045,6 +1185,44 @@ Linux-only scope statements elsewhere in this document now end at this
 subsection: from here on, interface measurements are Linux **and** native
 macOS unless a later sub-stage says otherwise.
 
+### Stage 6.3 validation
+
+Run at the 6.3 candidate SHA on Linux x86-64 with pinned Go 1.27.1.
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| Vet and full suite | `make check` | pass |
+| Documentation gate | `make docs-check` | pass |
+| Race | `make check-race` | pass on the rerun; one earlier full run failed with no failure line retained (see flake note) |
+| Builds and cross-builds | `make build`, `make build-boundary`, `make cross-build` | pass |
+| Whitespace | `git diff --check` | clean |
+| Product regression | `make scenario` | 333 steps, 50 assertions, **no `unmet` row** |
+| Parity check | `go test ./internal/parity/` | 85 rows, 67 E / 12 C / 6 X; `LandedThrough` is `6.3`, the four 6.3 rows read `done` |
+| P15 assertion | `go test ./internal/tui/ -run TestMainDashboardShowsP15WithoutNavigation` | pass: active plan, task, blocker, position, run, roll-up, both requests with age/blocking, no navigation key |
+| Queue regression (6.1-F2) | `go test ./internal/tui/ -run TestQueueKeyTargetsDisplayedPlan` | pass: `u` queues `queue:plan-a:0`, the queue line changes on screen |
+| Truncation regression (6.1-F20) | `go test ./internal/tui/ -run TestHistoryAnnouncesWindowCap` | pass: cap + `--after` cursor announced |
+| Honesty marker | `go test ./internal/tui/ -run TestUnavailableMarkerRendersForUnobservedCost` | pass: unobserved renders `unavailable`, never zero |
+| Interface capture | PTY at 110, 80, 60 and 40 columns against a fresh fixture | §2.9 verbatim; no binding cut at any width |
+| Native macOS | the same capture, natively, at the candidate SHA | recorded below |
+| Independent adversarial review | checkpoints A–D, then the candidate | recorded below |
+
+P15 is asserted by `TestMainDashboardShowsP15WithoutNavigation` against a
+seeded engine fixture (paused project, queued second plan, blocked task,
+live-shaped run, one blocking and one non-blocking request). 6.1-F1 and
+6.1-F2 are closed by the rendered `ActiveRun`/`Queue` fields and the queue
+regression test; 6.1-F20 by the filterable history and the announced cap.
+No screen renders a zero for an unobserved quantity.
+
+One full `make check-race` run in this slice failed (exit 1 with a FAIL
+line the log tail did not retain — the failure output was overwritten by
+the passing rerun before it was copied, which is a process failure in
+evidence handling, not a test result). The very next full `make check-race`
+run passed, and `go test -race ./internal/tui/ ./internal/core/ -count=2`
+passed twice over. No package or test name is on record for the failure,
+so it cannot be attributed to the documented fixed-sleep PTY mechanism the
+way 6.2's was; it is recorded here as one unattributed full-suite failure
+in three runs rather than averaged away.
+
 ## 7. Handoff
 
 A resumed agent reads this document and
@@ -1063,7 +1241,9 @@ plan for the sub-stage it is running:
 | 6.9 Parity closure and feature list | [`6.9-parity-closure-and-feature-list.md`](../../plans/stage-6/6.9-parity-closure-and-feature-list.md) |
 
 State as written: 6.1 complete, 6.2 complete and accepted at `582e2d1`,
-6.3–6.9 planned and not started. The parity
+6.3 implemented on its task branch through checkpoints A–D (each
+antagonistically reviewed) and pending its candidate validation, native
+macOS evidence and independent acceptance; 6.4–6.9 planned and not started. The parity
 register in §4 is authoritative for classification; the feature list in §5 is
 authoritative for what exists and what is owed; §6 is authoritative for what was
 actually run.

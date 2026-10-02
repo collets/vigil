@@ -182,11 +182,11 @@ func TestParityXReasonsMatchCanonical(t *testing.T) {
 }
 
 // TestLandedOwnersDone fails when an entry owned by a landed sub-stage is
-// still planned. At 6.2 the only owned row is dashboard; later stages bump
-// LandedThrough and mark their rows done.
+// still planned. At 6.3 the landed rows are dashboard plus the four 6.3
+// register rows; later stages bump LandedThrough and mark their rows done.
 func TestLandedOwnersDone(t *testing.T) {
-	if LandedThrough != "6.2" {
-		t.Fatalf("LandedThrough is %q, want 6.2", LandedThrough)
+	if LandedThrough != "6.3" {
+		t.Fatalf("LandedThrough is %q, want 6.3", LandedThrough)
 	}
 	if err := CheckLandedDone(Entries); err != nil {
 		t.Fatal(err)

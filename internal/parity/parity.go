@@ -47,7 +47,7 @@ const (
 // Each later sub-stage bumps this constant and marks its own rows done; the
 // test fails when an owned row of a landed sub-stage is still planned. The
 // table, not the prose, is the source of truth.
-const LandedThrough = "6.2"
+const LandedThrough = "6.3"
 
 // Entries is the full 85-row register: 62 project commands, 3 resources, 6
 // root commands and 14 apply envelope kinds.
@@ -66,9 +66,9 @@ var Entries = []Entry{
 	// 4.3 Project commands, part 1 — definitions and lifecycle.
 	{Path: "project init", Class: "C", Owner: "6.8", Reason: "Situation (a): the root path is typed and validated, not browsed", Status: "planned"},
 	{Path: "project list", Class: "E", Owner: "6.8", Reason: "—", Status: "planned"},
-	{Path: "project status", Class: "E", Owner: "6.3", Reason: "—", Status: "planned"},
+	{Path: "project status", Class: "E", Owner: "6.3", Reason: "—", Status: "done"},
 	{Path: "project inbox", Class: "E", Owner: "6.4", Reason: "—", Status: "planned"},
-	{Path: "project events", Class: "E", Owner: "6.3", Reason: "—", Status: "planned"},
+	{Path: "project events", Class: "E", Owner: "6.3", Reason: "—", Status: "done"},
 	{Path: "project apply", Class: "C", Owner: "6.8", Reason: "Situation (a): the real command is `apply PROJECT_ID --file COMMAND.json`, so the operator supplies a filesystem path. In exchange the interface builds one typed form per envelope kind and never accepts a pasted envelope, so an unknown field or duplicate key cannot be submitted", Status: "planned"},
 	{Path: "project discover", Class: "E", Owner: "6.8", Reason: "—", Status: "planned"},
 	{Path: "project repository", Class: "E", Owner: "6.8", Reason: "—", Status: "planned"},
@@ -80,8 +80,8 @@ var Entries = []Entry{
 	{Path: "project proposal-apply", Class: "E", Owner: "6.4", Reason: "—", Status: "planned"},
 	{Path: "project proposal-decide", Class: "E", Owner: "6.4", Reason: "—", Status: "planned"},
 	{Path: "project input-resolve", Class: "E", Owner: "—", Reason: "—", Status: "done"},
-	{Path: "project queue", Class: "E", Owner: "6.3", Reason: "—", Status: "planned"},
-	{Path: "project queue-list", Class: "E", Owner: "6.3", Reason: "—", Status: "planned"},
+	{Path: "project queue", Class: "E", Owner: "6.3", Reason: "—", Status: "done"},
+	{Path: "project queue-list", Class: "E", Owner: "6.3", Reason: "—", Status: "done"},
 	{Path: "project advance", Class: "E", Owner: "—", Reason: "—", Status: "done"},
 	{Path: "project pause", Class: "E", Owner: "—", Reason: "—", Status: "done"},
 	{Path: "project continue", Class: "E", Owner: "—", Reason: "—", Status: "done"},
