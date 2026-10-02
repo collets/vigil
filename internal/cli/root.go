@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"vigil/internal/checkpoint"
+	"vigil/internal/coordinator"
 	"vigil/internal/core"
 	"vigil/internal/storage"
 	"vigil/internal/store"
@@ -110,6 +111,77 @@ func (d dashboardFixtureClarifications) InspectClarification(ctx context.Context
 	return "unknown", errors.New("duplicate fixture clarification delivery evidence")
 }
 
+func fixtureInteractive(ctx context.Context, m *core.Manager, e *core.Engine, historyState, historyClass string, historyAutomatic bool) (*supervisor.InteractiveOwner, *coordinator.Owner, error) {
+	checkpointManager, err := checkpoint.NewManager(e)
+	if err != nil {
+		return nil, nil, err
+	}
+	owner, err := m.Coordinator.Register(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	interactive := &supervisor.InteractiveOwner{Engine: e, Owner: owner, Recovery: dashboardFixtureInspector{engine: e, state: historyState, class: historyClass, automatic: historyAutomatic, checkpoint: checkpointManager}, Clarifications: dashboardFixtureClarifications{engine: e}}
+	return interactive, owner, nil
+}
+
+// runDashboardWithSwitcher opens the shell on the requested project and
+// offers every other registered project through the P switcher. The
+// PROJECT_ID argument still selects the opening project unchanged; switching
+// re-opens the target engine with the same fixture mode and closes the
+// previous engine, so exactly one project database is open at a time.
+func runDashboardWithSwitcher(cmd *cobra.Command, m *core.Manager, e *core.Engine, interactive *supervisor.InteractiveOwner, owner *coordinator.Owner, historyState, historyClass string, historyAutomatic bool) error {
+	ctx := cmd.Context()
+	listed, err := m.List(ctx)
+	if err != nil {
+		return err
+	}
+	projects := make([]tui.ProjectRef, 0, len(listed))
+	for _, p := range listed {
+		projects = append(projects, tui.ProjectRef{ID: p.ID, Root: p.Root})
+	}
+	if len(projects) == 0 {
+		projects = []tui.ProjectRef{{ID: e.ProjectID}}
+	}
+	current := e
+	currentInteractive := interactive
+	currentOwner := owner
+	// The shell owns the active owner: the opening owner is closed on exit
+	// and every switched-to owner is closed when the next switch replaces
+	// it, so P-switching in fixture mode leaks no lock, flock or row.
+	defer func() {
+		if currentOwner != nil {
+			currentOwner.Close()
+		}
+		current.DB.Close()
+	}()
+	open := func(id string) (*core.Engine, *coordinator.Coordinator, *supervisor.InteractiveOwner, error) {
+		next, err := m.Open(ctx, id)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		var nextInteractive *supervisor.InteractiveOwner
+		var nextOwner *coordinator.Owner
+		if currentInteractive != nil {
+			built, builtOwner, err := fixtureInteractive(ctx, m, next, historyState, historyClass, historyAutomatic)
+			if err != nil {
+				next.DB.Close()
+				return nil, nil, nil, err
+			}
+			nextInteractive = built
+			nextOwner = builtOwner
+		}
+		current.DB.Close()
+		if currentOwner != nil {
+			currentOwner.Close()
+		}
+		current = next
+		currentInteractive = nextInteractive
+		currentOwner = nextOwner
+		return next, m.Coordinator, nextInteractive, nil
+	}
+	return tui.RunProjectWithProjects(ctx, e, m.Coordinator, interactive, projects, open, cmd.InOrStdin(), cmd.OutOrStdout())
+}
+
 func NewCommand() *cobra.Command {
 	var database string
 	var stateDir string
@@ -155,26 +227,36 @@ func NewCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer e.DB.Close()
+			// Ownership of the open engine (and below, the fixture owner)
+			// transfers to runDashboardWithSwitcher on entry; these defers
+			// run only when an error returns before that handoff, so no
+			// handle is ever closed twice.
+			engineTransferred := false
+			defer func() {
+				if !engineTransferred {
+					e.DB.Close()
+				}
+			}()
 			if !dashboardFixture {
 				if dashboardClarificationRun != "" || dashboardClarificationSession != "" || dashboardClarificationKey != "" || dashboardClarificationPrompt != "" {
 					return errors.New("fixture clarification flags require --synthetic-interactions")
 				}
-				return tui.RunProject(cmd.Context(), e, m.Coordinator, cmd.InOrStdin(), cmd.OutOrStdout())
+				engineTransferred = true
+			return runDashboardWithSwitcher(cmd, m, e, nil, nil, "", "", false)
 			}
 			if dashboardHistoryState != "readable" && dashboardHistoryState != "missing" && dashboardHistoryState != "corrupt" && dashboardHistoryState != "unsupported" {
 				return errors.New("--history-state must be readable, missing, corrupt, or unsupported")
 			}
-			checkpointManager, err := checkpoint.NewManager(e)
+			interactive, owner, err := fixtureInteractive(cmd.Context(), m, e, dashboardHistoryState, dashboardHistoryClass, dashboardHistoryAutomatic)
 			if err != nil {
 				return err
 			}
-			owner, err := m.Coordinator.Register(cmd.Context())
-			if err != nil {
-				return err
-			}
-			defer owner.Close()
-			interactive := &supervisor.InteractiveOwner{Engine: e, Owner: owner, Recovery: dashboardFixtureInspector{engine: e, state: dashboardHistoryState, class: dashboardHistoryClass, automatic: dashboardHistoryAutomatic, checkpoint: checkpointManager}, Clarifications: dashboardFixtureClarifications{engine: e}}
+			ownerTransferred := false
+			defer func() {
+				if !ownerTransferred {
+					owner.Close()
+				}
+			}()
 			if dashboardClarificationRun != "" {
 				if dashboardClarificationSession == "" || dashboardClarificationKey == "" || dashboardClarificationPrompt == "" {
 					return errors.New("fixture clarification requires --clarification-session, --clarification-key and --clarification-prompt")
@@ -195,7 +277,9 @@ func NewCommand() *cobra.Command {
 					return err
 				}
 			}
-			return tui.RunProjectWithOwner(cmd.Context(), e, m.Coordinator, interactive, cmd.InOrStdin(), cmd.OutOrStdout())
+			engineTransferred = true
+			ownerTransferred = true
+			return runDashboardWithSwitcher(cmd, m, e, interactive, owner, dashboardHistoryState, dashboardHistoryClass, dashboardHistoryAutomatic)
 		},
 	}
 	dashboard.Flags().BoolVar(&dashboardFixture, "synthetic-interactions", false, "Enable owner-routed interactions only for marked disposable synthetic runs")

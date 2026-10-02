@@ -76,7 +76,7 @@ func TestSlowMutationAndOutputFloodDoNotBlockInput(t *testing.T) {
 		close(started)
 		<-release
 		return errors.New("injected mutation failure")
-	}, width: 80, height: 24, tab: 3}
+	}, width: 80, height: 24, tab: 0}
 	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'p', Text: "p"})
 	m = updated.(model)
 	if cmd == nil || !m.mutating {

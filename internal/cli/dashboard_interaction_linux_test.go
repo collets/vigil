@@ -164,7 +164,13 @@ func runDashboardPTY(t *testing.T, stateDir, projectID string, extraArgs []strin
 		}
 		time.Sleep(180 * time.Millisecond)
 	}
+	// Quit confirms when a run exists: q arms, y confirms. When no run is
+	// recorded the first q quits outright and the y lands nowhere.
 	if _, err := master.Write([]byte("q")); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(180 * time.Millisecond)
+	if _, err := master.Write([]byte("y")); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -202,6 +208,10 @@ func TestDashboardSyntheticInteractionRunsPersistedClarificationThroughPTY(t *te
 	}
 	time.Sleep(250 * time.Millisecond)
 	if _, err := master.Write([]byte("q")); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(180 * time.Millisecond)
+	if _, err := master.Write([]byte("y")); err != nil {
 		t.Fatal(err)
 	}
 	select {

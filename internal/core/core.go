@@ -193,6 +193,9 @@ func (e *Engine) Apply(ctx context.Context, actor Authority, cmd Envelope) (json
 	if cmd.ExpectedRevision < 1 {
 		return nil, errors.New("expected_revision required")
 	}
+	if !ValidEnvelopeKind(cmd.Kind) {
+		return nil, errors.New("unsupported command; execution, acceptance and delivery are not enabled")
+	}
 	if cmd.Kind == "repository.enroll" {
 		return e.applyRepositoryEnrollment(ctx, actor, cmd)
 	}
