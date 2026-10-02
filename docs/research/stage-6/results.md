@@ -4,9 +4,8 @@
 
 **Linux-side capture qualification.** §2.9's History block is not one consistent
 capture: its rows are the `f4196fb` measurement, its header and footer are the
-code after the window-state relocation, and the blank line it shows between them
-is stale. The full statement is under §6; the native capture's separate and
-narrower limitation is recorded there too.
+code after the window-state relocation, and the blank line before the footer is
+stale. §6 states this in full.
 
 Status: **6.3 measured; feature list accumulates.** Stage 6.1 produced the
 measured evidence in §§1–4 and the skeleton feature list in §5. Stage 6.2
@@ -1348,10 +1347,13 @@ plan for the sub-stage it is running:
 | 6.8 Setup, definitions and resources | [`6.8-setup-definitions-and-resources.md`](../../plans/stage-6/6.8-setup-definitions-and-resources.md) |
 | 6.9 Parity closure and feature list | [`6.9-parity-closure-and-feature-list.md`](../../plans/stage-6/6.9-parity-closure-and-feature-list.md) |
 
-State as written: 6.1 complete, 6.2 complete and accepted at `582e2d1`,
-6.3 implemented on its task branch through checkpoints A–D (each
-antagonistically reviewed) and pending its candidate validation, native
-macOS evidence and independent acceptance; 6.4–6.9 planned and not started. The parity
-register in §4 is authoritative for classification; the feature list in §5 is
-authoritative for what exists and what is owed; §6 is authoritative for what was
-actually run.
+State as written: 6.1 complete, 6.2 complete and accepted at `582e2d1`, and
+6.3 implemented on its task branch through checkpoints A–D with its candidate
+**rejected** at `f4196fb` and five remediations applied, each awaiting the
+narrow follow-up review recorded in
+[`6.3-review.md`](6.3-review.md). Native macOS evidence was obtained at
+`f4196fb`; re-capturing it at the accepted SHA is still open, and §6 says which
+four rendered strings it did not cover. 6.4–6.9 planned and not started. The
+parity register in §4 is authoritative for classification; the feature list in §5
+is authoritative for what exists and what is owed; §6 is authoritative for what
+was actually run.
