@@ -717,7 +717,7 @@ conditions in [`core/requirements.md`](../../core/requirements.md).
 | 3.1 | Task list with state, revision, issues and required checks | `2` | `status` | R06, R34 | present | **done** |
 | 3.2 | Task detail: objective, criteria, dependencies, context, scope, limits | — | `status`, `plan.put` form | R06, R34 | partial: id/state/revision/blocker/issues/checks/quality roll-up render on Tasks, Detail and Overview, but objective text, criteria text, dependencies, context, scope and limits are not shown | planned (6.3 gap: no task-detail screen; 6.9 audit owns the row) |
 | 3.3 | Detail (`5`) + Overview: plan list with state, rank and services budget | `5` | `queue-list` | R07, R62 | present (Detail lists rank/budget; Overview lists the ranked queue) | **done** |
-| 3.4 | Plan detail: specification, criteria, checks, reviewer profile | — | `plan.put` form | R07, R26 | partial: id/state/rank/services budget render on Detail and Overview; no specification, criteria, checks or reviewer profile are shown | planned (6.3 gap: no plan-detail screen; 6.9 audit owns the row) |
+| 3.4 | Plan detail: specification, criteria, checks, reviewer profile | — | `plan.put` form | R07, R26 | partial: plan id/state/rank and the services budget render on Detail; no specification, criteria, checks or reviewer profile are shown | planned (6.3 gap: no plan-detail screen; 6.9 audit owns the row) |
 | 3.5 | History list with filter | `4`, `F` | `events` | R06 | present (was absent) | **done** |
 | 3.6 | Event detail with sanitized payload | `Enter` | `events` | R06, P07 | present (was absent) | **done** |
 | 3.7 | Explicit notice when the 100-event window truncates | — | `events` | R06 | cap + continuation cursor announced (was silent, 6.1-F20) | **done** |
@@ -1350,8 +1350,8 @@ plan for the sub-stage it is running:
 
 State as written: 6.1 complete, 6.2 complete and accepted at `582e2d1`, and
 6.3 implemented on its task branch through checkpoints A–D with its candidate
-**rejected** at `f4196fb` and **six** remediations applied; rounds 10–15
-reviewed remediations 1–6, each returning conditional, and only the **sixth**
+**rejected** at `f4196fb` and **seven** remediations applied; rounds 10–16
+reviewed remediations 1–7, each returning conditional, and only the **seventh**
 awaits its narrow follow-up review, recorded in
 [`6.3-review.md`](6.3-review.md). **6.3 is not accepted**, and no document
 records it as accepted. Native macOS evidence was obtained at `f4196fb`;
