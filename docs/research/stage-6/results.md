@@ -1001,13 +1001,25 @@ what a pre-load keypress produces with or without the quit change. The added
 the quit rather than acting). The rate stays within the disclosed sample and
 is recorded here rather than averaged away.
 
-### Native macOS at 6.2: attempted and still blocked
+### Native macOS at 6.2: attempted against the wrong host, then blocked
 
 Re-attempted for 6.2 on 2026-10-02. Same result: the host answers ping, SSH
 authentication refuses this machine's key for every inferable account, and no
 password or keyboard-interactive route exists non-interactively. The 6.1
 table above is therefore still current, and every 6.2 measurement stays
 Linux-only. The user gate in pending decisions is unchanged.
+
+**Correction, same day: the host above is not the Mac.** The user reports
+`192.168.0.155` is their NAS; the documented Mac route is
+`simonecoletta@192.168.0.108` (verified 2026-09-27, see the Stage 5.5
+blockers and the Stage 5 index). Every 6.1 and 6.2 SSH attempt on record
+went to the NAS — ping answering and key refusal there say nothing about
+the Mac, so "authentication refused" was never actually tested against the
+Mac and the tables above mislabel their target. `192.168.0.108` currently
+returns `No route to host` (ping 100% loss, ARP FAILED, mDNS unresolvable),
+so the Mac is down or off-network and native validation stays blocked on
+reachability, not just authentication. No macOS evidence is claimed
+anywhere; the pending-decisions gate now names the correct host.
 
 ## 7. Handoff
 
