@@ -158,11 +158,6 @@ func overviewLines(m *model, s *core.DashboardSnapshot) []string {
 		lines = append(lines, fmt.Sprintf("Run: %s · %s · %s", clean(run.RunID), clean(run.State), clean(run.RuntimeKind)))
 		lines = append(lines, fmt.Sprintf("Budgets: active %dms charged · wall %dms consumed", run.ActiveChargedMS, run.WallConsumedMS))
 		lines = append(lines, "Activity: "+clean(run.ActivitySummary))
-		if run.SessionID != "" {
-			lines = append(lines, "Session: "+clean(run.SessionID))
-		} else {
-			lines = append(lines, "Session: none")
-		}
 	} else {
 		lines = append(lines, "Run: no run is active")
 	}
@@ -208,6 +203,6 @@ func overviewLines(m *model, s *core.DashboardSnapshot) []string {
 	if len(s.Inbox) == 0 {
 		lines = append(lines, "  No pending decisions.")
 	}
-	lines = append(lines, "", "j/k select request · [/] select queue plan · Enter opens request")
+	lines = append(lines, "", "j/k select request · [/] select queue plan · Enter opens request · R run detail")
 	return lines
 }

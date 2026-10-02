@@ -74,6 +74,8 @@ func (m model) focusText() string {
 		return "Focus: Projects"
 	case screenPalette:
 		return "Focus: Palette"
+	case screenRun:
+		return "Focus: Run"
 	}
 	return "Focus: unknown"
 }
@@ -95,6 +97,8 @@ func (m model) lines() []string {
 		return confirmLines(m.confirm)
 	case m.showProjects:
 		return projectsLines(&m)
+	case m.showRun:
+		return runDetailLines(&m, s)
 	}
 	switch m.tab {
 	case 0:
@@ -158,6 +162,8 @@ func (m model) View() tea.View {
 		footer = bindingLine([]Binding{{Key: "Enter/y", Action: "confirm"}, {Key: "Esc/n", Action: "abandon"}}, width)
 	case m.showProjects:
 		footer = bindingLine([]Binding{{Key: "Enter", Action: "switch"}, {Key: "j/k", Action: "move"}, {Key: "Esc", Action: "back"}}, width)
+	case m.showRun:
+		footer = bindingLine([]Binding{{Key: "Esc", Action: "back"}}, width)
 	case m.focused() == screenHelp:
 		footer = bindingLine(globalBindings(), width)
 	default:

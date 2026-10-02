@@ -74,6 +74,13 @@ func helpLines(m *model) []string {
 	if len(screenBindings(focused)) == 0 {
 		lines = append(lines, "  (no mutating keys on this screen)")
 	}
+	if focused == screenOverview {
+		lines = append(lines, "", "Overview navigation (no persistence).", "")
+		lines = append(lines, "  R  run detail  → project execution-inspect")
+		lines = append(lines, "  Enter  open request in Inbox")
+		lines = append(lines, "  [ ]  select queue plan")
+		lines = append(lines, "  j/k  select request")
+	}
 	lines = append(lines, "", "Global keys (every screen).", "")
 	for _, b := range globalBindings() {
 		lines = append(lines, "  "+b.Key+"  "+b.Action)

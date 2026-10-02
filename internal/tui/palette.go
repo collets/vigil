@@ -37,6 +37,9 @@ func paletteEntries() []paletteEntry {
 	for _, screen := range []screenID{screenOverview, screenTasks, screenInbox, screenHistory, screenDetail} {
 		entries = append(entries, paletteEntry{keys: fmt.Sprint(int(screen) + 1), action: "go " + screen.title(), command: "", global: true})
 	}
+	// Run detail is Overview navigation, not a mutation: it opens from
+	// the Overview focus only, like every other screen-owned row.
+	entries = append(entries, paletteEntry{keys: "R", action: "run detail", command: "project execution-inspect", owner: screenOverview})
 	entries = append(entries,
 		paletteEntry{keys: "?", action: "help", command: "", global: true},
 		paletteEntry{keys: "P", action: "projects", command: "", global: true},

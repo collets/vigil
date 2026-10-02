@@ -138,9 +138,16 @@ func TestMainDashboardShowsP15WithoutNavigation(t *testing.T) {
 	}
 	m := model{ctx: context.Background(), snapshot: &snapshot, width: 120, height: 40, tab: 0}
 	view := m.View().Content
-	for _, want := range []string{"Active plan: plan-a", "Current task: t1", "Blocker: waiting on approval", "position 1/2", "run-p15", "Quality per task:", "chk 0/0", "req-block", "req-open", "non-blocking", "unavailable (no observation)", "Session: none"} {
+	for _, want := range []string{"Active plan: plan-a", "Current task: t1", "Blocker: waiting on approval", "position 1/2", "run-p15", "Quality per task:", "chk 0/0", "req-block", "req-open", "non-blocking", "unavailable (no observation)"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("main screen missing %q:\n%s", want, view)
+		}
+	}
+	// The run detail (session handle, generation, allowed-next) lives one
+	// keystroke away on the run screen, never on the main screen.
+	for _, want := range []string{"Session:", "Generation:", "Allowed next:", "Native request key:"} {
+		if strings.Contains(view, want) {
+			t.Fatalf("main screen leaks run detail %q:\n%s", want, view)
 		}
 	}
 	// Age renders on both request lines.

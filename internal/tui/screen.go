@@ -14,6 +14,7 @@ const (
 	screenConfirm
 	screenProjects
 	screenPalette
+	screenRun
 )
 
 // title names the screen on the tab bar and the help listing.
@@ -37,6 +38,8 @@ func (s screenID) title() string {
 		return "Projects"
 	case screenPalette:
 		return "Palette"
+	case screenRun:
+		return "Run"
 	}
 	return "Unknown"
 }
@@ -80,6 +83,8 @@ func pop(m *model) bool {
 	case screenPalette:
 		m.showPalette = false
 		m.palFilter, m.palCursor = "", 0
+	case screenRun:
+		m.showRun = false
 	}
 	return true
 }
@@ -93,6 +98,7 @@ func replace(m *model, tab int) {
 	m.palFilter, m.palCursor = "", 0
 	m.confirm = nil
 	m.showProjects = false
+	m.showRun = false
 	m.quitArmed = false
 }
 

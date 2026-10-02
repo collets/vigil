@@ -214,6 +214,22 @@ func (m model) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.projectCursor = 0
 		push(&m, screenProjects)
 		return m, nil
+	case "R":
+		// Run detail is the Overview's one-keystroke companion: the
+		// main screen shows the run state and a one-line activity
+		// summary, and R opens the full detail as its own screen.
+		// Like every overlay key, R is dismiss-first through help:
+		// pressing it with help open closes help and then opens run
+		// detail. All other overlays swallow it.
+		if len(m.stack) != 0 {
+			return m, nil
+		}
+		if m.focused() != screenOverview {
+			return m, nil
+		}
+		m.showRun = true
+		push(&m, screenRun)
+		return m, nil
 	case "r":
 		if !m.loading {
 			m.loading = true
