@@ -143,23 +143,32 @@ func stage63RemediationCommits(root string) ([]string, error) {
 	return shas, nil
 }
 
-// stage63IsRemediation recognises a commit that answers a review round. The
-// three pre-review bookkeeping commits do not match and are correctly excluded.
+// stage63IsRemediation decides whether a commit after the rejected candidate is a
+// remediation. The rule is inverted deliberately: everything counts as a
+// remediation EXCEPT three named bookkeeping commits.
+//
+// An earlier draft enumerated the *remediation* subject prefixes instead. That
+// under-counted the moment a remediation was committed with a subject the list
+// had not seen — which happened at once, on the commit that introduced this file.
+// A whitelist of exclusions fails closed toward under-counting the thing being
+// measured; a whitelist of inclusions fails toward the same place. The exclusions
+// are a closed, checkable set, so the inversion is the safer shape.
 func stage63IsRemediation(subject string) bool {
-	for _, prefix := range []string{
-		"stage 6.3: fix the rejected candidate",
-		"stage 6.3: fix the round-",
-		"stage 6.3: close the round-",
-		"stage 6.3: record round ",
-		"stage 6.3: record the round-",
-		"stage 6.3: correct the remediation count",
-		"stage 6.3: gate the remediation count",
-	} {
-		if strings.HasPrefix(subject, prefix) {
-			return true
+	for _, excluded := range stage63BookkeepingSubjects {
+		if subject == excluded {
+			return false
 		}
 	}
-	return false
+	return true
+}
+
+// stage63BookkeepingSubjects are the three commits between the rejected
+// candidate and the first review round. They record evidence and next actions
+// and answer no round, so they are not remediations.
+var stage63BookkeepingSubjects = []string{
+	"stage 6.3: record native macOS evidence and the checkpoint review record",
+	"stage 6.3: point the next action at the candidate review",
+	"stage 6.3: record that the candidate review dispatch was rate limited",
 }
 
 func stage63Spell(n int) string {
@@ -172,9 +181,17 @@ func stage63Spell(n int) string {
 
 func stage63Ordinal(n int) string {
 	word := stage63Spell(n)
+	// English is not regular here: fifth, ninth and twelfth each end in a way
+	// that neither "-y becomes -ieth" nor a bare suffix produces. The three
+	// irregulars are listed because they are listed, not because a rule was
+	// found that covers them.
 	switch word {
+	case "five":
+		return "fifth"
 	case "nine":
 		return "ninth"
+	case "twelve":
+		return "twelfth"
 	case "":
 		return ""
 	}
