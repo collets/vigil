@@ -1350,8 +1350,8 @@ plan for the sub-stage it is running:
 
 State as written: 6.1 complete, 6.2 complete and accepted at `582e2d1`, and
 6.3 implemented on its task branch through checkpoints A–D with its candidate
-**rejected** at `f4196fb` and **seven** remediations applied; rounds 10–16
-reviewed remediations 1–7, each returning conditional, and only the **seventh**
+**rejected** at `f4196fb` and **eight** remediations applied; rounds 10–16
+reviewed remediations 1–7, each returning conditional, and only the **eighth**
 awaits its narrow follow-up review, recorded in
 [`6.3-review.md`](6.3-review.md). **6.3 is not accepted**, and no document
 records it as accepted. Native macOS evidence was obtained at `f4196fb`;
