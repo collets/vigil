@@ -77,12 +77,13 @@ func TestOverviewKeepsRunToOneLine(t *testing.T) {
 	m.snapshot.Run.SessionID = "session-1"
 	m.snapshot.Run.ActivitySummary = "plan_queued, dispatch_selected"
 	view := m.View().Content
-	for _, want := range []string{"Run: run-1", "plan_queued, dispatch_selected"} {
+	for _, want := range []string{"Run: run-1", "plan_queued, dispatch_selected", "Session: session-1"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("overview missing %q:\n%s", want, view)
 		}
 	}
-	for _, want := range []string{"Session:", "Allowed next:", "Generation:", "Native request key:"} {
+	// The detail beyond the P15 elements stays one keystroke away.
+	for _, want := range []string{"Allowed next:", "Generation:", "Native request key:"} {
 		if strings.Contains(view, want) {
 			t.Fatalf("overview carries run detail %q", want)
 		}
@@ -120,11 +121,14 @@ func TestRunDetailShowsFullIdentity(t *testing.T) {
 	m.snapshot.Run.WallConsumedMS = 5000
 	m.snapshot.Run.ActiveLimitMS = 600000
 	m.snapshot.Run.ActiveChargedMS = 1200
+	m.snapshot.Run.BudgetObserved = true
+	m.snapshot.Run.TaskChargedMS = 40000
+	m.snapshot.Run.TaskLimitMS = 2700000
 	m.snapshot.Run.Activity = []core.ActivityItem{{Sequence: 9, At: 1728000000000, Label: "plan_queued"}}
 	updated, _ := m.Update(tea.KeyPressMsg{Code: 'R', Text: "R"})
 	m = updated.(model)
 	view := m.View().Content
-	for _, want := range []string{"gen-1", "session-1", "turn-1", "task-1", "plan-1", "5000ms consumed", "Allowed next: inspect, start, reconcile, stop", "plan_queued", "unavailable (no observation)"} {
+	for _, want := range []string{"gen-1", "session-1", "turn-1", "task-1", "plan-1", "This run: active 1200ms of 600000ms", "wall 5000ms of 1800000ms", "This task (all attempts): 40000ms of 2700000ms", "Allowed next: inspect, start, reconcile, stop", "plan_queued", "unavailable (no observation)"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("run screen missing %q:\n%s", want, view)
 		}

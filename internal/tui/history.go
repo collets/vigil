@@ -70,7 +70,24 @@ func historyLines(m *model, s *core.DashboardSnapshot) []string {
 	} else {
 		header += " · filter: " + clean(m.historyFilter) + " (F cycles, ends at all)"
 	}
-	lines := []string{header, ""}
+	// The cap belongs at the TOP, not below a hundred rows: an operator
+	// with thousands of events would otherwise read "100 of 100" as a
+	// complete history and have to press end to discover otherwise. The
+	// header stays short because the continuation command is too long to
+	// survive a narrow terminal inside it; it gets its own line directly
+	// beneath, where it is visible before any row.
+	capped := len(s.Events) >= historyWindowCap
+	if capped {
+		header += fmt.Sprintf(" · CAPPED at latest %d", historyWindowCap)
+	} else {
+		header += " · complete window"
+	}
+	lines := []string{header}
+	if capped {
+		newest := s.Events[len(s.Events)-1].Sequence
+		lines = append(lines, fmt.Sprintf("Continue with: vigil project events %s --after %d", clean(s.Readiness.Project.ID), newest))
+	}
+	lines = append(lines, "")
 	cursor := min(m.historyCursor, max(0, len(shown)-1))
 	for index, event := range shown {
 		marker := "  "
@@ -85,14 +102,6 @@ func historyLines(m *model, s *core.DashboardSnapshot) []string {
 		} else {
 			lines = append(lines, "No events match the filter.")
 		}
-	}
-	lines = append(lines, "")
-	if len(s.Events) >= historyWindowCap {
-		newest := s.Events[len(s.Events)-1].Sequence
-		lines = append(lines, fmt.Sprintf("Event window capped at the latest %d · newest shown %d", historyWindowCap, newest))
-		lines = append(lines, fmt.Sprintf("Continue with: vigil project events %s --after %d", clean(s.Readiness.Project.ID), newest))
-	} else {
-		lines = append(lines, fmt.Sprintf("Complete window (%d events).", len(s.Events)))
 	}
 	lines = append(lines, "F filter · Enter opens event")
 	return lines

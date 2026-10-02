@@ -311,12 +311,31 @@ p pause · c continue · a advance · u queue · s stop (confirm) · ? help · q
 ```
 
 What changed against §2.8: the Overview names the active plan, queue
-position, current task and blocker, run state, cost honesty marker,
+position, current task and blocker, run state, session, cost honesty marker,
 per-task quality roll-ups and the actionable list — the P15 screen — and
 `u` names its target plan and rank on screen. What did not change: the
 twenty action strings keep their meanings (`u` now carries the displayed
 `plan:rank`, which is why 6.1-F2 stays closed), and every 6.2 invariant
 (scoping, confirmations, help, palette, switcher) still holds.
+
+**Two corrections the candidate review forced into this section**, both of which
+change what the capture above may be read as saying.
+
+*A run with no recorded budget renders unavailable, not zero.* The capture shows
+`Run: no run is active` because this fixture has no run. When a run exists but
+has recorded no budget segment, both the Overview and the run screen render
+`Budgets: unavailable (no recorded segment)`. The first implementation read the
+v1 `time_segments` table, which **no production code writes**, so every run
+rendered a structural zero that read as a measurement — a constant dressed as an
+observation, and the exact failure P16 exists to prevent. The read model now
+reads `active_segments`, the table the supervisor actually writes, and carries
+`BudgetObserved` so absence is distinguishable from a measured zero.
+
+*Attempt and task budgets are reported separately.* They answer different
+questions and comparing them across scopes misreports what remains: the
+attempt's charged time pairs with the attempt limit, and the task-cumulative
+charge pairs with the task ceiling. The run screen prints both, labelled, rather
+than one figure that is wrong after any retry.
 
 Narrow terminals (verbatim footers and tab bars; `NN|` prefixes are measured
 widths):
@@ -347,7 +366,7 @@ esc backs out
 History (`4`, `F` cycles `command_applied`, `Enter` opens event 1):
 
 ```text
-History · showing 7 of 9 events · filter: command_applied (F cycles, ends at all)
+History · showing 7 of 9 events · filter: command_applied (F cycles, ends at all) · complete window
 
 > 1 · 15:17:11 · project.initialize · human
   2 · 15:17:11 · project.configure · human
@@ -357,9 +376,15 @@ History · showing 7 of 9 events · filter: command_applied (F cycles, ends at a
   7 · 15:17:12 · plan.queue · human
   9 · 15:17:12 · plan.queue · human
 
-Complete window (9 events).
 F filter · Enter opens event
 ```
+
+The window state is in the header rather than below the rows: an operator with
+thousands of events must not read "100 of 100" as a complete history and have to
+press `end` to discover otherwise. When the cap does apply, the header says
+`CAPPED at latest 100` and the continuation command gets its own line directly
+beneath it — the command is too long to survive a narrow terminal inside the
+header, so putting it there would truncate the very thing it exists to convey.
 
 Event detail (opened from the cursor above):
 
@@ -609,14 +634,16 @@ observation the operator actually makes.
 **Accumulating.** Every row that Stage 6 plans is present. `Today` is measured and
 final. `Screen`, `Keys` and `Command` are filled in by the owning sub-stage as
 it lands; `Status` becomes `done` only when that sub-stage's completion criteria
-are met — twelve rows (1.1–1.12) are done as of 6.2, and fourteen more
-(2.1–2.8, 2.12, 2.13, 3.3, 3.5–3.7) as of 6.3. Rows 3.2 and 3.4 stay honestly
-partial: 6.3 renders task/plan identity, state, rank, blockers, issues and
-budgets wherever the read models carry them, but the full task detail
-(objective, criteria text, dependencies, context, scope, limits) and the full
-plan detail (specification, criteria, checks, reviewer profile) are not
-screens yet, so claiming them done would be false. 6.9 audits that no row is
-left `planned` without a named owner.
+are met — twelve rows (1.1–1.12) are done as of 6.2, and thirteen more
+(2.1–2.8, 2.13, 3.3, 3.5–3.7) as of 6.3. Three rows stay honestly partial:
+**3.2** and **3.4**, because 6.3 renders task/plan identity, state, rank,
+blockers, issues and budgets wherever the read models carry them, but the full
+task detail (objective, criteria text, dependencies, context, scope, limits)
+and the full plan detail (specification, criteria, checks, reviewer profile)
+are not screens yet; and **2.12**, because the stop confirmation names the run
+and its grace values but does not let them be edited — that is 6.6's execution
+screen. Claiming any of the three done would be false. 6.9 audits that no row
+is left `planned` without a named owner.
 
 Requirement coverage uses the amended R11/R45/R46/R47/R70 and the P13–P18
 conditions in [`core/requirements.md`](../../core/requirements.md).
@@ -646,14 +673,14 @@ conditions in [`core/requirements.md`](../../core/requirements.md).
 | 2.2 | Overview: current task with state, revision and blocker | — | `status` | R45 | present | **done** |
 | 2.3 | Overview: ranked plan queue with the operator's position | `[ ]` | `queue-list` | R45, R62 | present (was never rendered, 6.1-F2) | **done** |
 | 2.4 | Overview + Run detail screen: live run ID, state, generation, wall/active budget | `R` | `execution-inspect` | R45, P04 | present (was absent, 6.1-F1) | **done** |
-| 2.5 | Run detail screen: live session identity and native request key when a session exists | `R` | `execution-inspect` | R45, P04 | present | **done** |
+| 2.5 | Session identity (one line on Overview) and native request key on the run screen | `R` | `execution-inspect` | R45, P04 | present | **done** |
 | 2.6 | Overview summary + Run detail screen: bounded, sanitized agent activity from persisted state | `R` | `events` | R45, P09 | present | **done** |
 | 2.7 | Overview: compact per-task quality status | — | `status` | R45, R24 | present | **done** |
 | 2.8 | Overview: actionable request list with kind, age and blocking state | `Enter` | `inbox` | R45, R51 | present (was count only; the decision surface is 6.4's) | **done** |
 | 2.9 | Project revision and state, always visible | — | `status` | R45 | present | **done** |
 | 2.10 | Runtime and definition issues | — | `status` | R45, P02 | present | **done** |
 | 2.11 | Pause / continue / advance with visible effect | `p` `c` `a` | `pause` `continue` `advance` | R45, R56 | present and exact | **done** |
-| 2.12 | Stop with visible run selection and editable graces (`s` confirms against the run screen's run; grace defaults shown, editing is 6.6's) | `s` | `execution-stop` | R45, R56 | run selection + grace defaults visible | **done** |
+| 2.12 | Stop with visible run selection and editable graces | `s` | `execution-stop` | R45, R56 | partial: the confirmation names the exact run, revision and the grace values the mutator sends; the graces are **not editable**, which is 6.6's execution screen | planned (6.6) |
 | 2.13 | Overview: queue a named plan at an explicit rank | `u` | `queue` | R62 | named plan at its shown rank (was first queueable, no target shown) | **done** |
 
 ### 5.3 Tasks, plans and history
@@ -1241,7 +1268,7 @@ on exit. No credential, config or checkout changed.
 | Full suite `go test -count=1 ./...` | pass, no failures in any package |
 | PTY capture, fresh disposable fixture (`/tmp/vigil-63-repo`), production-path seeding | 110×40 Overview **byte-identical in structure to Linux**, including `Active plan: plan-a · queued · rank 0 (position 1/2)`, `Current task: t1 r1 · draft`, `Blocker: none`, `Run: no run is active`, `Cost/usage: unavailable (no observation)`, the ranked queue with `u queues at rank 0`, and the quality roll-ups; 80 columns truncates prose with `…`; 60 and 40 degrade to `5 bindings · ? for all keys` and `Vigil [Overview] ?`; no binding cut at any width |
 | Run screen (`R`) | renders `Run: no run is active` and the `esc backs out` footer; `esc` returns to Overview |
-| History (`4`, `F`, `Enter`) | `History · showing 7 of 9 events · filter: command_applied`, `Complete window (9 events).`, and event detail `Applied: project.initialize · actor human` — identical behaviour to Linux |
+| History (`4`, `F`, `Enter`) | `History · showing 7 of 9 events · filter: command_applied · complete window` and event detail `Applied: project.initialize · actor human` — identical behaviour to Linux |
 | Key-effect probes, persisted state re-read | `4` then `p`: no change — revision stays 7, state stays `paused` (6.1-F17/6.2 scoping holds natively) |
 | Fixture hygiene | disposable fixture outside every checkout; agent paths removed; normal checkout verified unchanged |
 

@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+
+	"vigil/internal/core"
 )
 
 // screenAction maps a key to its action string only when the focused screen
@@ -24,12 +26,13 @@ func (m *model) screenAction(key string) (string, bool) {
 		case "u":
 			// Queue the queue-cursor plan at its displayed rank. The
 			// action names the plan so the mutator binds the visible
-			// selection instead of the first queueable plan.
-			if len(m.snapshot.Queue) == 0 {
+			// selection instead of the first queueable plan. The cursor
+			// is clamped to the RENDERED window, so this can never name a
+			// plan the screen did not show.
+			entry, ok := m.queueSelection()
+			if !ok {
 				return "", false
 			}
-			cursor := min(max(m.queueCursor, 0), len(m.snapshot.Queue)-1)
-			entry := m.snapshot.Queue[cursor]
 			return fmt.Sprintf("queue:%s:%d", entry.ID, entry.Rank), true
 		case "s":
 			return "stop", true
@@ -115,6 +118,43 @@ func (m *model) taskAction(key string) string {
 	return fmt.Sprintf("%s:%s:%d", prefix, task.ID, task.Revision)
 }
 
+// maxRenderedQueue is how many ranked-queue rows the Overview renders
+// before it reports the remainder. A cursor beyond this window would name
+// a plan the screen never showed, breaking the binding invariant that
+// every action targets the visibly displayed entry.
+const maxRenderedQueue = 10
+
+// maxRenderedRequests is the same bound for the Overview's actionable
+// request list.
+const maxRenderedRequests = 10
+
+// taskWindowCap mirrors the bounded task read in the read model, so the
+// Overview can disclose the bound rather than silently rendering a short
+// list as if it were the whole plan.
+const taskWindowCap = 100
+
+// queueSelection returns the queue entry the cursor currently names,
+// clamped to the rendered window. ok is false when nothing is selectable.
+func (m *model) queueSelection() (core.PlanQueueEntry, bool) {
+	if m.snapshot == nil || len(m.snapshot.Queue) == 0 {
+		return core.PlanQueueEntry{}, false
+	}
+	window := min(maxRenderedQueue, len(m.snapshot.Queue))
+	cursor := min(max(m.queueCursor, 0), window-1)
+	return m.snapshot.Queue[cursor], true
+}
+
+// requestSelection returns the inbox entry the Overview cursor names,
+// clamped to the rendered window so Enter never opens an unrendered row.
+func (m *model) requestSelection() (core.InboxEntry, bool) {
+	if m.snapshot == nil || len(m.snapshot.Inbox) == 0 {
+		return core.InboxEntry{}, false
+	}
+	window := min(maxRenderedRequests, len(m.snapshot.Inbox))
+	cursor := min(max(m.ovInbox, 0), window-1)
+	return m.snapshot.Inbox[cursor], true
+}
+
 // moveCursor advances the focused screen's cursor. Overview's j/k select
 // the actionable request when one exists and the queue plan otherwise.
 func (m *model) moveCursor(delta int) {
@@ -122,9 +162,12 @@ func (m *model) moveCursor(delta int) {
 	case m.focused() == screenInbox && m.snapshot != nil && len(m.snapshot.Inbox) > 0:
 		m.inbox = min(len(m.snapshot.Inbox)-1, max(0, m.inbox+delta))
 	case m.focused() == screenOverview && m.snapshot != nil && len(m.snapshot.Inbox) > 0:
-		m.ovInbox = min(len(m.snapshot.Inbox)-1, max(0, m.ovInbox+delta))
+		// Bounded by the rendered request window, not the inbox length.
+		window := min(maxRenderedRequests, len(m.snapshot.Inbox))
+		m.ovInbox = min(window-1, max(0, m.ovInbox+delta))
 	case m.focused() == screenOverview && m.snapshot != nil && len(m.snapshot.Queue) > 0:
-		m.queueCursor = min(len(m.snapshot.Queue)-1, max(0, m.queueCursor+delta))
+		window := min(maxRenderedQueue, len(m.snapshot.Queue))
+		m.queueCursor = min(window-1, max(0, m.queueCursor+delta))
 	case (m.focused() == screenTasks || m.focused() == screenDetail) && m.snapshot != nil && len(m.snapshot.Tasks) > 0:
 		m.task = min(len(m.snapshot.Tasks)-1, max(0, m.task+delta))
 		m.criterion = 0
@@ -141,7 +184,9 @@ func (m *model) moveCursor(delta int) {
 // must not retarget the selection behind it.
 func (m *model) stepCriterion(delta int) {
 	if m.focused() == screenOverview && m.snapshot != nil && len(m.snapshot.Queue) > 0 {
-		count := len(m.snapshot.Queue)
+		// Wrapping is bounded by the rendered window so the marker is
+		// always on a row the screen actually shows.
+		count := min(maxRenderedQueue, len(m.snapshot.Queue))
 		m.queueCursor = (m.queueCursor + delta + count) % count
 		return
 	}

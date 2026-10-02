@@ -30,7 +30,12 @@ func runDetailLines(m *model, s *core.DashboardSnapshot) []string {
 	} else {
 		lines = append(lines, "Native request key: none")
 	}
-	lines = append(lines, fmt.Sprintf("Budgets: wall %dms consumed of %dms · active %dms charged of %dms · unknown %dms", run.WallConsumedMS, run.WallLimitMS, run.ActiveChargedMS, run.ActiveLimitMS, run.UnknownMS))
+	if !run.BudgetObserved {
+		lines = append(lines, "Budgets: unavailable (no recorded segment)")
+	} else {
+		lines = append(lines, fmt.Sprintf("This run: active %dms of %dms · unknown %dms · wall %dms of %dms", run.ActiveChargedMS, run.ActiveLimitMS, run.UnknownMS, run.WallConsumedMS, run.WallLimitMS))
+		lines = append(lines, fmt.Sprintf("This task (all attempts): %dms of %dms", run.TaskChargedMS, run.TaskLimitMS))
+	}
 	if len(run.AllowedNext) == 0 {
 		lines = append(lines, "Allowed next: none")
 	} else {

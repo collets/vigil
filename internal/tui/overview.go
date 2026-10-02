@@ -66,12 +66,22 @@ func qualityRollup(task core.TaskDetail) string {
 			}
 		}
 	}
-	passedManual := map[string]bool{}
+	// ManualOutcomes is newest-first (ORDER BY evaluated_at DESC), so the
+	// FIRST outcome seen for a criterion is its latest state. A criterion
+	// that passed in attempt 1 and failed in attempt 2 must read as
+	// outstanding, which a set-of-passing-criteria would get backwards.
+	latestManual := map[string]string{}
 	for _, outcome := range task.ManualOutcomes {
 		if idx := strings.LastIndex(outcome, ":"); idx > 0 {
-			if outcome[idx+1:] == "pass" {
-				passedManual[outcome[:idx]] = true
+			if _, seen := latestManual[outcome[:idx]]; !seen {
+				latestManual[outcome[:idx]] = outcome[idx+1:]
 			}
+		}
+	}
+	passedManual := map[string]bool{}
+	for criterion, state := range latestManual {
+		if state == "pass" {
+			passedManual[criterion] = true
 		}
 	}
 	open := 0
@@ -89,6 +99,18 @@ func qualityRollup(task core.TaskDetail) string {
 		return string(runes[:79]) + "…"
 	}
 	return line
+}
+
+// runBudgetLine renders the run's budget accounting. An unobserved budget
+// renders as explicitly unavailable, never as a zero (P16). The attempt
+// and task figures are shown separately because they answer different
+// questions and comparing them across scopes misreports what remains.
+func runBudgetLine(run *core.ActiveRunDetail) string {
+	if !run.BudgetObserved {
+		return "Budgets: unavailable (no recorded segment)"
+	}
+	return fmt.Sprintf("Budgets: run %dms of %dms active (%dms unknown) · wall %dms of %dms · task cumulative %dms of %dms",
+		run.ActiveChargedMS, run.ActiveLimitMS, run.UnknownMS, run.WallConsumedMS, run.WallLimitMS, run.TaskChargedMS, run.TaskLimitMS)
 }
 
 func overviewLines(m *model, s *core.DashboardSnapshot) []string {
@@ -112,19 +134,25 @@ func overviewLines(m *model, s *core.DashboardSnapshot) []string {
 		lines = append(lines, "Active plan: none")
 	}
 	lines = append(lines, "Ranked queue (ties order by plan ID):")
-	const maxQueue = 10
 	for index, entry := range s.Queue {
-		if index >= maxQueue {
-			lines = append(lines, fmt.Sprintf("  …and %d more plans", len(s.Queue)-maxQueue))
+		if index >= maxRenderedQueue {
+			lines = append(lines, fmt.Sprintf("  …and %d more plans (not selectable here)", len(s.Queue)-maxRenderedQueue))
 			break
 		}
 		marker := "  "
 		if index == m.queueCursor {
 			marker = "> "
 		}
+		// The action hint is only advertised on a plan the product will
+		// actually queue. QueuePlan rejects active, blocked, paused and
+		// terminal plans, so promising u there would be promising an
+		// action the command refuses.
 		selected := ""
 		if index == m.queueCursor {
-			selected = fmt.Sprintf(" · u queues at rank %d", entry.Rank)
+			selected = " · not queueable in state " + clean(entry.State)
+			if entry.State == "draft" || entry.State == "ready" || entry.State == "queued" {
+				selected = fmt.Sprintf(" · u queues at rank %d", entry.Rank)
+			}
 		}
 		lines = append(lines, fmt.Sprintf("%s%s · %s · rank %d%s", marker, clean(entry.ID), clean(entry.State), entry.Rank, selected))
 	}
@@ -156,7 +184,15 @@ func overviewLines(m *model, s *core.DashboardSnapshot) []string {
 	if s.Run != nil {
 		run := s.Run
 		lines = append(lines, fmt.Sprintf("Run: %s · %s · %s", clean(run.RunID), clean(run.State), clean(run.RuntimeKind)))
-		lines = append(lines, fmt.Sprintf("Budgets: active %dms charged · wall %dms consumed", run.ActiveChargedMS, run.WallConsumedMS))
+		lines = append(lines, runBudgetLine(run))
+		// One compact session line, not a wall of identity: R45/P15 require
+		// session state on this screen, while the generation, native key
+		// and allowed-next detail stay one keystroke away.
+		if run.SessionID != "" {
+			lines = append(lines, "Session: "+clean(run.SessionID))
+		} else {
+			lines = append(lines, "Session: none")
+		}
 		lines = append(lines, "Activity: "+clean(run.ActivitySummary))
 	} else {
 		lines = append(lines, "Run: no run is active")
@@ -180,14 +216,19 @@ func overviewLines(m *model, s *core.DashboardSnapshot) []string {
 	for _, task := range s.Tasks {
 		lines = append(lines, "  "+qualityRollup(task))
 	}
+	// The task read is bounded at 100 rows in plan order, so a project
+	// whose active plan's tasks fall past that bound would otherwise
+	// render "Current task: none" with no hint that anything was hidden.
+	if len(s.Tasks) >= taskWindowCap {
+		lines = append(lines, fmt.Sprintf("  …task window capped at %d rows; further tasks are in Tasks and Detail", taskWindowCap))
+	}
 	lines = append(lines, "")
 	// Actionable request list with kind, age and blocking state. Enter
 	// opens the selected entry in the Inbox through the screen stack.
 	lines = append(lines, fmt.Sprintf("Actionable requests (%d · Enter opens in Inbox):", len(s.Inbox)))
-	const maxInbox = 10
 	for index, entry := range s.Inbox {
-		if index >= maxInbox {
-			lines = append(lines, fmt.Sprintf("  …and %d more in Inbox", len(s.Inbox)-maxInbox))
+		if index >= maxRenderedRequests {
+			lines = append(lines, fmt.Sprintf("  …and %d more in Inbox (not selectable here)", len(s.Inbox)-maxRenderedRequests))
 			break
 		}
 		marker := "  "

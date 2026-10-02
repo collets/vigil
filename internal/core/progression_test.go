@@ -166,7 +166,12 @@ func seedActiveRun(t *testing.T, e *Engine, runID string, withUsage bool) {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sessions(id,run_id,generation,harness,native_home_ref,workspace_identity,profile_digest,capabilities_json,last_sequence) VALUES(?,?,?,?,?,?,?,?,0)`, "sessionrow-"+runID, runID, "genrow-"+runID, "hermes", "home", "work", "digest", "{}"); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO budget_ledgers(id,scope,plan_id,task_id,active_limit_ms,charged_ms,unknown_ms,revision,updated_at) VALUES(?,?,?,?,?,?,?,?,?)`, "ledger-"+runID, "task", "plan", "first", 600000, 12345, 0, 1, store.Now()); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO budget_ledgers(id,scope,plan_id,task_id,active_limit_ms,charged_ms,unknown_ms,revision,updated_at) VALUES(?,?,?,?,?,?,?,?,?)`, "ledger-"+runID, "task", "plan", "first", 2700000, 40000, 0, 1, store.Now()); err != nil {
+			return err
+		}
+		// The attempt-scoped accounting the read model reports comes from
+		// active_segments, the table the supervisor actually writes.
+		if _, err := tx.ExecContext(ctx, `INSERT INTO active_segments(id,run_id,ledger_id,category,monotonic_started_ns,monotonic_checkpoint_ns,wall_started_at,wall_checkpoint_at,ended_at,charged_ms,unknown_ms) VALUES(?,?,?,?,?,?,?,?,NULL,?,?)`, "seg-"+runID, runID, "ledger-"+runID, "active", 0, 0, 1728000000000, 1728000050000, 12345, 0); err != nil {
 			return err
 		}
 		if withUsage {
@@ -211,11 +216,20 @@ func TestActiveRunDetailExposesBudgetsSessionAndAllowedNext(t *testing.T) {
 	if run.NativeRequestKey != "turn-run-live" {
 		t.Fatal("run native turn handle missing", run.NativeRequestKey)
 	}
-	if run.WallLimitMS != 1800000 || run.ActiveLimitMS != 600000 || run.ActiveChargedMS != 12345 {
-		t.Fatal("run budgets wrong", run)
+	// Attempt-scoped figures come from active_segments and pair with the
+	// attempt limit; task-cumulative figures come from budget_ledgers and
+	// are reported separately so neither is compared against the other.
+	if !run.BudgetObserved {
+		t.Fatal("budget should be observed for a run with a recorded segment")
 	}
-	if run.WallConsumedMS < 0 {
-		t.Fatal("wall consumed negative", run.WallConsumedMS)
+	if run.ActiveLimitMS != 600000 || run.ActiveChargedMS != 12345 {
+		t.Fatal("attempt-scoped budget wrong", run)
+	}
+	if run.WallConsumedMS != 50000 {
+		t.Fatalf("wall consumed is %d, want 50000 from the recorded segment", run.WallConsumedMS)
+	}
+	if run.TaskLimitMS != 2700000 || run.TaskChargedMS != 40000 {
+		t.Fatal("task-cumulative budget wrong", run)
 	}
 	found := false
 	for _, next := range run.AllowedNext {
@@ -312,7 +326,7 @@ func sameStrings(a, b []string) bool {
 func TestAllowedNextMatchesSupervisorRunView(t *testing.T) {
 	cases := []struct {
 		run, runState, genState, submission string
-		want                               []string
+		want                                []string
 	}{
 		{"run-prepared", "prepared", "starting", "not_attempted", []string{"inspect", "start", "reconcile", "stop"}},
 		{"run-active", "active", "active", "writing", []string{"inspect", "start", "reconcile", "stop"}},
@@ -359,6 +373,46 @@ func TestUsageAggregatesMixedProvenance(t *testing.T) {
 	}
 	if detail.Usage.InputTokens != 15 || detail.Usage.OutputTokens != 27 {
 		t.Fatal("mixed totals undercount", detail.Usage)
+	}
+}
+
+// TestBudgetUnobservedNeverReadsAsZero is the 6.3 review round 9 P0
+// regression: a run with no active_segment must report its budget as
+// unobserved, never as a measured zero. The earlier implementation read
+// the v1 `time_segments` table, which no production code ever writes, so
+// every run rendered a structural zero that read as a measurement.
+func TestBudgetUnobservedNeverReadsAsZero(t *testing.T) {
+	_, e, _ := setup(t)
+	apply(t, e, "project.configure", config())
+	apply(t, e, "profile.put", profile())
+	apply(t, e, "plan.put", plan())
+	seedActiveRun(t, e, "run-nosegment", false)
+	// Drop the segment the helper inserted: a prepared run has no open
+	// budget segment until the supervisor writes one.
+	if _, err := e.DB.SQL.Exec(`DELETE FROM active_segments WHERE run_id='run-nosegment'`); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := e.Progression(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Run == nil {
+		t.Fatal("run detail missing")
+	}
+	if detail.Run.BudgetObserved {
+		t.Fatal("budget reported observed with no segment row")
+	}
+	if detail.Run.ActiveChargedMS != 0 || detail.Run.WallConsumedMS != 0 {
+		t.Fatal("unobserved budget carries non-zero figures", detail.Run)
+	}
+	// The time_segments table has no production writer; prove it so this
+	// cannot regress to being read as a source again.
+	var writers int
+	if err := e.DB.SQL.QueryRow(`SELECT count(*) FROM time_segments`).Scan(&writers); err != nil {
+		t.Fatal(err)
+	}
+	if writers != 0 {
+		t.Fatal("time_segments unexpectedly populated")
 	}
 }
 

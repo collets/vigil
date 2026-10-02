@@ -137,15 +137,43 @@ func TestHistoryAnnouncesWindowCap(t *testing.T) {
 		events = append(events, commandEvent(seq, fmt.Sprintf("op-%d", seq%3), "human"))
 	}
 	m := historyModel(events)
-	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
-	m = updated.(model)
 	view := m.View().Content
-	if !strings.Contains(view, "capped at the latest 100") || !strings.Contains(view, "--after 100") {
-		t.Fatal("cap not announced with cursor:\n" + view)
+	// The cap must be in the HEADER: an operator with thousands of events
+	// must not have to scroll a hundred rows to discover the window ends.
+	// Find it by content rather than by line index, so the assertion does
+	// not depend on the shell's exact prefix.
+	header := ""
+	for _, line := range strings.Split(view, "\n") {
+		if strings.HasPrefix(line, "History ·") {
+			header = line
+			break
+		}
+	}
+	if header == "" {
+		t.Fatalf("no History header found:\n%s", view)
+	}
+	if !strings.Contains(header, "CAPPED at latest 100") {
+		t.Fatalf("cap not announced in the header: %q", header)
+	}
+	// The continuation command must be visible ABOVE the event rows and
+	// must survive a narrow terminal, which is why it has its own line.
+	cursor := strings.Index(view, "--after 100")
+	if cursor < 0 {
+		t.Fatalf("no continuation cursor:\n%s", view)
+	}
+	if firstRow := strings.Index(view, "1 · "); firstRow >= 0 && cursor > firstRow {
+		t.Fatalf("continuation cursor is below the event rows:\n%s", view)
 	}
 	short := historyModel(events[:3])
-	if view := short.View().Content; !strings.Contains(view, "Complete window (3 events).") {
-		t.Fatal("complete window not stated:\n" + view)
+	shortHeader := ""
+	for _, line := range strings.Split(short.View().Content, "\n") {
+		if strings.HasPrefix(line, "History ·") {
+			shortHeader = line
+			break
+		}
+	}
+	if !strings.Contains(shortHeader, "complete window") {
+		t.Fatalf("complete window not stated in the header: %q", shortHeader)
 	}
 }
 
@@ -214,6 +242,7 @@ func TestHistoryKeysFromHelpDismissFirst(t *testing.T) {
 		t.Fatalf("F did not apply after dismiss: %q", m.historyFilter)
 	}
 }
+
 // TestHistoryOwnsNoProjectControls proves the 6.2 scoping still holds with
 // the new History keys: p/c/a/u/s persist nothing from History, while F
 // and Enter navigate without mutating.

@@ -5,11 +5,7 @@ import (
 	"database/sql"
 	"strings"
 	"unicode"
-
-	"vigil/internal/store"
 )
-
-func storeNow() int64 { return store.Now() }
 
 // ProgressionPlan is the active plan as seen in one consistent snapshot.
 type ProgressionPlan struct {
@@ -40,40 +36,57 @@ type ActivityItem struct {
 // identity, budgets and the allowed next commands, plus a bounded activity
 // summary. A nil *ActiveRunDetail means no run is active.
 type ActiveRunDetail struct {
-	RunID            string         `json:"run_id"`
-	State            string         `json:"state"`
-	RuntimeKind      string         `json:"runtime_kind"`
-	TaskID           string         `json:"task_id"`
-	PlanID           string         `json:"plan_id"`
-	GenerationID     string         `json:"generation_id"`
-	GenerationState  string         `json:"generation_state"`
-	SessionID        string         `json:"session_id,omitempty"`
-	NativeRequestKey string         `json:"native_request_key,omitempty"`
-	WallLimitMS      int64          `json:"wall_limit_ms"`
-	ActiveLimitMS    int64          `json:"active_limit_ms"`
-	ActiveChargedMS  int64          `json:"active_charged_ms"`
-	// WallConsumedMS is elapsed wall time recorded in time_segments for
-	// this run: closed segments contribute duration_ms and the open
-	// segment contributes now-started_at at read time. Zero means none
-	// recorded, not a measured zero-cost run.
-	WallConsumedMS   int64          `json:"wall_consumed_ms"`
-	UnknownMS        int64          `json:"unknown_ms"`
-	AllowedNext      []string       `json:"allowed_next_commands"`
-	Activity         []ActivityItem `json:"recent_activity"`
-	ActivitySummary  string         `json:"activity_summary"`
+	RunID            string `json:"run_id"`
+	State            string `json:"state"`
+	RuntimeKind      string `json:"runtime_kind"`
+	TaskID           string `json:"task_id"`
+	PlanID           string `json:"plan_id"`
+	GenerationID     string `json:"generation_id"`
+	GenerationState  string `json:"generation_state"`
+	SessionID        string `json:"session_id,omitempty"`
+	NativeRequestKey string `json:"native_request_key,omitempty"`
+	WallLimitMS      int64  `json:"wall_limit_ms"`
+	ActiveLimitMS    int64  `json:"active_limit_ms"`
+	// BudgetObserved reports whether the application has recorded any
+	// active_segment for this run. It is false when nothing has been
+	// recorded, and a view must then render "unavailable" rather than a
+	// zero, which is the honesty rule P16 exists to enforce. The v1 table
+	// `time_segments` is deliberately NOT read here: it has no production
+	// writer, so reading it yielded a structural zero that read as a
+	// measurement. `active_segments` is the table the supervisor writes.
+	BudgetObserved bool `json:"budget_observed"`
+	// ActiveChargedMS is this RUN's charged time summed from
+	// active_segments, and is therefore attempt-scoped: it is comparable
+	// with ActiveLimitMS, which comes from the same attempt.
+	ActiveChargedMS int64 `json:"active_charged_ms"`
+	// WallConsumedMS is this run's recorded elapsed wall time, summed as
+	// (wall_checkpoint_at - wall_started_at) over its active segments.
+	WallConsumedMS int64 `json:"wall_consumed_ms"`
+	// TaskChargedMS, TaskLimitMS and UnknownMS are the TASK-cumulative
+	// accounting from budget_ledgers (scope='task'), which spans every
+	// attempt of the task. They stay separate from the attempt-scoped
+	// pair above on purpose: pairing an attempt limit with a task
+	// cumulative charge misreports the remaining allowance after any
+	// retry, which is what 6.3's review round 9 found.
+	TaskChargedMS   int64          `json:"task_charged_ms"`
+	TaskLimitMS     int64          `json:"task_limit_ms"`
+	UnknownMS       int64          `json:"unknown_ms"`
+	AllowedNext     []string       `json:"allowed_next_commands"`
+	Activity        []ActivityItem `json:"recent_activity"`
+	ActivitySummary string         `json:"activity_summary"`
 }
 
 // UsageSummary reports cost/usage honesty for the main screen. Observed is
 // false when the application recorded nothing, and the view must render an
 // explicit unavailable marker in that case, never a zero.
 type UsageSummary struct {
-	Observed        bool   `json:"observed"`
-	Provenance      string `json:"provenance,omitempty"`
-	InputTokens     int64  `json:"input_tokens,omitempty"`
-	OutputTokens    int64  `json:"output_tokens,omitempty"`
-	HasCost         bool   `json:"has_cost,omitempty"`
-	CostMicrounits  int64  `json:"cost_microunits,omitempty"`
-	Currency        string `json:"currency,omitempty"`
+	Observed       bool   `json:"observed"`
+	Provenance     string `json:"provenance,omitempty"`
+	InputTokens    int64  `json:"input_tokens,omitempty"`
+	OutputTokens   int64  `json:"output_tokens,omitempty"`
+	HasCost        bool   `json:"has_cost,omitempty"`
+	CostMicrounits int64  `json:"cost_microunits,omitempty"`
+	Currency       string `json:"currency,omitempty"`
 }
 
 // ProgressionDetail exposes the R45/P15 main-screen state from one
@@ -241,12 +254,21 @@ func readActiveRunDetail(ctx context.Context, tx *sql.Tx, runID string, events [
 		}
 		submissionState = ""
 	}
-	// Budget consumed from the task ledger when present.
-	_ = tx.QueryRowContext(ctx, `SELECT coalesce(charged_ms,0),coalesce(unknown_ms,0) FROM budget_ledgers WHERE scope='task' AND task_id=?`, detail.TaskID).Scan(&detail.ActiveChargedMS, &detail.UnknownMS)
-	// Wall consumed from time segments: closed segments contribute
-	// duration_ms, the open segment contributes now-started_at.
-	now := storeNow()
-	_ = tx.QueryRowContext(ctx, `SELECT coalesce(sum(duration_ms),0)+coalesce(sum(CASE WHEN ended_at IS NULL THEN ?-started_at ELSE 0 END),0) FROM time_segments WHERE run_id=?`, now, runID).Scan(&detail.WallConsumedMS)
+	// Attempt-scoped accounting from active_segments, the table the
+	// supervisor actually writes: this run's charged time, its unknown
+	// time, and its recorded elapsed wall time. When no segment exists
+	// the run's budget is unobserved, not zero.
+	var segments int
+	var charged, unknown, wall int64
+	if err := tx.QueryRowContext(ctx, `SELECT count(*),coalesce(sum(charged_ms),0),coalesce(sum(unknown_ms),0),coalesce(sum(max(wall_checkpoint_at-wall_started_at,0)),0) FROM active_segments WHERE run_id=?`, runID).Scan(&segments, &charged, &unknown, &wall); err == nil {
+		detail.BudgetObserved = segments > 0
+		detail.ActiveChargedMS = charged
+		detail.UnknownMS = unknown
+		detail.WallConsumedMS = wall
+	}
+	// Task-cumulative accounting from the task ledger, kept separate from
+	// the attempt-scoped fields above. UnknownMS stays attempt-scoped.
+	_ = tx.QueryRowContext(ctx, `SELECT coalesce(charged_ms,0),active_limit_ms FROM budget_ledgers WHERE scope='task' AND task_id=?`, detail.TaskID).Scan(&detail.TaskChargedMS, &detail.TaskLimitMS)
 	// Session identity: the durable sessions row when one exists,
 	// otherwise the generation's native session handle. The durable id
 	// and the provider handle live in different domains; the durable

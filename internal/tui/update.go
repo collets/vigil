@@ -22,8 +22,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inbox = min(m.inbox, max(0, len(msg.snapshot.Inbox)-1))
 			m.task = min(m.task, max(0, len(msg.snapshot.Tasks)-1))
 			m.historyCursor = min(m.historyCursor, max(0, len(filteredEvents(msg.snapshot.Events, m.historyFilter))-1))
-			m.queueCursor = min(m.queueCursor, max(0, len(msg.snapshot.Queue)-1))
-			m.ovInbox = min(m.ovInbox, max(0, len(msg.snapshot.Inbox)-1))
+			m.queueCursor = min(m.queueCursor, max(0, min(maxRenderedQueue, len(msg.snapshot.Queue))-1))
+			m.ovInbox = min(m.ovInbox, max(0, min(maxRenderedRequests, len(msg.snapshot.Inbox)-1)))
 			if len(msg.snapshot.Tasks) == 0 || len(msg.snapshot.Tasks[m.task].ManualCriteria) == 0 {
 				m.criterion = 0
 			} else {
@@ -239,9 +239,16 @@ func (m model) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		// On Overview, Enter opens the selected actionable request in
 		// the Inbox through the screen stack, so the main screen is a
 		// genuine entry point rather than a second inbox.
-		if m.focused() == screenOverview && m.snapshot != nil && len(m.snapshot.Inbox) > 0 {
-			m.inbox = min(max(m.ovInbox, 0), len(m.snapshot.Inbox)-1)
-			replace(&m, 2)
+		if m.focused() == screenOverview {
+			if entry, ok := m.requestSelection(); ok {
+				for index, candidate := range m.snapshot.Inbox {
+					if candidate.ID == entry.ID {
+						m.inbox = index
+						break
+					}
+				}
+				replace(&m, 2)
+			}
 			return m, nil
 		}
 		// On History, Enter opens the cursor event's sanitized detail

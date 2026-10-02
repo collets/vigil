@@ -3,8 +3,10 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -138,14 +140,15 @@ func TestMainDashboardShowsP15WithoutNavigation(t *testing.T) {
 	}
 	m := model{ctx: context.Background(), snapshot: &snapshot, width: 120, height: 40, tab: 0}
 	view := m.View().Content
-	for _, want := range []string{"Active plan: plan-a", "Current task: t1", "Blocker: waiting on approval", "position 1/2", "run-p15", "Quality per task:", "chk 0/0", "req-block", "req-open", "non-blocking", "unavailable (no observation)"} {
+	for _, want := range []string{"Active plan: plan-a", "Current task: t1", "Blocker: waiting on approval", "position 1/2", "run-p15", "Quality per task:", "chk 0/0", "req-block", "req-open", "non-blocking", "unavailable (no observation)", "Session: none"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("main screen missing %q:\n%s", want, view)
 		}
 	}
-	// The run detail (session handle, generation, allowed-next) lives one
-	// keystroke away on the run screen, never on the main screen.
-	for _, want := range []string{"Session:", "Generation:", "Allowed next:", "Native request key:"} {
+	// R45/P15 require the live run AND session state on this screen; the
+	// remaining run detail (generation, allowed-next, native key) lives
+	// one keystroke away and must not flood this screen.
+	for _, want := range []string{"Generation:", "Allowed next:", "Native request key:"} {
 		if strings.Contains(view, want) {
 			t.Fatalf("main screen leaks run detail %q:\n%s", want, view)
 		}
@@ -245,6 +248,153 @@ func TestUnavailableMarkerRendersForUnobservedCost(t *testing.T) {
 	withCost.tab, withCost.width, withCost.height = 0, 120, 40
 	if view := withCost.View().Content; !strings.Contains(view, "cost 4500µUSD") {
 		t.Fatal("cost not rendered:\n" + view)
+	}
+}
+
+// TestQueueCursorCannotNameAnUnrenderedPlan is the round 9 P1-1
+// regression: with more plans than the Overview renders, the queue cursor
+// must never select past the rendered window, so u can never queue a plan
+// the screen never showed.
+func TestQueueCursorCannotNameAnUnrenderedPlan(t *testing.T) {
+	queue := make([]core.PlanQueueEntry, 0, 14)
+	for i := 1; i <= 14; i++ {
+		queue = append(queue, core.PlanQueueEntry{ID: fmt.Sprintf("plan-%02d", i), Revision: 1, Rank: i - 1, State: "draft"})
+	}
+	snapshot := core.DashboardSnapshot{
+		Readiness: core.Readiness{Project: core.Project{ID: "fixture", Revision: 1, State: "paused"}},
+		Queue:     queue,
+	}
+	snapshot.Progression = core.ProgressionDetail{ProjectID: "fixture", ProjectRev: 1, Queue: queue, QueuePosition: 0}
+	snapshot.Progression.ActivePlan = &core.ProgressionPlan{ID: "plan-01", Revision: 1, State: "draft", Rank: 0}
+	actions := make(chan string, 64)
+	m := model{ctx: context.Background(), snapshot: &snapshot, width: 120, height: 40, tab: 0, mutate: func(_ context.Context, _ core.DashboardSnapshot, action string) error {
+		actions <- action
+		return nil
+	}}
+	// Walk the cursor far past the rendered window.
+	for i := 0; i < 13; i++ {
+		updated, _ := m.Update(tea.KeyPressMsg{Code: ']', Text: "]"})
+		m = updated.(model)
+	}
+	if m.queueCursor >= maxRenderedQueue {
+		t.Fatalf("queue cursor %d is past the rendered window %d", m.queueCursor, maxRenderedQueue)
+	}
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'u', Text: "u"})
+	m = updated.(model)
+	if cmd == nil {
+		t.Fatal("u did not start a queue action")
+	}
+	action := cmd().(mutationResult).action
+	_ = updated
+	parts := strings.Split(action, ":")
+	if len(parts) != 3 {
+		t.Fatalf("malformed queue action %q", action)
+	}
+	index, err := strconv.Atoi(parts[1][len("plan-"):])
+	if err != nil || index > maxRenderedQueue {
+		t.Fatalf("u queued %q, which is outside the rendered window", action)
+	}
+	// The rendered rows must carry the focus marker, or nothing is focused.
+	if view := m.View().Content; !strings.Contains(view, "> plan-") {
+		t.Fatal("no queue row carries the focus marker:\n" + view)
+	}
+	// The overflow notice must disclose that the remainder is unselectable.
+	if view := m.View().Content; !strings.Contains(view, "not selectable here") {
+		t.Fatal("queue overflow not disclosed:\n" + view)
+	}
+}
+
+// TestQueueCursorBoundedOnLoad proves a reload cannot leave the cursor
+// pointing past the rendered window.
+func TestQueueCursorBoundedOnLoad(t *testing.T) {
+	queue := make([]core.PlanQueueEntry, 0, 30)
+	for i := 1; i <= 30; i++ {
+		queue = append(queue, core.PlanQueueEntry{ID: fmt.Sprintf("plan-%02d", i), Revision: 1, Rank: i - 1, State: "draft"})
+	}
+	m := model{ctx: context.Background(), width: 120, height: 40, tab: 0}
+	updated, _ := m.Update(loaded{snapshot: core.DashboardSnapshot{Queue: queue}})
+	m = updated.(model)
+	if m.queueCursor >= maxRenderedQueue {
+		t.Fatalf("queue cursor %d past window %d after load", m.queueCursor, maxRenderedQueue)
+	}
+}
+
+// TestOverviewEnterCannotOpenAnUnrenderedRequest is the P2-1 regression:
+// with more requests than the Overview renders, Enter must open a row the
+// screen actually showed.
+func TestOverviewEnterCannotOpenAnUnrenderedRequest(t *testing.T) {
+	inbox := make([]core.InboxEntry, 0, 15)
+	for i := 1; i <= 15; i++ {
+		inbox = append(inbox, core.InboxEntry{ID: fmt.Sprintf("req-%02d", i), Kind: "approval"})
+	}
+	snapshot := core.DashboardSnapshot{
+		Readiness: core.Readiness{Project: core.Project{ID: "fixture", Revision: 1, State: "paused"}},
+		Inbox:     inbox,
+	}
+	m := model{ctx: context.Background(), snapshot: &snapshot, width: 120, height: 40, tab: 0}
+	for i := 0; i < 14; i++ {
+		updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+		m = updated.(model)
+	}
+	if m.ovInbox >= maxRenderedRequests {
+		t.Fatalf("request cursor %d is past the rendered window", m.ovInbox)
+	}
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = updated.(model)
+	if cmd != nil || m.tab != 2 {
+		t.Fatal("Enter did not open the inbox")
+	}
+	if m.inbox >= maxRenderedRequests {
+		t.Fatalf("Enter opened inbox row %d, outside the rendered window", m.inbox)
+	}
+}
+
+// TestUnobservedBudgetRendersUnavailable is the round 9 P0 regression at
+// the view layer: a run with no recorded budget segment must render an
+// explicit unavailable marker, never a zero.
+func TestUnobservedBudgetRendersUnavailable(t *testing.T) {
+	m := scopedModel()
+	m.tab, m.width, m.height = 0, 120, 40
+	m.snapshot.Run = &core.ActiveRunDetail{RunID: "run-1", State: "active", RuntimeKind: "synthetic", BudgetObserved: false, AllowedNext: []string{"inspect"}, ActivitySummary: "no recorded activity"}
+	view := m.View().Content
+	if !strings.Contains(view, "Budgets: unavailable (no recorded segment)") {
+		t.Fatalf("unobserved budget not marked unavailable:\n%s", view)
+	}
+	for _, forbidden := range []string{"active 0ms", "wall 0ms"} {
+		if strings.Contains(view, forbidden) {
+			t.Fatalf("unobserved budget rendered as a zero (%q):\n%s", forbidden, view)
+		}
+	}
+	m.snapshot.Run.BudgetObserved = true
+	m.snapshot.Run.ActiveChargedMS = 1200
+	m.snapshot.Run.ActiveLimitMS = 600000
+	m.snapshot.Run.WallConsumedMS = 5000
+	m.snapshot.Run.WallLimitMS = 1800000
+	m.snapshot.Run.TaskChargedMS = 40000
+	m.snapshot.Run.TaskLimitMS = 2700000
+	view = m.View().Content
+	if !strings.Contains(view, "run 1200ms of 600000ms active") || !strings.Contains(view, "task cumulative 40000ms of 2700000ms") {
+		t.Fatalf("observed budget not rendered with separated scopes:\n%s", view)
+	}
+}
+
+// TestManualRollupUsesTheLatestOutcome is the P2-4 regression: a criterion
+// that passed then failed must render as outstanding, not satisfied.
+func TestManualRollupUsesTheLatestOutcome(t *testing.T) {
+	// ManualOutcomes is newest-first, so the FIRST entry is the latest
+	// state. A criterion that failed most recently is outstanding even if
+	// an earlier attempt passed it.
+	task := core.TaskDetail{ID: "t1", ManualOutcomes: []string{"c1:fail", "c1:pass"}, ManualCriteria: []string{"c1"}}
+	if line := qualityRollup(task); !strings.Contains(line, "man 1") {
+		t.Fatalf("a latest fail must make the criterion outstanding: %q", line)
+	}
+	task = core.TaskDetail{ID: "t1", ManualOutcomes: []string{"c1:pass", "c1:fail"}, ManualCriteria: []string{"c1"}}
+	if line := qualityRollup(task); !strings.Contains(line, "man 0") {
+		t.Fatalf("a latest pass should satisfy the criterion: %q", line)
+	}
+	task = core.TaskDetail{ID: "t1", ManualOutcomes: []string{"c1:pass"}, ManualCriteria: []string{"c1", "c2"}}
+	if line := qualityRollup(task); !strings.Contains(line, "man 1") {
+		t.Fatalf("one outstanding criterion expected: %q", line)
 	}
 }
 
