@@ -5,7 +5,8 @@
 **Linux-side capture qualification.** §2.9's History block is not one consistent
 capture: its rows are the `f4196fb` measurement, its header and footer are the
 code after the window-state relocation, and the blank line before the footer is
-stale. §6 states this in full.
+stale. §6 states this in full, and separately records the native capture's own
+narrower gap.
 
 Status: **6.3 measured; feature list accumulates.** Stage 6.1 produced the
 measured evidence in §§1–4 and the skeleton feature list in §5. Stage 6.2
@@ -716,7 +717,7 @@ conditions in [`core/requirements.md`](../../core/requirements.md).
 | 3.1 | Task list with state, revision, issues and required checks | `2` | `status` | R06, R34 | present | **done** |
 | 3.2 | Task detail: objective, criteria, dependencies, context, scope, limits | — | `status`, `plan.put` form | R06, R34 | partial: id/state/revision/blocker/issues/checks/quality roll-up render on Tasks, Detail and Overview, but objective text, criteria text, dependencies, context, scope and limits are not shown | planned (6.3 gap: no task-detail screen; 6.9 audit owns the row) |
 | 3.3 | Detail (`5`) + Overview: plan list with state, rank and services budget | `5` | `queue-list` | R07, R62 | present (Detail lists rank/budget; Overview lists the ranked queue) | **done** |
-| 3.4 | Plan detail: specification, criteria, checks, reviewer profile | — | `plan.put` form | R07, R26 | absent: no plan-detail screen exists | planned (6.3 gap: no plan-detail screen; 6.9 audit owns the row) |
+| 3.4 | Plan detail: specification, criteria, checks, reviewer profile | — | `plan.put` form | R07, R26 | partial: id/state/rank/services budget render on Detail and Overview; no specification, criteria, checks or reviewer profile are shown | planned (6.3 gap: no plan-detail screen; 6.9 audit owns the row) |
 | 3.5 | History list with filter | `4`, `F` | `events` | R06 | present (was absent) | **done** |
 | 3.6 | Event detail with sanitized payload | `Enter` | `events` | R06, P07 | present (was absent) | **done** |
 | 3.7 | Explicit notice when the 100-event window truncates | — | `events` | R06 | cap + continuation cursor announced (was silent, 6.1-F20) | **done** |
@@ -1349,11 +1350,13 @@ plan for the sub-stage it is running:
 
 State as written: 6.1 complete, 6.2 complete and accepted at `582e2d1`, and
 6.3 implemented on its task branch through checkpoints A–D with its candidate
-**rejected** at `f4196fb` and five remediations applied, each awaiting the
-narrow follow-up review recorded in
-[`6.3-review.md`](6.3-review.md). Native macOS evidence was obtained at
-`f4196fb`; re-capturing it at the accepted SHA is still open, and §6 says which
-four rendered strings it did not cover. 6.4–6.9 planned and not started. The
+**rejected** at `f4196fb` and **six** remediations applied; rounds 10–15
+reviewed remediations 1–6, each returning conditional, and only the **sixth**
+awaits its narrow follow-up review, recorded in
+[`6.3-review.md`](6.3-review.md). **6.3 is not accepted**, and no document
+records it as accepted. Native macOS evidence was obtained at `f4196fb`;
+re-capturing it at the accepted SHA is still open, and §6 says which four
+rendered strings it did not cover. 6.4–6.9 planned and not started. The
 parity register in §4 is authoritative for classification; the feature list in §5
 is authoritative for what exists and what is owed; §6 is authoritative for what
 was actually run.
