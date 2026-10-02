@@ -406,6 +406,66 @@ func TestProjectSwitcherOffersRegisteredProjects(t *testing.T) {
 	}
 }
 
+// TestPaletteRunsOwnedActionsOnly proves feature row 1.3 without reopening
+// 6.1-F17: the palette reaches every registered action, but a screen-owned
+// action runs only from its screen. From elsewhere the row names its owner.
+func TestPaletteRunsOwnedActionsOnly(t *testing.T) {
+	called := make(chan string, 2)
+	m := scopedModel()
+	m.tab = 0
+	m.width, m.height = 110, 40
+	m.mutate = func(_ context.Context, _ core.DashboardSnapshot, action string) error {
+		called <- action
+		return nil
+	}
+	updated, _ := m.Update(tea.KeyPressMsg{Code: ':', Text: ":"})
+	m = updated.(model)
+	if !m.showPalette {
+		t.Fatal(": did not open the palette")
+	}
+	// Filter to pause and run it: Overview owns pause.
+	for _, key := range []string{"p", "a", "u"} {
+		updated, _ = m.Update(tea.KeyPressMsg{Code: rune(key[0]), Text: key})
+		m = updated.(model)
+	}
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = updated.(model)
+	if cmd == nil {
+		t.Fatal("palette Enter did not run the owned action")
+	}
+	if got := cmd().(mutationResult).action; got != "pause" {
+		t.Fatalf("palette ran %q, want pause", got)
+	}
+	// From History the same row is unavailable and names its owner.
+	m2 := scopedModel()
+	m2.tab = 3
+	m2.width, m2.height = 110, 40
+	m2.mutate = func(context.Context, core.DashboardSnapshot, string) error {
+		t.Fatal("palette bypassed screen scoping")
+		return nil
+	}
+	updated, _ = m2.Update(tea.KeyPressMsg{Code: ':', Text: ":"})
+	m2 = updated.(model)
+	for _, key := range []string{"p", "a", "u"} {
+		updated, _ = m2.Update(tea.KeyPressMsg{Code: rune(key[0]), Text: key})
+		m2 = updated.(model)
+	}
+	updated, cmd = m2.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m2 = updated.(model)
+	if cmd != nil {
+		t.Fatal("palette ran a foreign action")
+	}
+	if !strings.Contains(m2.feedback, "Overview") {
+		t.Fatalf("palette did not name the owning screen: %q", m2.feedback)
+	}
+	// Esc backs out of the palette without quitting.
+	updated, cmd = m2.Update(tea.KeyPressMsg{Code: 0x1b, Text: "esc"})
+	m2 = updated.(model)
+	if cmd != nil || m2.showPalette {
+		t.Fatal("esc did not leave the palette cleanly")
+	}
+}
+
 // TestDestructiveActionsRegistered pins the confirmation registry: every
 // action that consumes authority or can lose progress must confirm.
 func TestDestructiveActionsRegistered(t *testing.T) {

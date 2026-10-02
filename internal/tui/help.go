@@ -15,6 +15,7 @@ func globalBindings() []Binding {
 		{Key: "tab", Action: "next screen", Command: ""},
 		{Key: "j/k", Action: "move focus", Command: ""},
 		{Key: "?", Action: "help", Command: ""},
+		{Key: ":", Action: "palette", Command: ""},
 		{Key: "P", Action: "projects", Command: ""},
 		{Key: "r", Action: "refresh", Command: ""},
 		{Key: "q", Action: "quit", Command: ""},
@@ -78,5 +79,8 @@ func helpLines(m *model) []string {
 		lines = append(lines, "  "+b.Key+"  "+b.Action)
 	}
 	lines = append(lines, "", "esc backs out one level · q quits explicitly.")
+	lines = append(lines, "", "Command palette (:) runs every registered action above,")
+	lines = append(lines, "filtered as you type, but only from the screen that owns it.")
+	lines = append(lines, "", entryPolicyLine())
 	return lines
 }

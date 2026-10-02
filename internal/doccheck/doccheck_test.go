@@ -396,6 +396,28 @@ func flatten(command *cobra.Command) []string {
 	return paths
 }
 
+// --- no control characters in Markdown --------------------------------------
+
+// TestDocsContainNoControlCharacters rejects control characters in any
+// Markdown file. 6.1-K9 showed one can be introduced silently: a commit wrote
+// backticks as 0x08 and neither make docs-check, git diff --check nor any of
+// six reviewers saw it. Tab and newline are legitimate Markdown; every other
+// Cc character fails.
+func TestDocsContainNoControlCharacters(t *testing.T) {
+	for _, file := range markdownFiles(t) {
+		content := readFile(t, file)
+		for index, r := range content {
+			if r == '\n' || r == '\t' {
+				continue
+			}
+			if r < 0x20 || r == 0x7f {
+				line := 1 + strings.Count(content[:index], "\n")
+				t.Errorf("%s:%d: control character U+%04X", file, line, r)
+			}
+		}
+	}
+}
+
 // --- README structure block matches internal/ -------------------------------
 
 // TestDocsStructureBlockListsEveryPackage requires every Go package directory

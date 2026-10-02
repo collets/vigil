@@ -144,6 +144,9 @@ func (m model) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
+	if updated, cmd, handled := m.updatePalette(msg); handled {
+		return updated, cmd
+	}
 	// Help owns only its exit key; every other key closes it first so help
 	// can never swallow a mutation.
 	if m.showHelp {
@@ -193,6 +196,14 @@ func (m model) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.showHelp = true
 		push(&m, screenHelp)
+		return m, nil
+	case ":":
+		if len(m.stack) != 0 {
+			return m, nil
+		}
+		m.showPalette = true
+		m.palFilter, m.palCursor = "", 0
+		push(&m, screenPalette)
 		return m, nil
 	case "P":
 		if len(m.stack) != 0 {

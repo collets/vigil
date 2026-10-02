@@ -59,6 +59,8 @@ func (m *model) switchProject(id string) tea.Cmd {
 	m.mutate = mutate
 	m.showProjects = false
 	m.showHelp = false
+	m.showPalette = false
+	m.palFilter, m.palCursor = "", 0
 	m.confirm = nil
 	m.quitArmed = false
 	m.inputRequest, m.inputAction, m.inputText = "", "", ""

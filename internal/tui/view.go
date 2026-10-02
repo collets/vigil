@@ -72,6 +72,8 @@ func (m model) focusText() string {
 		return "Focus: Confirm"
 	case screenProjects:
 		return "Focus: Projects"
+	case screenPalette:
+		return "Focus: Palette"
 	}
 	return "Focus: unknown"
 }
@@ -85,6 +87,8 @@ func (m model) lines() []string {
 	}
 	s := m.snapshot
 	switch {
+	case m.showPalette:
+		return paletteLines(&m, paletteFilter(paletteEntries(), m.palFilter), m.palCursor)
 	case m.showHelp:
 		return helpLines(&m)
 	case m.confirm != nil:
@@ -144,6 +148,8 @@ func (m model) View() tea.View {
 	footer := fmt.Sprintf("p/c/s control · a/u plan · inbox g/v/x/f/b/i/y/n · h/m/t quality · [/] criterion · q quit  (%d–%d/%d)", start+1, end, len(lines))
 	width := max(1, m.width)
 	switch {
+	case m.showPalette:
+		footer = bindingLine([]Binding{{Key: "Enter", Action: "run"}, {Key: "Esc", Action: "back"}}, width)
 	case m.showHelp:
 		footer = bindingLine(globalBindings(), width)
 	case m.confirm != nil:

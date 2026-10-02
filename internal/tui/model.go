@@ -59,6 +59,9 @@ type model struct {
 
 	// Overlay state.
 	showHelp     bool
+	showPalette  bool
+	palFilter    string
+	palCursor    int
 	confirm      *confirmRequest
 	showProjects bool
 	projectCursor int
