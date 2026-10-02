@@ -1350,9 +1350,11 @@ plan for the sub-stage it is running:
 
 State as written: 6.1 complete, 6.2 complete and accepted at `582e2d1`, and
 6.3 implemented on its task branch through checkpoints A–D with its candidate
-**rejected** at `f4196fb` and **eight** remediations applied; rounds 10–16
-reviewed remediations 1–7, each returning conditional, and only the **eighth**
-awaits its narrow follow-up review, recorded in
+**rejected** at `f4196fb` and **ten** remediations applied; rounds 10–18
+reviewed remediations 1–9 — every one conditional but round 18, which returned
+**rejected** — and only the **tenth** awaits its narrow follow-up review. The
+applied count is now gated by `TestStage63ReviewRecordCountsMatchHistory`, which
+derives it from the commit history rather than from prose., recorded in
 [`6.3-review.md`](6.3-review.md). **6.3 is not accepted**, and no document
 records it as accepted. Native macOS evidence was obtained at `f4196fb`;
 re-capturing it at the accepted SHA is still open, and §6 says which four
