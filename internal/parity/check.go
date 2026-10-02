@@ -97,6 +97,45 @@ type ExclusionRow struct {
 	Reason   string
 }
 
+// ExtractSection returns the document text from a heading to the next
+// heading of equal or higher level. The break depth is derived from the
+// heading itself, so a section with subsections is kept whole while a leaf
+// section ends at its siblings.
+func ExtractSection(document, heading string) string {
+	index := strings.Index(document, heading)
+	if index < 0 {
+		return ""
+	}
+	level := 0
+	for _, r := range heading {
+		if r == '#' {
+			level++
+		} else {
+			break
+		}
+	}
+	lines := strings.Split(document[index+len(heading):], "\n")
+	var kept []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "#") && len(kept) > 0 {
+			depth := 0
+			for _, r := range trimmed {
+				if r == '#' {
+					depth++
+				} else {
+					break
+				}
+			}
+			if depth <= level {
+				break
+			}
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
+}
+
 // ParseExclusionTable extracts the rows of a Markdown exclusion table: the
 // contiguous block of pipe rows following the header. It returns the data
 // rows only, so the header and delimiter never compare as entries.
@@ -153,6 +192,13 @@ func isDelimiter(cells []string) bool {
 func normalise(value string) string {
 	value = strings.ReplaceAll(value, "**", "")
 	value = strings.ReplaceAll(value, "`", "")
+	return strings.Join(strings.Fields(value), " ")
+}
+
+// normaliseClass folds a reason class for comparison: case and the
+// terminal period carry no meaning ("Scope." vs "scope"). Scoped to class
+// comparison only, so full-text pins stay strict.
+func normaliseClass(value string) string {
 	value = strings.TrimSuffix(strings.TrimSpace(value), ".")
 	return strings.ToLower(strings.Join(strings.Fields(value), " "))
 }

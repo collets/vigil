@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"vigil/internal/parity"
 )
 
 // C1: every document asserting 6.1's review state, swept at claim-substance
@@ -313,7 +315,10 @@ func verifyRequirementsBlock(block []string) error {
 
 // C6: the two closed-exclusion-list copies are byte-identical (compared by
 // normalised hash, not by eye). Deviation from the record: the permanent
-// check reads the live documents rather than a scratch copy.
+// check reads the live documents rather than a scratch copy. Parsing and
+// comparison both run through the parity package — the same code the
+// register check uses — so a drift between the two implementations cannot
+// hide a drift between the documents.
 func checkExclusionByteIdentical(root string) error {
 	requirements, err := readDoc(root, "docs/core/requirements.md")
 	if err != nil {
@@ -323,29 +328,12 @@ func checkExclusionByteIdentical(root string) error {
 	if err != nil {
 		return err
 	}
-	canonical, err := exclusionRows(requirements, "The closed exclusion list R11 depends on")
-	if err != nil {
-		return err
-	}
-	mirror, err := exclusionRows(results, "### 5.9 Deliberate exclusions")
-	if err != nil {
-		return err
-	}
+	canonical := parity.ParseExclusionTable(parity.ExtractSection(requirements, "The closed exclusion list R11 depends on"))
+	mirror := parity.ParseExclusionTable(parity.ExtractSection(results, "### 5.9 Deliberate exclusions"))
 	if len(canonical) == 0 || len(mirror) == 0 {
 		return fmt.Errorf("exclusion table parsed empty")
 	}
-	if len(canonical) != 8 {
-		return fmt.Errorf("canonical list has %d entries, want 8", len(canonical))
-	}
-	if len(mirror) != len(canonical) {
-		return fmt.Errorf("mirror has %d entries, canonical has %d", len(mirror), len(canonical))
-	}
-	for i := range canonical {
-		if canonical[i] != mirror[i] {
-			return fmt.Errorf("mirror entry %d differs from canonical", i+1)
-		}
-	}
-	return nil
+	return parity.CheckExclusionMirror(canonical, mirror)
 }
 
 // C7: the next-action floor equals the previous round's reviewed head and
@@ -440,14 +428,8 @@ func checkNoControlCharactersHarness(root string) error {
 		if err != nil {
 			return err
 		}
-		for index, r := range raw {
-			if r == '\n' || r == '\t' {
-				continue
-			}
-			if r < 0x20 || r == 0x7f {
-				line := 1 + strings.Count(raw[:index], "\n")
-				return fmt.Errorf("%s:%d: control character U+%04X", file, line, r)
-			}
+		if line, r, found := firstControlChar(raw); found {
+			return fmt.Errorf("%s:%d: control character U+%04X", file, line, r)
 		}
 	}
 	return nil

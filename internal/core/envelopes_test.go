@@ -105,7 +105,8 @@ func applySource(t *testing.T, source string) string {
 	return source[start:]
 }
 
-
+// TestApplyRejectsUnknownEnvelopeKind shows the list is authoritative at
+// runtime: anything outside EnvelopeKinds is rejected before dispatch.
 func TestApplyRejectsUnknownEnvelopeKind(t *testing.T) {
 	if ValidEnvelopeKind("planning.proposal.invent") {
 		t.Fatal("bogus kind validates")

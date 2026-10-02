@@ -102,15 +102,45 @@ func TestExclusionMirrorIdentical(t *testing.T) {
 func TestParityReasonsMatchRegister(t *testing.T) {
 	results := repoDoc(t, "docs", "research", "stage-6", "results.md")
 	section := exclusionSection(t, results, "## 4. Parity register")
-	flatSection := normalise(section)
+	cells := registerCells(section)
 	for _, entry := range Entries {
 		if entry.Class != ClassCompromise && entry.Class != ClassExcluded {
 			continue
 		}
-		if !strings.Contains(flatSection, normalise(entry.Reason)) {
-			t.Errorf("entry %q reason not found in the Markdown register: %q", entry.Path, entry.Reason)
+		if !cells[normalise(entry.Reason)] {
+			t.Errorf("entry %q reason is not an exact register cell: %q", entry.Path, entry.Reason)
 		}
 	}
+}
+
+// registerCells collects every normalised table cell in a register section.
+// Membership is exact: a shortened or invented reason matches no cell, while
+// a whole-cell move matches exactly one.
+func registerCells(section string) map[string]bool {
+	cells := map[string]bool{}
+	for _, line := range strings.Split(section, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "|") {
+			continue
+		}
+		parts := strings.Split(strings.Trim(trimmed, "|"), "|")
+		delim := true
+		for _, part := range parts {
+			stripped := strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(part), "-", ""), ":", "")
+			if strings.TrimSpace(stripped) != "" {
+				delim = false
+			}
+		}
+		if delim {
+			continue
+		}
+		for _, part := range parts {
+			if text := normalise(part); text != "" {
+				cells[text] = true
+			}
+		}
+	}
+	return cells
 }
 
 // TestParityXReasonsMatchCanonical pins every X row's reason class and text
@@ -145,7 +175,7 @@ func TestParityXReasonsMatchCanonical(t *testing.T) {
 			t.Fatalf("canonical entry %q missing", name)
 		}
 		class, _ := splitReason(entry.Reason)
-		if normalise(class) != normalise(row.Class) {
+		if normaliseClass(class) != normaliseClass(row.Class) {
 			t.Errorf("entry %q reason class %q differs from canonical %q", entry.Path, class, row.Class)
 		}
 	}
@@ -190,43 +220,14 @@ func TestDeliberateUnregistrationFails(t *testing.T) {
 	}
 }
 
-// exclusionSection returns the document text from a heading to the next
-// heading of equal or higher level. The break depth is derived from the
-// heading itself, so a section with subsections (like the register's §4)
-// is kept whole while a leaf section (like §5.9) ends at its siblings.
+// exclusionSection delegates to the same extractor the doccheck harness
+// uses, so the register tests and the harness cannot disagree on section
+// boundaries.
 func exclusionSection(t *testing.T, document, heading string) string {
 	t.Helper()
-	index := strings.Index(document, heading)
-	if index < 0 {
+	section := ExtractSection(document, heading)
+	if section == "" {
 		t.Fatalf("heading %q not found", heading)
 	}
-	level := 0
-	for _, r := range heading {
-		if r == '#' {
-			level++
-		} else {
-			break
-		}
-	}
-	rest := document[index+len(heading):]
-	lines := strings.Split(rest, "\n")
-	var kept []string
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "#") && len(kept) > 0 {
-			depth := 0
-			for _, r := range trimmed {
-				if r == '#' {
-					depth++
-				} else {
-					break
-				}
-			}
-			if depth <= level {
-				break
-			}
-		}
-		kept = append(kept, line)
-	}
-	return strings.Join(kept, "\n")
+	return section
 }

@@ -93,13 +93,12 @@ func TestClaimsC12DetectsWrongSum(t *testing.T) {
 	}
 }
 
-func TestClaimsExclusionRowsParse(t *testing.T) {
-	doc := "### List\n\n| Excluded | Reason class | Reason |\n| --- | --- | --- |\n| `a` | scope | why |\n"
-	rows, err := exclusionRows(doc, "### List")
-	if err != nil || len(rows) != 1 {
-		t.Fatal("exclusion table did not parse:", rows, err)
+func TestClaimsC6ParsesSections(t *testing.T) {
+	section := parity.ExtractSection("### List\n\n| a | b | c |\n", "### List")
+	if !strings.Contains(section, "| a | b | c |") {
+		t.Fatal("section extraction missed the table")
 	}
-	if _, err := exclusionRows("no heading here", "### List"); err == nil {
+	if parity.ExtractSection("no heading here", "### List") != "" {
 		t.Fatal("missing heading passed")
 	}
 }
@@ -170,31 +169,6 @@ func TestClaimsC4Shapes(t *testing.T) {
 	}
 }
 
-func TestClaimsC4DetectsTallies(t *testing.T) {
-	strip := func(joined string) string {
-		idRangePattern := regexpCompile(`6\.1-[A-Z0-9]+-?[0-9]+(…|\.\.\.|-|—)\S*`)
-		joined = idRangePattern.ReplaceAllString(joined, "")
-		joined = regexpCompile(`6\.1-[A-Z0-9]+-?[0-9]+`).ReplaceAllString(joined, "")
-		return joined
-	}
-	shapes := []string{`×\s*P[0-3]`, `\b\d+\s*P[0-3]\s*/`, `P[0-3]\s*/\s*P[0-3]`, `\b[2-9]\d*\s+P[0-3]\b`}
-	fails := func(s string) bool {
-		s = strip(s)
-		for _, shape := range shapes {
-			if regexpCompile(shape).FindString(s) != "" {
-				return true
-			}
-		}
-		return false
-	}
-	if !fails("3×P0, 2×P1") || !fails("4 P0 / 3 P1") || !fails("6 P2") {
-		t.Fatal("tally shapes missed")
-	}
-	if fails("no P0, one P1; remediated") || fails("6.1-P1…P6, in review") {
-		t.Fatal("outcome prose or ID range flagged as tally")
-	}
-}
-
 func TestClaimsC7RejectsBogusRev(t *testing.T) {
 	if gitResolve(repoRoot, "deadbee") == nil {
 		t.Fatal("bogus revision resolved")
@@ -259,20 +233,6 @@ func TestClaimsC15Witness(t *testing.T) {
 	}
 }
 
-func TestClaimsC15WitnessHolds(t *testing.T) {
-	row := "gamma six rows describe three capabilities delta"
-	corpus := row + " plus six rows describe three capabilities elsewhere"
-	flatNeedle := "six rows describe three capabilities"
-	if strings.Count(corpus, flatNeedle) <= strings.Count(row, flatNeedle) {
-		t.Fatal("witness logic inverted")
-	}
-	if strings.Count(row, flatNeedle) <= strings.Count(row, flatNeedle) {
-		t.Log("sanity: row-only occurrence correctly fails the strict inequality")
-	} else {
-		t.Fatal("row-only occurrence passed")
-	}
-}
-
 func TestClaimsC17Contiguity(t *testing.T) {
 	if err := roundIDsContiguous(map[string][]int{"R": {1, 2, 4}}, []string{"R"}); err == nil {
 		t.Fatal("gap passed as contiguous")
@@ -313,18 +273,6 @@ func TestClaimsC6DetectsMirrorDrift(t *testing.T) {
 	}
 }
 
-func TestClaimsC18CountsHeaders(t *testing.T) {
-	src := "// C1: one\n// C1b: folded\n// C2: two\n"
-	headers := regexpCompile(`(?m)^// C(\d+)[ab]?: `).FindAllStringSubmatch(src, -1)
-	seen := map[string]bool{}
-	for _, match := range headers {
-		seen[match[1]] = true
-	}
-	if len(seen) != 2 {
-		t.Fatalf("header fold counted %d, want 2", len(seen))
-	}
-}
-
 func TestClaimsC16ExtractsAssertion(t *testing.T) {
 	quoted, doc, ok := findStillClaim(`| 6.1-X1 | P3 | The cell still states the rule that "exact words here" in ` + "`doc.md` | x |")
 	if !ok || quoted != "exact words here" || doc != "doc.md" {
@@ -332,5 +280,30 @@ func TestClaimsC16ExtractsAssertion(t *testing.T) {
 	}
 	if _, _, ok := findStillClaim("| 6.1-X1 | P3 | ordinary cell without assertion |"); ok {
 		t.Fatal("plain cell matched as assertion")
+	}
+}
+
+func TestClaimsC8DetectsControlChar(t *testing.T) {
+	if _, _, found := firstControlChar("clean text"); found {
+		t.Fatal("clean text flagged")
+	}
+	line, r, found := firstControlChar("a\x08b")
+	if !found || line != 1 || r != 0x08 {
+		t.Fatal("embedded backspace missed:", line, r, found)
+	}
+	if _, _, found := firstControlChar("tab\there"); found {
+		t.Fatal("tab flagged")
+	}
+}
+
+func TestClaimsC11DetectsScopeBreach(t *testing.T) {
+	if err := slicePathsScoped([]string{"docs/a.md", "README.md"}); err != nil {
+		t.Fatal("scoped paths failed:", err)
+	}
+	if err := slicePathsScoped([]string{"internal/core/core.go"}); err == nil {
+		t.Fatal("code path passed slice scoping")
+	}
+	if err := slicePathsScoped([]string{"", "  "}); err == nil {
+		t.Fatal("empty diff passed")
 	}
 }

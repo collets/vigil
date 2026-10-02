@@ -62,7 +62,7 @@ func checkStatusMarkersHarness(root string) error {
 		if err != nil {
 			return err
 		}
-		markers := statusMarkerClaims.FindAllString(stripClaimsCode(raw), -1)
+		markers := countStatusMarkers(raw)
 		if len(markers) != 1 {
 			return fmt.Errorf("%s carries %d status markers, want exactly 1", doc, len(markers))
 		}
@@ -95,18 +95,26 @@ func checkSliceDiff(root string) error {
 	if err != nil {
 		return fmt.Errorf("range 27182de..bad6139 does not resolve: %v", err)
 	}
-	if out == "" {
-		return fmt.Errorf("accepted slice diff is empty")
-	}
-	for _, path := range strings.Split(out, "\n") {
+	return slicePathsScoped(strings.Split(out, "\n"))
+}
+
+// slicePathsScoped asserts a changed-path list is non-empty and scoped to
+// the accepted slice's own path groups.
+func slicePathsScoped(paths []string) error {
+	seen := 0
+	for _, path := range paths {
 		path = strings.TrimSpace(path)
 		if path == "" {
 			continue
 		}
+		seen++
 		if path == "AGENTS.md" || path == "README.md" || strings.HasPrefix(path, "docs/") {
 			continue
 		}
 		return fmt.Errorf("accepted slice touches %q outside docs/, AGENTS.md and README.md", path)
+	}
+	if seen == 0 {
+		return fmt.Errorf("accepted slice diff is empty")
 	}
 	return nil
 }
@@ -199,13 +207,12 @@ func checkAcceptanceProse(root string) error {
 	if len(docs) == 0 {
 		return fmt.Errorf("no status documents to check")
 	}
-	denied := regexp.MustCompile(`(?i)stage ` + regexp.QuoteMeta(stage) + ` is not accepted|not accepted[^.]{0,40}stage ` + regexp.QuoteMeta(stage))
 	for _, doc := range docs {
 		raw, err := readDoc(root, doc)
 		if err != nil {
 			return err
 		}
-		if denied.MatchString(stripClaimsCode(raw)) {
+		if contradictsAcceptance(raw, stage) {
 			return fmt.Errorf("%s contradicts the recorded acceptance of stage %s", doc, stage)
 		}
 	}
@@ -327,9 +334,8 @@ func checkQuotedReplacements(root string) error {
 					continue
 				}
 				candidates++
-				flatRow := strings.Join(strings.Fields(row), " ")
 				flatNeedle := strings.Join(strings.Fields(needle), " ")
-				if strings.Count(flatCorpus, flatNeedle) <= strings.Count(flatRow, flatNeedle) {
+				if !witnessHolds(flatCorpus, strings.Join(strings.Fields(row), " "), flatNeedle) {
 					return fmt.Errorf("quoted replacement has no witness outside its row: %q", needle)
 				}
 			}
@@ -491,13 +497,8 @@ func checkHarnessSelfCount(root string) error {
 		return err
 	}
 	combined := raw + checks1 + checks2
-	sectionHeaders := regexp.MustCompile(`(?m)^// C(\d+)[ab]?: `).FindAllStringSubmatch(combined, -1)
-	seen := map[string]bool{}
-	for _, match := range sectionHeaders {
-		seen[match[1]] = true
-	}
-	if len(seen) != 18 {
-		return fmt.Errorf("harness has %d distinct section numbers, want 18", len(seen))
+	if n := distinctSectionNumbers(combined); n != 18 {
+		return fmt.Errorf("harness has %d distinct section numbers, want 18", n)
 	}
 	// Eighteen sections, enumerated as seventeen items with 1b folded into
 	// item 1: the registry carries eighteen entries while the C1 entry runs

@@ -357,54 +357,8 @@ func normaliseClaim(value string) string {
 	return strings.Join(strings.Fields(value), " ")
 }
 
-// exclusionRows extracts the normalised rows of the exclusion table under a
-// heading: excluded capability, reason class and reason text.
-func exclusionRows(document, heading string) ([]string, error) {
-	index := strings.Index(document, heading)
-	if index < 0 {
-		return nil, fmt.Errorf("heading %q not found", heading)
-	}
-	var rows []string
-	inTable := false
-	for _, line := range strings.Split(document[index:], "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "#") && len(rows) > 0 {
-			depth := 0
-			for _, r := range trimmed {
-				if r == '#' {
-					depth++
-				} else {
-					break
-				}
-			}
-			if depth <= 3 {
-				break
-			}
-		}
-		if !strings.HasPrefix(trimmed, "|") {
-			if len(rows) > 0 {
-				break
-			}
-			continue
-		}
-		var cells []string
-		for _, cell := range strings.Split(strings.Trim(trimmed, "|"), "|") {
-			cells = append(cells, strings.TrimSpace(cell))
-		}
-		if len(cells) < 3 {
-			continue
-		}
-		if isDelimRow(strings.Trim(trimmed, "|")) {
-			inTable = true
-			continue
-		}
-		if !inTable {
-			continue
-		}
-		rows = append(rows, normaliseClaim(cells[0])+"|"+normaliseClaim(cells[1])+"|"+normaliseClaim(cells[2]))
-	}
-	if len(rows) == 0 {
-		return nil, fmt.Errorf("no exclusion rows under %q", heading)
-	}
-	return rows, nil
-}
+// exclusionRows is retired: section extraction and table parsing both run
+// through the parity package now, so C6 shares code with the register check
+// instead of shadowing it. (Removed 2026-10-02 during the D/E follow-up;
+// the parity package's ParseExclusionTable plus CheckExclusionMirror cover
+// it, including the negative test.)
