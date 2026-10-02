@@ -36,6 +36,13 @@ import (
 //     outstanding review is the one that will review the newest commit.
 //   - The rounds table carries exactly one row per review plus one row for the
 //     pending review, so rows = reviewed + 1.
+//   - The gate runs in two states, and must be right in both. Committed, the
+//     history holds every remediation. Authoring, the next remediation exists in
+//     the working tree but not in history. So the document's count must equal the
+//     history count, **or** that count plus one when the working tree carries an
+//     uncommitted change. The tolerance is one and only one, and it exists only
+//     while there is something uncommitted — which is what stops it from
+//     becoming the off-by-one the gate exists to prevent.
 const stage63RejectedCandidate = "f4196fb"
 
 // stage63NonRemediationRounds is the number of early rounds that did not
@@ -53,6 +60,13 @@ func TestStage63ReviewRecordCountsMatchHistory(t *testing.T) {
 		t.Fatal("no remediation commits found; the history walk is broken")
 	}
 	applied := len(shas)
+	// A remediation being authored exists in the working tree and not yet in
+	// history, so the record's count may legitimately be one ahead — but only
+	// while something is uncommitted.
+	expected := applied
+	if stage63WorkingTreeDirty(root) {
+		expected++
+	}
 
 	raw, err := os.ReadFile(filepath.Join(root, review))
 	if err != nil {
@@ -72,9 +86,9 @@ func TestStage63ReviewRecordCountsMatchHistory(t *testing.T) {
 	// At least one applied remediation must be unreviewed — the commit being
 	// written is itself one — or the record could never be describing a
 	// candidate under review.
-	if remediationReviews := len(reviewed) - stage63NonRemediationRounds; remediationReviews >= applied {
-		t.Errorf("%d remediation reviews have run over %d remediation commits; at least one commit must be unreviewed",
-			remediationReviews, applied)
+	if remediationReviews := len(reviewed) - stage63NonRemediationRounds; remediationReviews >= expected {
+		t.Errorf("%d remediation reviews have run over %d remediation commits; at least one must be unreviewed",
+			remediationReviews, expected)
 	}
 	// The three claims the rounds keep getting wrong. Each is asserted against
 	// its own sentence rather than the whole document, because a bare
@@ -91,26 +105,26 @@ func TestStage63ReviewRecordCountsMatchHistory(t *testing.T) {
 		form  *regexp.Regexp
 		spell string
 	}{
-		{"applied count in the status line", regexp.MustCompile(`(?i)\b([a-z]+) remediations applied`), stage63Spell(applied)},
-		{"outstanding ordinal in the status line", regexp.MustCompile(`(?i)follow-up review of the \*\*([a-z]+)\*\* remediation`), stage63Ordinal(applied)},
-		{"outstanding ordinal in the closing section", regexp.MustCompile(`(?i)the \*\*([a-z]+)\*\* remediation has not`), stage63Ordinal(applied)},
+		{"applied count in the status line", regexp.MustCompile(`(?i)\b([a-z]+) remediations applied`), stage63Spell(expected)},
+		{"outstanding ordinal in the status line", regexp.MustCompile(`(?i)follow-up review of the \*\*([a-z]+)\*\* remediation`), stage63Ordinal(expected)},
+		{"outstanding ordinal in the closing section", regexp.MustCompile(`(?i)the \*\*([a-z]+)\*\* remediation has not`), stage63Ordinal(expected)},
 	}
 	for _, claim := range claims {
 		found := claim.form.FindStringSubmatch(doc)
 		if found == nil {
 			t.Errorf("review record states no %s; %d remediation commits exist: %s",
-				claim.what, applied, strings.Join(shas, " "))
+				claim.what, expected, strings.Join(shas, " "))
 			continue
 		}
 		if claim.spell != found[1] {
 			t.Errorf("review record's %s says %q but %d remediation commits exist, so it must say %q",
-				claim.what, found[1], applied, claim.spell)
+				claim.what, found[1], expected, claim.spell)
 		}
 	}
 	// The rounds table must carry exactly one row per review plus the pending
 	// one, and the pending row must name the applied ordinal.
-	if !regexp.MustCompile(`(?m)^\|\s*\d+\s*\|.*` + stage63Ordinal(applied) + ` remediation.*\|\s*\**pending`).MatchString(table) {
-		t.Errorf("no pending row for the %s remediation in the rounds table", stage63Ordinal(applied))
+	if !regexp.MustCompile(`(?m)^\|\s*\d+\s*\|.*` + stage63Ordinal(expected) + ` remediation.*\|\s*\**pending`).MatchString(table) {
+		t.Errorf("no pending row for the %s remediation in the rounds table", stage63Ordinal(expected))
 	}
 }
 
@@ -126,6 +140,13 @@ func stage63RoundsTable(doc string) string {
 		return rest[:end+1]
 	}
 	return rest
+}
+
+// stage63WorkingTreeDirty reports whether anything is uncommitted, which is what
+// makes a count one ahead of the history legitimate rather than merely wrong.
+func stage63WorkingTreeDirty(root string) bool {
+	out, err := exec.Command("git", "-C", root, "status", "--porcelain").Output()
+	return err == nil && strings.TrimSpace(string(out)) != ""
 }
 
 func stage63RemediationCommits(root string) ([]string, error) {
