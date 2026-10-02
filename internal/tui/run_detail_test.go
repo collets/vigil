@@ -122,6 +122,7 @@ func TestRunDetailShowsFullIdentity(t *testing.T) {
 	m.snapshot.Run.ActiveLimitMS = 600000
 	m.snapshot.Run.ActiveChargedMS = 1200
 	m.snapshot.Run.BudgetObserved = true
+	m.snapshot.Run.TaskBudgetObserved = true
 	m.snapshot.Run.TaskChargedMS = 40000
 	m.snapshot.Run.TaskLimitMS = 2700000
 	m.snapshot.Run.Activity = []core.ActivityItem{{Sequence: 9, At: 1728000000000, Label: "plan_queued"}}

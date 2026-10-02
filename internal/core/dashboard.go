@@ -164,7 +164,11 @@ func readDashboardDetails(ctx context.Context, tx *sql.Tx) ([]TaskDetail, []Plan
 		if err := tx.QueryRowContext(ctx, `SELECT coalesce(sum(CASE WHEN f.blocking=1 AND f.resolution='open' THEN 1 ELSE 0 END),0),coalesce(sum(CASE WHEN f.blocking=0 AND f.resolution='open' THEN 1 ELSE 0 END),0) FROM quality_findings_v2 f JOIN review_results_v2 r ON r.id=f.review_id JOIN quality_scopes_v2 s ON s.id=r.scope_id WHERE s.task_id=?`, t.ID).Scan(&t.BlockingFindings, &t.Suggestions); err != nil {
 			return nil, nil, err
 		}
-		manualRows, qerr := tx.QueryContext(ctx, `SELECT m.criterion_id||':'||m.state FROM manual_results_v2 m JOIN quality_scopes_v2 s ON s.id=m.scope_id WHERE s.task_id=? ORDER BY m.evaluated_at DESC LIMIT 20`, t.ID)
+		// Newest outcome per criterion first. rowid is the tiebreaker
+		// because evaluated_at is millisecond-resolution, so a pass and a
+		// fail recorded in the same millisecond would otherwise return in
+		// arbitrary order and the view would pick the wrong one.
+		manualRows, qerr := tx.QueryContext(ctx, `SELECT m.criterion_id||':'||m.state FROM manual_results_v2 m JOIN quality_scopes_v2 s ON s.id=m.scope_id WHERE s.task_id=? ORDER BY m.evaluated_at DESC, m.rowid DESC LIMIT 20`, t.ID)
 		if qerr != nil {
 			return nil, nil, qerr
 		}

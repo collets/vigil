@@ -311,8 +311,25 @@ func TestQueueCursorBoundedOnLoad(t *testing.T) {
 	for i := 1; i <= 30; i++ {
 		queue = append(queue, core.PlanQueueEntry{ID: fmt.Sprintf("plan-%02d", i), Revision: 1, Rank: i - 1, State: "draft"})
 	}
-	m := model{ctx: context.Background(), width: 120, height: 40, tab: 0}
-	updated, _ := m.Update(loaded{snapshot: core.DashboardSnapshot{Queue: queue}})
+	m := model{ctx: context.Background(), snapshot: &core.DashboardSnapshot{Queue: queue}, width: 120, height: 40, tab: 0}
+	// Walk the cursor into the overflow first, or the clamp assertion
+	// below would pass against any bound because the cursor starts at 0.
+	for i := 0; i < 25; i++ {
+		updated, _ := m.Update(tea.KeyPressMsg{Code: ']', Text: "]"})
+		m = updated.(model)
+	}
+	// Now deliver a snapshot whose queue shrank past the window.
+	shrunk := make([]core.PlanQueueEntry, 0, 3)
+	for i := 1; i <= 3; i++ {
+		shrunk = append(shrunk, core.PlanQueueEntry{ID: fmt.Sprintf("plan-%02d", i), Revision: 1, Rank: i - 1, State: "draft"})
+	}
+	updated, _ := m.Update(loaded{snapshot: core.DashboardSnapshot{Queue: shrunk}})
+	m = updated.(model)
+	if m.queueCursor >= len(shrunk) {
+		t.Fatalf("queue cursor %d past the shrunken queue %d", m.queueCursor, len(shrunk))
+	}
+	// And a snapshot at the window bound itself.
+	updated, _ = m.Update(loaded{snapshot: core.DashboardSnapshot{Queue: queue}})
 	m = updated.(model)
 	if m.queueCursor >= maxRenderedQueue {
 		t.Fatalf("queue cursor %d past window %d after load", m.queueCursor, maxRenderedQueue)
@@ -370,11 +387,55 @@ func TestUnobservedBudgetRendersUnavailable(t *testing.T) {
 	m.snapshot.Run.ActiveLimitMS = 600000
 	m.snapshot.Run.WallConsumedMS = 5000
 	m.snapshot.Run.WallLimitMS = 1800000
+	m.snapshot.Run.TaskBudgetObserved = true
 	m.snapshot.Run.TaskChargedMS = 40000
 	m.snapshot.Run.TaskLimitMS = 2700000
 	view = m.View().Content
-	if !strings.Contains(view, "run 1200ms of 600000ms active") || !strings.Contains(view, "task cumulative 40000ms of 2700000ms") {
-		t.Fatalf("observed budget not rendered with separated scopes:\n%s", view)
+	// One line per scope, so neither figure can be truncated away.
+	if !strings.Contains(view, "Budget (this run): 1200ms of 600000ms active · 0ms unknown") {
+		t.Fatalf("attempt-scoped budget not rendered:\n%s", view)
+	}
+	if !strings.Contains(view, "Budget (task, all attempts): 40000ms of 2700000ms") {
+		t.Fatalf("task-cumulative budget not rendered:\n%s", view)
+	}
+	// The task pair must be absent-safe too: an unobserved ledger must not
+	// render as "0ms of 0ms".
+	m.snapshot.Run.TaskBudgetObserved = false
+	if view := m.View().Content; !strings.Contains(view, "Budget (task, all attempts): unavailable (no recorded ledger)") {
+		t.Fatalf("unobserved task budget not marked unavailable:\n%s", view)
+	}
+}
+
+// TestRunDetailUnobservedBudgetRendersUnavailable covers the run screen
+// specifically, which P16 names: an unobserved budget must render an
+// explicit marker there too, never a zero.
+func TestRunDetailUnobservedBudgetRendersUnavailable(t *testing.T) {
+	m := runModel()
+	m.snapshot.Run.BudgetObserved = false
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'R', Text: "R"})
+	m = updated.(model)
+	view := m.View().Content
+	if !strings.Contains(view, "Budgets: unavailable (no recorded segment)") {
+		t.Fatalf("run screen does not mark an unobserved budget:\n%s", view)
+	}
+	for _, forbidden := range []string{"active 0ms", "wall 0ms", "all attempts): 0ms of 0ms"} {
+		if strings.Contains(view, forbidden) {
+			t.Fatalf("run screen rendered an unobserved budget as a zero (%q):\n%s", forbidden, view)
+		}
+	}
+	// Observed, but the task ledger absent: the task pair must degrade
+	// rather than print a zero pair.
+	m.snapshot.Run.BudgetObserved = true
+	m.snapshot.Run.ActiveChargedMS = 1200
+	m.snapshot.Run.ActiveLimitMS = 600000
+	m.snapshot.Run.TaskBudgetObserved = false
+	updated, _ = m.Update(tea.KeyPressMsg{Code: 0x1b, Text: "esc"})
+	m = updated.(model)
+	updated, _ = m.Update(tea.KeyPressMsg{Code: 'R', Text: "R"})
+	m = updated.(model)
+	view = m.View().Content
+	if !strings.Contains(view, "This task (all attempts): unavailable (no recorded ledger)") {
+		t.Fatalf("run screen does not mark an unobserved task ledger:\n%s", view)
 	}
 }
 

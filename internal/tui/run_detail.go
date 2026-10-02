@@ -33,8 +33,12 @@ func runDetailLines(m *model, s *core.DashboardSnapshot) []string {
 	if !run.BudgetObserved {
 		lines = append(lines, "Budgets: unavailable (no recorded segment)")
 	} else {
-		lines = append(lines, fmt.Sprintf("This run: active %dms of %dms · unknown %dms · wall %dms of %dms", run.ActiveChargedMS, run.ActiveLimitMS, run.UnknownMS, run.WallConsumedMS, run.WallLimitMS))
-		lines = append(lines, fmt.Sprintf("This task (all attempts): %dms of %dms", run.TaskChargedMS, run.TaskLimitMS))
+		lines = append(lines, fmt.Sprintf("This run: active %dms of %dms · unknown %dms · wall %dms of %dms (recorded at last checkpoint)", run.ActiveChargedMS, run.ActiveLimitMS, run.UnknownMS, run.WallConsumedMS, run.WallLimitMS))
+		if run.TaskBudgetObserved {
+			lines = append(lines, fmt.Sprintf("This task (all attempts): %dms of %dms", run.TaskChargedMS, run.TaskLimitMS))
+		} else {
+			lines = append(lines, "This task (all attempts): unavailable (no recorded ledger)")
+		}
 	}
 	if len(run.AllowedNext) == 0 {
 		lines = append(lines, "Allowed next: none")

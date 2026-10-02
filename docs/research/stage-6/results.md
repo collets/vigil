@@ -331,11 +331,31 @@ observation, and the exact failure P16 exists to prevent. The read model now
 reads `active_segments`, the table the supervisor actually writes, and carries
 `BudgetObserved` so absence is distinguishable from a measured zero.
 
-*Attempt and task budgets are reported separately.* They answer different
-questions and comparing them across scopes misreports what remains: the
-attempt's charged time pairs with the attempt limit, and the task-cumulative
-charge pairs with the task ceiling. The run screen prints both, labelled, rather
-than one figure that is wrong after any retry.
+*Attempt and task budgets are reported separately, one line per scope.* They
+answer different questions and comparing them across scopes misreports what
+remains: the attempt's charged time pairs with the attempt limit, and the
+task-cumulative charge pairs with the task ceiling. They are separate **lines**
+rather than one assembled string, because the combined string exceeds a
+120-column frame and truncates the task figure away — the same honesty failure
+in a different guise. With a run present the block reads:
+
+```text
+Budget (this run): 1200ms of 600000ms active · 0ms unknown
+Wall (this run, at last checkpoint): 5000ms of 1800000ms
+Budget (task, all attempts): 40000ms of 2700000ms
+Session: session-1
+```
+
+`Session: <id>` is the P15 element the round-9 review restored to this screen,
+and `Session: none` is its form when no session exists. The wall figure is
+labelled *at last checkpoint* because that is when the supervisor advances it —
+mid-turn it lags real elapsed time by up to one turn, and the label says so
+rather than implying precision it does not have.
+
+With a run recorded but **no budget segment**, both screens render
+`Budgets: unavailable (no recorded segment)`, and the task line degrades to
+`Budget (task, all attempts): unavailable (no recorded ledger)` rather than
+`0ms of 0ms`.
 
 Narrow terminals (verbatim footers and tab bars; `NN|` prefixes are measured
 widths):
@@ -1268,9 +1288,20 @@ on exit. No credential, config or checkout changed.
 | Full suite `go test -count=1 ./...` | pass, no failures in any package |
 | PTY capture, fresh disposable fixture (`/tmp/vigil-63-repo`), production-path seeding | 110×40 Overview **byte-identical in structure to Linux**, including `Active plan: plan-a · queued · rank 0 (position 1/2)`, `Current task: t1 r1 · draft`, `Blocker: none`, `Run: no run is active`, `Cost/usage: unavailable (no observation)`, the ranked queue with `u queues at rank 0`, and the quality roll-ups; 80 columns truncates prose with `…`; 60 and 40 degrade to `5 bindings · ? for all keys` and `Vigil [Overview] ?`; no binding cut at any width |
 | Run screen (`R`) | renders `Run: no run is active` and the `esc backs out` footer; `esc` returns to Overview |
-| History (`4`, `F`, `Enter`) | `History · showing 7 of 9 events · filter: command_applied · complete window` and event detail `Applied: project.initialize · actor human` — identical behaviour to Linux |
+| History (`4`, `F`, `Enter`) | `History · showing 7 of 9 events · filter: command_applied (F cycles, ends at all)`, `Complete window (9 events).` below the rows, and event detail `Applied: project.initialize · actor human` — identical behaviour to Linux |
 | Key-effect probes, persisted state re-read | `4` then `p`: no change — revision stays 7, state stays `paused` (6.1-F17/6.2 scoping holds natively) |
 | Fixture hygiene | disposable fixture outside every checkout; agent paths removed; normal checkout verified unchanged |
+
+**What the native capture did NOT cover, stated so it cannot be read as
+coverage.** It was taken at `f4196fb`. The remediation of the round-9 review
+changed four rendered strings: the Overview gained the compact `Session:` line
+(P15), both run screens gained the separated attempt/task budget lines and the
+`Budgets: unavailable (no recorded segment)` marker, the History window state
+moved from below the rows into the header, and the queue and request overflow
+notices were reworded. **None of those four was re-measured natively**, so no
+macOS behaviour is claimed for them. They are Linux-verified by the unit tests
+named in §6 and by the round-10 review; a later native capture at the accepted
+SHA would close this, and 6.9 should take it.
 
 **One macOS-specific measurement note, recorded because it changed the method
 rather than the result.** The Linux capture harness reads the master end only

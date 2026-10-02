@@ -61,16 +61,27 @@ type ActiveRunDetail struct {
 	ActiveChargedMS int64 `json:"active_charged_ms"`
 	// WallConsumedMS is this run's recorded elapsed wall time, summed as
 	// (wall_checkpoint_at - wall_started_at) over its active segments.
+	// "Recorded" is load-bearing: the supervisor advances this only at
+	// checkpoints, so mid-turn it lags real elapsed time.
 	WallConsumedMS int64 `json:"wall_consumed_ms"`
-	// TaskChargedMS, TaskLimitMS and UnknownMS are the TASK-cumulative
-	// accounting from budget_ledgers (scope='task'), which spans every
-	// attempt of the task. They stay separate from the attempt-scoped
-	// pair above on purpose: pairing an attempt limit with a task
-	// cumulative charge misreports the remaining allowance after any
-	// retry, which is what 6.3's review round 9 found.
+	// UnknownMS is this RUN's unproven time, summed from the same
+	// active_segments as ActiveChargedMS and so attempt-scoped too. It
+	// has no ceiling of its own; the supervisor folds it into the
+	// remaining allowance rather than exposing a limit for it.
+	UnknownMS int64 `json:"unknown_ms"`
+	// TaskBudgetObserved reports whether the task ledger row exists. The
+	// supervisor always creates it before any segment, so absence is
+	// unreachable in normal operation — but a bare zero would be a zero
+	// with no reason, so it is reported rather than assumed.
+	TaskBudgetObserved bool `json:"task_budget_observed"`
+	// TaskChargedMS and TaskLimitMS are the TASK-cumulative accounting
+	// from budget_ledgers (scope='task'), spanning every attempt of the
+	// task. They stay separate from the attempt-scoped fields above on
+	// purpose: pairing an attempt limit with a task cumulative charge
+	// misreports the remaining allowance after any retry, which is what
+	// 6.3's review round 9 found.
 	TaskChargedMS   int64          `json:"task_charged_ms"`
 	TaskLimitMS     int64          `json:"task_limit_ms"`
-	UnknownMS       int64          `json:"unknown_ms"`
 	AllowedNext     []string       `json:"allowed_next_commands"`
 	Activity        []ActivityItem `json:"recent_activity"`
 	ActivitySummary string         `json:"activity_summary"`
@@ -267,8 +278,11 @@ func readActiveRunDetail(ctx context.Context, tx *sql.Tx, runID string, events [
 		detail.WallConsumedMS = wall
 	}
 	// Task-cumulative accounting from the task ledger, kept separate from
-	// the attempt-scoped fields above. UnknownMS stays attempt-scoped.
-	_ = tx.QueryRowContext(ctx, `SELECT coalesce(charged_ms,0),active_limit_ms FROM budget_ledgers WHERE scope='task' AND task_id=?`, detail.TaskID).Scan(&detail.TaskChargedMS, &detail.TaskLimitMS)
+	// the attempt-scoped fields above. Absence is reported rather than
+	// rendered as a zero pair.
+	if err := tx.QueryRowContext(ctx, `SELECT coalesce(charged_ms,0),coalesce(active_limit_ms,0) FROM budget_ledgers WHERE scope='task' AND task_id=?`, detail.TaskID).Scan(&detail.TaskChargedMS, &detail.TaskLimitMS); err == nil {
+		detail.TaskBudgetObserved = true
+	}
 	// Session identity: the durable sessions row when one exists,
 	// otherwise the generation's native session handle. The durable id
 	// and the provider handle live in different domains; the durable

@@ -105,12 +105,23 @@ func qualityRollup(task core.TaskDetail) string {
 // renders as explicitly unavailable, never as a zero (P16). The attempt
 // and task figures are shown separately because they answer different
 // questions and comparing them across scopes misreports what remains.
-func runBudgetLine(run *core.ActiveRunDetail) string {
+// runBudgetLines renders the run's budget accounting, one line per scope.
+// They are separate lines rather than one assembled string because the
+// combined line exceeds a narrow frame and truncates away the task figure —
+// which would be the honesty failure in a different guise. An unobserved
+// budget renders as explicitly unavailable, never as a zero (P16).
+func runBudgetLines(run *core.ActiveRunDetail) []string {
 	if !run.BudgetObserved {
-		return "Budgets: unavailable (no recorded segment)"
+		return []string{"Budgets: unavailable (no recorded segment)"}
 	}
-	return fmt.Sprintf("Budgets: run %dms of %dms active (%dms unknown) · wall %dms of %dms · task cumulative %dms of %dms",
-		run.ActiveChargedMS, run.ActiveLimitMS, run.UnknownMS, run.WallConsumedMS, run.WallLimitMS, run.TaskChargedMS, run.TaskLimitMS)
+	lines := []string{fmt.Sprintf("Budget (this run): %dms of %dms active · %dms unknown", run.ActiveChargedMS, run.ActiveLimitMS, run.UnknownMS),
+		fmt.Sprintf("Wall (this run, at last checkpoint): %dms of %dms", run.WallConsumedMS, run.WallLimitMS)}
+	if run.TaskBudgetObserved {
+		lines = append(lines, fmt.Sprintf("Budget (task, all attempts): %dms of %dms", run.TaskChargedMS, run.TaskLimitMS))
+	} else {
+		lines = append(lines, "Budget (task, all attempts): unavailable (no recorded ledger)")
+	}
+	return lines
 }
 
 func overviewLines(m *model, s *core.DashboardSnapshot) []string {
@@ -184,7 +195,7 @@ func overviewLines(m *model, s *core.DashboardSnapshot) []string {
 	if s.Run != nil {
 		run := s.Run
 		lines = append(lines, fmt.Sprintf("Run: %s · %s · %s", clean(run.RunID), clean(run.State), clean(run.RuntimeKind)))
-		lines = append(lines, runBudgetLine(run))
+		lines = append(lines, runBudgetLines(run)...)
 		// One compact session line, not a wall of identity: R45/P15 require
 		// session state on this screen, while the generation, native key
 		// and allowed-next detail stay one keystroke away.
@@ -220,7 +231,7 @@ func overviewLines(m *model, s *core.DashboardSnapshot) []string {
 	// whose active plan's tasks fall past that bound would otherwise
 	// render "Current task: none" with no hint that anything was hidden.
 	if len(s.Tasks) >= taskWindowCap {
-		lines = append(lines, fmt.Sprintf("  …task window capped at %d rows; further tasks are in Tasks and Detail", taskWindowCap))
+		lines = append(lines, fmt.Sprintf("  …task window holds the latest %d rows; the full set is in Tasks and Detail", taskWindowCap))
 	}
 	lines = append(lines, "")
 	// Actionable request list with kind, age and blocking state. Enter
