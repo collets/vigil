@@ -66,6 +66,9 @@ func (m *model) switchProject(id string) tea.Cmd {
 	m.inputRequest, m.inputAction, m.inputText = "", "", ""
 	m.stack = nil
 	m.inbox, m.task, m.criterion, m.historyCursor, m.projectCursor, m.offset = 0, 0, 0, 0, 0, 0
+	m.queueCursor, m.ovInbox = 0, 0
+	m.historyFilter, m.historyOpen = "", 0
+	m.showRun, m.showEvent = false, false
 	m.loading = true
 	m.feedback = "switched to " + clean(id)
 	return m.fetch()

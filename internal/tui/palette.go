@@ -40,6 +40,12 @@ func paletteEntries() []paletteEntry {
 	// Run detail is Overview navigation, not a mutation: it opens from
 	// the Overview focus only, like every other screen-owned row.
 	entries = append(entries, paletteEntry{keys: "R", action: "run detail", command: "project execution-inspect", owner: screenOverview})
+	// History rows are navigation too: opening and filtering act on the
+	// History focus only and persist nothing.
+	entries = append(entries,
+		paletteEntry{keys: "Enter", action: "open event", command: "", owner: screenHistory},
+		paletteEntry{keys: "F", action: "filter events", command: "", owner: screenHistory},
+	)
 	entries = append(entries,
 		paletteEntry{keys: "?", action: "help", command: "", global: true},
 		paletteEntry{keys: "P", action: "projects", command: "", global: true},
@@ -118,6 +124,8 @@ func (m *model) paletteAvailable(entry paletteEntry) bool {
 	switch entry.owner {
 	case screenInbox:
 		return len(m.snapshot.Inbox) > 0
+	case screenHistory:
+		return len(m.snapshot.Events) > 0
 	case screenTasks:
 		return len(m.snapshot.Tasks) > 0
 	case screenOverview:
@@ -203,5 +211,15 @@ func (m *model) runPalette() (tea.Model, tea.Cmd) {
 	}
 	pop(m)
 	cp := *m
-	return cp.updateKey(tea.KeyPressMsg{Code: rune(0), Text: entry.keys})
+	// Synthesize the row's key exactly as the terminal would deliver
+	// it: bare Text never produces the named keys ("enter") that the
+	// shell switches on.
+	keyMsg := tea.KeyPressMsg{Code: rune(0), Text: entry.keys}
+	switch entry.keys {
+	case "Enter":
+		keyMsg = tea.KeyPressMsg{Code: tea.KeyEnter}
+	case "F":
+		keyMsg = tea.KeyPressMsg{Code: 'F', Text: "F"}
+	}
+	return cp.updateKey(keyMsg)
 }

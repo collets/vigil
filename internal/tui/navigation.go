@@ -128,8 +128,9 @@ func (m *model) moveCursor(delta int) {
 	case (m.focused() == screenTasks || m.focused() == screenDetail) && m.snapshot != nil && len(m.snapshot.Tasks) > 0:
 		m.task = min(len(m.snapshot.Tasks)-1, max(0, m.task+delta))
 		m.criterion = 0
-	case m.focused() == screenHistory && m.snapshot != nil && len(m.snapshot.Events) > 0:
-		m.historyCursor = min(len(m.snapshot.Events)-1, max(0, m.historyCursor+delta))
+	case m.focused() == screenHistory && m.snapshot != nil && len(filteredEvents(m.snapshot.Events, m.historyFilter)) > 0:
+		shown := filteredEvents(m.snapshot.Events, m.historyFilter)
+		m.historyCursor = min(len(shown)-1, max(0, m.historyCursor+delta))
 	default:
 		m.offset = max(0, m.offset+delta)
 	}

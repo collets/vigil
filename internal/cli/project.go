@@ -934,9 +934,10 @@ func projectCommand(stateDir *string) *cobra.Command {
 		})
 	}})
 	var after int64
+	var eventKind string
 	events := &cobra.Command{Use: "events PROJECT_ID", Short: "Read up to 100 persisted events after a sequence", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {
-			r, err := e.Events(cmd.Context(), after)
+			r, _, _, err := e.EventsFiltered(cmd.Context(), after, eventKind, 100)
 			if err != nil {
 				return err
 			}
@@ -944,6 +945,7 @@ func projectCommand(stateDir *string) *cobra.Command {
 		})
 	}}
 	events.Flags().Int64Var(&after, "after", 0, "Last sequence already read")
+	events.Flags().StringVar(&eventKind, "kind", "", "Only events of this exact kind")
 	root.AddCommand(events)
 	root.AddCommand(&cobra.Command{Use: "artifacts PROJECT_ID", Short: "Inspect orphaned or corrupt artifacts without deleting evidence", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		return withProject(cmd, stateDir, args[0], func(e *core.Engine) error {

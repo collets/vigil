@@ -81,6 +81,12 @@ func helpLines(m *model) []string {
 		lines = append(lines, "  [ ]  select queue plan")
 		lines = append(lines, "  j/k  select request")
 	}
+	if focused == screenHistory {
+		lines = append(lines, "", "History navigation (no persistence).", "")
+		lines = append(lines, "  F  filter by kind  → project events --kind")
+		lines = append(lines, "  Enter  open event detail")
+		lines = append(lines, "  j/k  move event cursor")
+	}
 	lines = append(lines, "", "Global keys (every screen).", "")
 	for _, b := range globalBindings() {
 		lines = append(lines, "  "+b.Key+"  "+b.Action)

@@ -65,6 +65,11 @@ type model struct {
 	showHelp     bool
 	showPalette  bool
 	showRun      bool
+	showEvent    bool
+	// History state: kind filter ("" for all) and the opened event's
+	// sequence for the detail overlay.
+	historyFilter string
+	historyOpen   int64
 	palFilter    string
 	palCursor    int
 	confirm      *confirmRequest

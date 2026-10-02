@@ -15,7 +15,7 @@ make build
 ./bin/vigil project status PROJECT_ID
 ./bin/vigil project discover PROJECT_ID
 ./bin/vigil project inbox PROJECT_ID
-./bin/vigil project events PROJECT_ID --after 0
+./bin/vigil project events PROJECT_ID --after 0 [--kind KIND]
 ./bin/vigil resources status
 ./bin/vigil doctor
 ./bin/vigil hello

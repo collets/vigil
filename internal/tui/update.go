@@ -21,7 +21,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.snapshot = &msg.snapshot
 			m.inbox = min(m.inbox, max(0, len(msg.snapshot.Inbox)-1))
 			m.task = min(m.task, max(0, len(msg.snapshot.Tasks)-1))
-			m.historyCursor = min(m.historyCursor, max(0, len(msg.snapshot.Events)-1))
+			m.historyCursor = min(m.historyCursor, max(0, len(filteredEvents(msg.snapshot.Events, m.historyFilter))-1))
 			m.queueCursor = min(m.queueCursor, max(0, len(msg.snapshot.Queue)-1))
 			m.ovInbox = min(m.ovInbox, max(0, len(msg.snapshot.Inbox)-1))
 			if len(msg.snapshot.Tasks) == 0 || len(msg.snapshot.Tasks[m.task].ManualCriteria) == 0 {
@@ -244,6 +244,49 @@ func (m model) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			replace(&m, 2)
 			return m, nil
 		}
+		// On History, Enter opens the cursor event's sanitized detail
+		// as an overlay. Only whitelisted bounded payloads render
+		// field-by-field; anything else is withheld.
+		if m.focused() == screenHistory && m.snapshot != nil {
+			shown := filteredEvents(m.snapshot.Events, m.historyFilter)
+			if len(shown) > 0 {
+				cursor := min(max(m.historyCursor, 0), len(shown)-1)
+				m.historyOpen = shown[cursor].Sequence
+				m.showEvent = true
+				push(&m, screenEvent)
+			}
+			return m, nil
+		}
+	case "F":
+		// History kind filter: F cycles the window's kinds, ending at
+		// all. f (lowercase) stays scoped to the Inbox screen.
+		if len(m.stack) != 0 {
+			return m, nil
+		}
+		if m.focused() != screenHistory || m.snapshot == nil {
+			return m, nil
+		}
+		kinds := historyKinds(m.snapshot.Events)
+		if m.historyFilter == "" {
+			if len(kinds) > 0 {
+				m.historyFilter = kinds[0]
+			}
+		} else {
+			next := ""
+			for i, kind := range kinds {
+				if kind == m.historyFilter && i+1 < len(kinds) {
+					next = kinds[i+1]
+				}
+			}
+			m.historyFilter = next
+		}
+		m.historyCursor = 0
+		if m.historyFilter == "" {
+			m.feedback = "history filter: all"
+		} else {
+			m.feedback = "history filter: " + m.historyFilter
+		}
+		return m, nil
 	case "tab", "right":
 		replace(&m, (m.tab+1)%5)
 	case "shift+tab", "left":

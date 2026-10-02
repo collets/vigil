@@ -56,10 +56,12 @@ func (m model) focusText() string {
 		}
 		return "Focus: Inbox · " + clean(m.snapshot.Inbox[m.inbox].ID)
 	case screenHistory:
-		if len(m.snapshot.Events) == 0 {
+		shown := filteredEvents(m.snapshot.Events, m.historyFilter)
+		if len(shown) == 0 {
 			return "Focus: History · none"
 		}
-		return fmt.Sprintf("Focus: History · event %d", m.snapshot.Events[m.historyCursor].Sequence)
+		cursor := min(max(m.historyCursor, 0), len(shown)-1)
+		return fmt.Sprintf("Focus: History · event %d", shown[cursor].Sequence)
 	case screenDetail:
 		if len(m.snapshot.Tasks) == 0 {
 			return "Focus: Detail · none"
@@ -76,6 +78,8 @@ func (m model) focusText() string {
 		return "Focus: Palette"
 	case screenRun:
 		return "Focus: Run"
+	case screenEvent:
+		return "Focus: Event"
 	}
 	return "Focus: unknown"
 }
@@ -99,6 +103,8 @@ func (m model) lines() []string {
 		return projectsLines(&m)
 	case m.showRun:
 		return runDetailLines(&m, s)
+	case m.showEvent:
+		return eventDetailLines(&m, s)
 	}
 	switch m.tab {
 	case 0:
@@ -163,6 +169,8 @@ func (m model) View() tea.View {
 	case m.showProjects:
 		footer = bindingLine([]Binding{{Key: "Enter", Action: "switch"}, {Key: "j/k", Action: "move"}, {Key: "Esc", Action: "back"}}, width)
 	case m.showRun:
+		footer = bindingLine([]Binding{{Key: "Esc", Action: "back"}}, width)
+	case m.showEvent:
 		footer = bindingLine([]Binding{{Key: "Esc", Action: "back"}}, width)
 	case m.focused() == screenHelp:
 		footer = bindingLine(globalBindings(), width)
