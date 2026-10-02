@@ -48,10 +48,14 @@ func scopedModel() model {
 	snapshot := core.DashboardSnapshot{
 		Readiness: core.Readiness{Project: core.Project{ID: "fixture", Revision: 9, State: "ready"}},
 		ActiveRun: "run-1",
+		Queue:     []core.PlanQueueEntry{{ID: "plan-1", Revision: 1, Rank: 0, State: "draft"}, {ID: "plan-2", Revision: 1, Rank: 1, State: "draft"}},
 		Inbox:     []core.InboxEntry{{ID: "req-1", Kind: "approval"}},
 		Tasks:     []core.TaskDetail{{ID: "task-1", Revision: 2}},
 		Events:    []core.Event{{Sequence: 1, Kind: "project.pause"}},
 	}
+	snapshot.Progression = core.ProgressionDetail{ProjectID: "fixture", ProjectRev: 9, ProjectState: "ready", Queue: snapshot.Queue, QueuePosition: 0, ActiveRun: "run-1"}
+	snapshot.Progression.ActivePlan = &core.ProgressionPlan{ID: "plan-1", Revision: 1, State: "draft", Rank: 0}
+	snapshot.Run = &core.ActiveRunDetail{RunID: "run-1", State: "active", RuntimeKind: "synthetic", AllowedNext: []string{"inspect", "start", "reconcile", "stop"}, ActivitySummary: "no recorded activity"}
 	return model{ctx: context.Background(), snapshot: &snapshot, width: 110, height: 24, mutate: func(context.Context, core.DashboardSnapshot, string) error {
 		return nil
 	}}
@@ -104,7 +108,7 @@ func TestProjectControlsFireOnOverview(t *testing.T) {
 		updated, _ = m.Update(msg)
 		m = updated.(model)
 	}
-	for _, want := range []string{"pause", "continue", "advance", "queue"} {
+	for _, want := range []string{"pause", "continue", "advance", "queue:plan-1:0"} {
 		if got := <-called; got != want {
 			t.Fatalf("got %q, want %q", got, want)
 		}

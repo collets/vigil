@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"strings"
+	"time"
 
 	"vigil/internal/core"
 )
@@ -9,7 +11,9 @@ import (
 // overviewBindings are the mutating keys the Overview screen owns. No other
 // screen registers them, so pressing them elsewhere does nothing: that is the
 // 6.1-F17 fix. stop is present but armed only through the confirmation
-// dialog, which shows the exact displayed revision and run ID.
+// dialog, which shows the exact displayed revision and run ID. u queues the
+// queue-cursor plan at its displayed rank (queue:ID:rank); the mutator
+// rejects a cursor that no longer matches the snapshot.
 func overviewBindings() []Binding {
 	return []Binding{
 		{Key: "p", Action: "pause", Command: "project pause"},
@@ -27,14 +31,183 @@ func overviewFocus(m *model) string {
 	return m.snapshot.Readiness.Project.ID
 }
 
+// formatAge renders a request's age from its created-at millis.
+func formatAge(createdAt int64) string {
+	delta := time.Since(time.UnixMilli(createdAt))
+	if delta < 0 {
+		delta = 0
+	}
+	switch {
+	case delta < time.Minute:
+		return fmt.Sprintf("%ds", int(delta.Seconds()))
+	case delta < time.Hour:
+		return fmt.Sprintf("%dm", int(delta.Minutes()))
+	case delta < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(delta.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(delta.Hours()/24))
+	}
+}
+
+// qualityRollup renders one task's compact fixed-width quality summary:
+// checks passed/total, blocking findings, suggestions, manual outstanding
+// and baseline health. One bounded line per task, never a paragraph.
+// Unknown check statuses count as non-passed; any manual state other than
+// pass counts as outstanding. The persisted formats are
+// check_id:status:artifact and criterion_id:state; both IDs may themselves
+// contain colons, so both parse from the right.
+func qualityRollup(task core.TaskDetail) string {
+	passed, total := 0, len(task.CheckOutputs)
+	for _, output := range task.CheckOutputs {
+		if idx := strings.LastIndex(output, ":"); idx >= 0 {
+			rest := output[:idx]
+			if sep := strings.LastIndex(rest, ":"); sep >= 0 && rest[sep+1:] == "pass" {
+				passed++
+			}
+		}
+	}
+	passedManual := map[string]bool{}
+	for _, outcome := range task.ManualOutcomes {
+		if idx := strings.LastIndex(outcome, ":"); idx > 0 {
+			if outcome[idx+1:] == "pass" {
+				passedManual[outcome[:idx]] = true
+			}
+		}
+	}
+	open := 0
+	for _, criterion := range task.ManualCriteria {
+		if !passedManual[criterion] {
+			open++
+		}
+	}
+	health := "ok"
+	if task.BaselineUnhealthy {
+		health = "unhealthy"
+	}
+	line := fmt.Sprintf("%-12.12s chk %d/%d blk %d sug %d man %d %s", clean(task.ID), passed, total, task.BlockingFindings, task.Suggestions, open, health)
+	if runes := []rune(line); len(runes) > 80 {
+		return string(runes[:79]) + "…"
+	}
+	return line
+}
+
 func overviewLines(m *model, s *core.DashboardSnapshot) []string {
-	lines := []string{"> Project: " + clean(s.Readiness.Project.ID), "Root: " + clean(s.Readiness.Project.Root), fmt.Sprintf("Revision %d · %s", s.Readiness.Project.Revision, clean(s.Readiness.Project.State)), "", "Execution is unavailable until all runtime and readiness gates pass."}
+	lines := []string{"> Project: " + clean(s.Readiness.Project.ID), "Root: " + clean(s.Readiness.Project.Root), fmt.Sprintf("Revision %d · %s", s.Readiness.Project.Revision, clean(s.Readiness.Project.State)), ""}
 	for _, issue := range s.Readiness.RuntimeIssues {
 		lines = append(lines, "Runtime: "+clean(issue))
 	}
 	for _, issue := range s.Readiness.DefinitionIssues {
 		lines = append(lines, "Definition: "+clean(issue))
 	}
-	lines = append(lines, "", fmt.Sprintf("%d tasks · %d pending/expired decisions", len(s.Readiness.Tasks), len(s.Inbox)))
+	lines = append(lines, "")
+	// Active plan and ranked queue with the operator's position. The
+	// listed rows are snapshot.Queue — the same field the u action and
+	// the cursors address — while the head/position metadata comes from
+	// the progression read model; Dashboard populates both from one
+	// read. Equal ranks order by plan ID (see workflow queue ordering).
+	progression := s.Progression
+	if progression.ActivePlan != nil {
+		lines = append(lines, fmt.Sprintf("Active plan: %s · %s · rank %d (position %d/%d)", clean(progression.ActivePlan.ID), clean(progression.ActivePlan.State), progression.ActivePlan.Rank, progression.QueuePosition+1, len(s.Queue)))
+	} else {
+		lines = append(lines, "Active plan: none")
+	}
+	lines = append(lines, "Ranked queue (ties order by plan ID):")
+	const maxQueue = 10
+	for index, entry := range s.Queue {
+		if index >= maxQueue {
+			lines = append(lines, fmt.Sprintf("  …and %d more plans", len(s.Queue)-maxQueue))
+			break
+		}
+		marker := "  "
+		if index == m.queueCursor {
+			marker = "> "
+		}
+		selected := ""
+		if index == m.queueCursor {
+			selected = fmt.Sprintf(" · u queues at rank %d", entry.Rank)
+		}
+		lines = append(lines, fmt.Sprintf("%s%s · %s · rank %d%s", marker, clean(entry.ID), clean(entry.State), entry.Rank, selected))
+	}
+	if len(s.Queue) == 0 {
+		lines = append(lines, "  No plans queued.")
+	}
+	lines = append(lines, "")
+	// Current task and its blocker.
+	if progression.SelectedTask != nil {
+		lines = append(lines, fmt.Sprintf("Current task: %s r%d · %s", clean(progression.SelectedTask.ID), progression.SelectedTask.Revision, clean(progression.SelectedTask.State)))
+		if len(progression.SelectedTask.Blockers) == 0 {
+			lines = append(lines, "Blocker: none")
+		} else {
+			lines = append(lines, "Blocker: "+clean(progression.SelectedTask.Blockers[0]))
+			for _, blocker := range progression.SelectedTask.Blockers[1:] {
+				if len(lines) >= 40 {
+					break
+				}
+				lines = append(lines, "  "+clean(blocker))
+			}
+		}
+	} else {
+		lines = append(lines, "Current task: none")
+		lines = append(lines, "Blocker: none")
+	}
+	lines = append(lines, "")
+	// Live run with a one-line activity summary; the full detail is one
+	// keystroke away on the run screen (R). A missing run is a state.
+	if s.Run != nil {
+		run := s.Run
+		lines = append(lines, fmt.Sprintf("Run: %s · %s · %s", clean(run.RunID), clean(run.State), clean(run.RuntimeKind)))
+		lines = append(lines, fmt.Sprintf("Budgets: active %dms charged · wall %dms consumed", run.ActiveChargedMS, run.WallConsumedMS))
+		lines = append(lines, "Activity: "+clean(run.ActivitySummary))
+		if run.SessionID != "" {
+			lines = append(lines, "Session: "+clean(run.SessionID))
+		} else {
+			lines = append(lines, "Session: none")
+		}
+	} else {
+		lines = append(lines, "Run: no run is active")
+	}
+	// Cost and usage honesty: unavailable is a marker, never a zero.
+	if s.Usage.Observed {
+		cost := "no cost recorded"
+		if s.Usage.HasCost {
+			cost = fmt.Sprintf("cost %dµ%s", s.Usage.CostMicrounits, s.Usage.Currency)
+		}
+		lines = append(lines, fmt.Sprintf("Cost/usage: %s · in %d · out %d · %s", clean(s.Usage.Provenance), s.Usage.InputTokens, s.Usage.OutputTokens, clean(cost)))
+	} else {
+		lines = append(lines, "Cost/usage: unavailable (no observation)")
+	}
+	lines = append(lines, "")
+	// Compact per-task quality status.
+	lines = append(lines, "Quality per task:")
+	if len(s.Tasks) == 0 {
+		lines = append(lines, "  No tasks defined.")
+	}
+	for _, task := range s.Tasks {
+		lines = append(lines, "  "+qualityRollup(task))
+	}
+	lines = append(lines, "")
+	// Actionable request list with kind, age and blocking state. Enter
+	// opens the selected entry in the Inbox through the screen stack.
+	lines = append(lines, fmt.Sprintf("Actionable requests (%d · Enter opens in Inbox):", len(s.Inbox)))
+	const maxInbox = 10
+	for index, entry := range s.Inbox {
+		if index >= maxInbox {
+			lines = append(lines, fmt.Sprintf("  …and %d more in Inbox", len(s.Inbox)-maxInbox))
+			break
+		}
+		marker := "  "
+		if index == m.ovInbox {
+			marker = "> "
+		}
+		blocking := "non-blocking"
+		if entry.Blocking {
+			blocking = "blocking"
+		}
+		lines = append(lines, fmt.Sprintf("%s%s · %s · %s · age %s · %s", marker, clean(entry.ID), clean(entry.Kind), clean(entry.State), formatAge(entry.CreatedAt), blocking))
+	}
+	if len(s.Inbox) == 0 {
+		lines = append(lines, "  No pending decisions.")
+	}
+	lines = append(lines, "", "j/k select request · [/] select queue plan · Enter opens request")
 	return lines
 }

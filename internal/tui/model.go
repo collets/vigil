@@ -50,7 +50,11 @@ type model struct {
 	// answerable from the display.
 	tab, offset, inbox, task, criterion int
 	historyCursor                      int
-	width, height                      int
+	// Overview cursors: queueCursor selects the ranked queue entry that
+	// u acts on; ovInbox selects the actionable request that Enter
+	// opens in the Inbox. Both are rendered on every Overview frame.
+	queueCursor, ovInbox int
+	width, height        int
 
 	// Screen stack. Root screens replace the stack base; overlays
 	// (help, confirmation, project switcher) push on top. esc pops one

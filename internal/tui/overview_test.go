@@ -1,0 +1,286 @@
+package tui
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	tea "charm.land/bubbletea/v2"
+	"vigil/internal/core"
+	"vigil/internal/policy"
+	"vigil/internal/store"
+)
+
+func testConfig() policy.Config {
+	return policy.Config{ModelPolicy: "local_only", RequiredChecks: []string{"project-check"}, CheckDefinitions: []policy.CheckDefinition{{ID: "project-check", Argv: []string{"true"}, Cwd: ".", TimeoutMS: 1000}, {ID: "task-check", Argv: []string{"true"}, Cwd: ".", TimeoutMS: 1000}}, TaskLimitMS: 2700000, AttemptLimitMS: 600000, RepairLimit: 2, SupervisorProfile: "local", ApprovalMode: "supervised"}
+}
+
+func testProfile() policy.Profile {
+	return policy.Profile{ID: "local", Harness: "hermes", Version: "0.21.3", Model: "fixture-local", Provider: "custom", CredentialRef: "env:VIGIL_TEST_KEY", Roles: []string{"implementation", "review", "supervisor"}, EndpointID: "windows-llama", LocalInference: true, AuxiliaryLocal: true, DelegationDisabled: true}
+}
+
+func testTask(id string, deps ...string) policy.Task {
+	return policy.Task{ID: id, Objective: "Objective " + id, Criteria: []policy.Criterion{{ID: "c-" + id, Text: "Check " + id}}, Scope: []string{"src/**"}, Dependencies: deps, Implementation: "local", Reviewer: "local", Checks: []string{"task-check"}, Difficulty: "small", Rationale: "fixture", ActiveLimitMS: 600000, RepairLimit: 2}
+}
+
+func tuiApply(t *testing.T, e *core.Engine, kind string, payload any) {
+	t.Helper()
+	ctx := context.Background()
+	var revision int
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT revision FROM project").Scan(&revision); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Apply(ctx, core.Human, core.Envelope{CommandID: store.ID(), ExpectedRevision: revision, Kind: kind, Payload: raw}); err != nil {
+		t.Fatal(kind, err)
+	}
+}
+
+// seedMainDashboard builds the P15 fixture: a paused project with plan-a
+// active, plan-b queued behind it, task t1 blocked, a live-shaped run on
+// t1, one blocking and one non-blocking request.
+func seedMainDashboard(t *testing.T, e *core.Engine) {
+	t.Helper()
+	ctx := context.Background()
+	tuiApply(t, e, "project.configure", testConfig())
+	tuiApply(t, e, "profile.put", testProfile())
+	tuiApply(t, e, "plan.put", core.Plan{ID: "plan-a", Title: "A", Specification: "Spec A", Approved: true, Tasks: []policy.Task{testTask("t1"), testTask("t2", "t1")}})
+	tuiApply(t, e, "plan.put", core.Plan{ID: "plan-b", Title: "B", Specification: "Spec B", Approved: true, Tasks: []policy.Task{testTask("t3")}})
+	var revision int
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT revision FROM project").Scan(&revision); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.QueuePlan(ctx, store.ID(), revision, "plan-a", 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT revision FROM project").Scan(&revision); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.QueuePlan(ctx, store.ID(), revision, "plan-b", 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DB.SQL.ExecContext(ctx, "UPDATE tasks SET state='blocked',block_reason='waiting on approval x' WHERE id='t1'"); err != nil {
+		t.Fatal(err)
+	}
+	var configID string
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT id FROM config_snapshots LIMIT 1").Scan(&configID); err != nil {
+		t.Fatal(err)
+	}
+	var profileRev, planRev, taskRev int
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT revision FROM profiles WHERE id='local'").Scan(&profileRev); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT revision FROM plans WHERE id='plan-a'").Scan(&planRev); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.DB.SQL.QueryRowContext(ctx, "SELECT revision FROM tasks WHERE id='t1'").Scan(&taskRev); err != nil {
+		t.Fatal(err)
+	}
+	now := store.Now()
+	if err := e.DB.Write(ctx, func(tx *store.Tx) error {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO runs(id,plan_id,plan_revision,task_id,task_revision,config_id,profile_id,profile_revision,role,attempt_kind,state,writer_state,active_limit_ms,wall_limit_ms,created_at) VALUES('run-p15','plan-a',?,'t1',?,?,'local',?,'implementation','initial','active','unconfirmed',600000,1800000,?)`, planRev, taskRev, configID, profileRev, now); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO run_generations(id,run_id,ordinal,runtime_kind,runtime_resource_id,transport_generation,state,submission_state,qualification_request_json,checkout_plan_digest,expected_routes_json,created_at) VALUES('gen-p15','run-p15',1,'synthetic','res-p15','tp-p15','active','writing','{}','d','[]',?)`, now); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO requests(id,kind,state,plan_id,task_id,task_revision,context_json,blocking,created_at,deadline) VALUES('req-block','approval','pending','plan-a','t1',1,'{}',1,?,?)`, now-300000, now+1800000); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO requests(id,kind,state,plan_id,task_id,task_revision,context_json,blocking,created_at,deadline) VALUES('req-open','input','pending','plan-a','t1',1,'{}',0,?,?)`, now-30000, now+1800000)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func openTestEngine(t *testing.T) (*core.Manager, *core.Engine) {
+	t.Helper()
+	ctx := context.Background()
+	base := t.TempDir()
+	root := filepath.Join(base, "work")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := core.OpenManager(ctx, filepath.Join(base, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { manager.Close() })
+	project, err := manager.Init(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := manager.Open(ctx, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { engine.DB.Close() })
+	return manager, engine
+}
+
+// TestMainDashboardShowsP15WithoutNavigation is the P15 assertion: from a
+// cold start with no navigation key, one screen shows the active plan, the
+// current task and its blocker, the queue position, the run state, the
+// compact quality roll-up and both requests with age and blocking state.
+func TestMainDashboardShowsP15WithoutNavigation(t *testing.T) {
+	_, engine := openTestEngine(t)
+	seedMainDashboard(t, engine)
+	snapshot, err := engine.Dashboard(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := model{ctx: context.Background(), snapshot: &snapshot, width: 120, height: 40, tab: 0}
+	view := m.View().Content
+	for _, want := range []string{"Active plan: plan-a", "Current task: t1", "Blocker: waiting on approval", "position 1/2", "run-p15", "Quality per task:", "chk 0/0", "req-block", "req-open", "non-blocking", "unavailable (no observation)", "Session: none"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("main screen missing %q:\n%s", want, view)
+		}
+	}
+	// Age renders on both request lines.
+	if strings.Count(view, "age ") < 2 {
+		t.Fatal("request ages missing:\n" + view)
+	}
+	// The blocking request line must say blocking without the non- prefix.
+	foundBlocking := false
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "req-block") && strings.Contains(line, "blocking") && !strings.Contains(line, "non-blocking") {
+			foundBlocking = true
+		}
+	}
+	if !foundBlocking {
+		t.Fatal("blocking request not marked blocking:\n" + view)
+	}
+}
+
+// TestQueueKeyTargetsDisplayedPlan is the 6.1-F2 regression test: with two
+// queueable plans, u on the first queues the first, and the queue line
+// changes on screen.
+func TestQueueKeyTargetsDisplayedPlan(t *testing.T) {
+	_, engine := openTestEngine(t)
+	ctx := context.Background()
+	tuiApply(t, engine, "project.configure", testConfig())
+	tuiApply(t, engine, "profile.put", testProfile())
+	tuiApply(t, engine, "plan.put", core.Plan{ID: "plan-a", Title: "A", Specification: "Spec A", Approved: true, Tasks: []policy.Task{testTask("t1")}})
+	tuiApply(t, engine, "plan.put", core.Plan{ID: "plan-b", Title: "B", Specification: "Spec B", Approved: true, Tasks: []policy.Task{testTask("t3")}})
+	snapshot, err := engine.Dashboard(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := model{ctx: ctx, snapshot: &snapshot, width: 120, height: 40, tab: 0, mutate: projectMutator(engine, nil, nil)}
+	before := m.View().Content
+	if !strings.Contains(before, "plan-a · draft") {
+		t.Fatal("queue line missing before:\n" + before)
+	}
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'u', Text: "u"})
+	m = updated.(model)
+	if cmd == nil {
+		t.Fatal("u did not start a queue mutation")
+	}
+	result := cmd().(mutationResult)
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	if result.action != "queue:plan-a:0" {
+		t.Fatalf("u queued %q, want the displayed first plan", result.action)
+	}
+	updated, _ = m.Update(result)
+	m = updated.(model)
+	after, err := engine.Dashboard(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, _ = m.Update(loaded{snapshot: after})
+	m = updated.(model)
+	view := m.View().Content
+	if !strings.Contains(view, "plan-a · queued") {
+		t.Fatal("queue line did not change on screen:\n" + view)
+	}
+	// The cursor plan is the target: move to the second and queue it.
+	updated, _ = m.Update(tea.KeyPressMsg{Code: ']', Text: "]"})
+	m = updated.(model)
+	updated, cmd = m.Update(tea.KeyPressMsg{Code: 'u', Text: "u"})
+	if cmd == nil {
+		t.Fatal("u did not start a second queue mutation")
+	}
+	if got := cmd().(mutationResult).action; got != "queue:plan-b:0" {
+		t.Fatalf("u queued %q, want the displayed second plan", got)
+	}
+}
+
+// TestUnavailableMarkerRendersForUnobservedCost proves the honesty rule: a
+// quantity the application does not observe renders as explicitly
+// unavailable, never as zero.
+func TestUnavailableMarkerRendersForUnobservedCost(t *testing.T) {
+	m := scopedModel()
+	m.tab, m.width, m.height = 0, 120, 40
+	view := m.View().Content
+	if !strings.Contains(view, "unavailable") {
+		t.Fatal("no unavailable marker:\n" + view)
+	}
+	if strings.Contains(view, "in 0 · out 0") {
+		t.Fatal("unobserved usage rendered as zero:\n" + view)
+	}
+	observed := scopedModel()
+	observed.snapshot.Usage = core.UsageSummary{Observed: true, Provenance: "observed", InputTokens: 10, OutputTokens: 20}
+	observed.tab, observed.width, observed.height = 0, 120, 40
+	if view := observed.View().Content; !strings.Contains(view, "in 10 · out 20") {
+		t.Fatal("observed usage not rendered:\n" + view)
+	}
+	withCost := scopedModel()
+	withCost.snapshot.Usage = core.UsageSummary{Observed: true, Provenance: "mixed", InputTokens: 15, OutputTokens: 27, HasCost: true, CostMicrounits: 4500, Currency: "USD"}
+	withCost.tab, withCost.width, withCost.height = 0, 120, 40
+	if view := withCost.View().Content; !strings.Contains(view, "cost 4500µUSD") {
+		t.Fatal("cost not rendered:\n" + view)
+	}
+}
+
+// TestCompactQualityRollupIsFixedWidth proves the roll-up is a bounded
+// single line per task carrying checks, findings, manual state and health.
+func TestCompactQualityRollupIsFixedWidth(t *testing.T) {
+	task := core.TaskDetail{ID: "long-task-identifier", Revision: 2, CheckOutputs: []string{"c1:pass:a1", "c2:fail:a2"}, BlockingFindings: 1, Suggestions: 2, ManualOutcomes: []string{"m1:pass"}, ManualCriteria: []string{"m1", "m2"}, BaselineUnhealthy: true}
+	line := qualityRollup(task)
+	if strings.Contains(line, "\n") {
+		t.Fatal("roll-up spans lines", line)
+	}
+	for _, want := range []string{"chk 1/2", "blk 1", "sug 2", "man 1", "unhealthy"} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("roll-up missing %q: %q", want, line)
+		}
+	}
+	if len([]rune(line)) > 80 {
+		t.Fatalf("roll-up not bounded: %q", line)
+	}
+}
+
+// TestEnterOpensOverviewRequestInInbox proves the main screen is a genuine
+// entry point: Enter carries the selected request into the Inbox screen.
+func TestEnterOpensOverviewRequestInInbox(t *testing.T) {
+	snapshot := core.DashboardSnapshot{
+		Readiness: core.Readiness{Project: core.Project{ID: "fixture", Revision: 1, State: "paused"}},
+		Inbox:     []core.InboxEntry{{ID: "first", Kind: "approval"}, {ID: "second", Kind: "approval"}},
+		Queue:     []core.PlanQueueEntry{{ID: "plan-1", Revision: 1, Rank: 0, State: "draft"}},
+	}
+	snapshot.Progression = core.ProgressionDetail{ProjectID: "fixture", ProjectRev: 1, ProjectState: "paused", Queue: snapshot.Queue, QueuePosition: 0}
+	snapshot.Progression.ActivePlan = &core.ProgressionPlan{ID: "plan-1", Revision: 1, State: "draft", Rank: 0}
+	m := model{ctx: context.Background(), snapshot: &snapshot, width: 120, height: 40, tab: 0}
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	m = updated.(model)
+	if m.ovInbox != 1 {
+		t.Fatal("overview request cursor did not move")
+	}
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = updated.(model)
+	if cmd != nil || m.tab != 2 || m.inbox != 1 {
+		t.Fatal("Enter did not open the selected request in Inbox")
+	}
+	if !strings.Contains(m.View().Content, "second") {
+		t.Fatal("Inbox does not focus the opened request")
+	}
+}

@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -23,6 +22,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inbox = min(m.inbox, max(0, len(msg.snapshot.Inbox)-1))
 			m.task = min(m.task, max(0, len(msg.snapshot.Tasks)-1))
 			m.historyCursor = min(m.historyCursor, max(0, len(msg.snapshot.Events)-1))
+			m.queueCursor = min(m.queueCursor, max(0, len(msg.snapshot.Queue)-1))
+			m.ovInbox = min(m.ovInbox, max(0, len(msg.snapshot.Inbox)-1))
 			if len(msg.snapshot.Tasks) == 0 || len(msg.snapshot.Tasks[m.task].ManualCriteria) == 0 {
 				m.criterion = 0
 			} else {
@@ -218,6 +219,15 @@ func (m model) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			return m, m.fetch()
 		}
+	case "enter":
+		// On Overview, Enter opens the selected actionable request in
+		// the Inbox through the screen stack, so the main screen is a
+		// genuine entry point rather than a second inbox.
+		if m.focused() == screenOverview && m.snapshot != nil && len(m.snapshot.Inbox) > 0 {
+			m.inbox = min(max(m.ovInbox, 0), len(m.snapshot.Inbox)-1)
+			replace(&m, 2)
+			return m, nil
+		}
 	case "tab", "right":
 		replace(&m, (m.tab+1)%5)
 	case "shift+tab", "left":
@@ -243,128 +253,4 @@ func (m model) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	m.offset = min(m.offset, max(0, len(m.lines())-max(1, m.height-5)))
 	return m, nil
-}
-
-// screenAction maps a key to its action string only when the focused screen
-// owns that key. Project controls live on Overview; inbox decisions on
-// Inbox; quality actions on Tasks and Detail. History owns no mutating key,
-// so no persisted change can originate there.
-func (m *model) screenAction(key string) (string, bool) {
-	if m.snapshot == nil {
-		return "", false
-	}
-	switch m.focused() {
-	case screenOverview:
-		switch key {
-		case "p":
-			return "pause", true
-		case "c":
-			return "continue", true
-		case "a":
-			return "advance", true
-		case "u":
-			return "queue", true
-		case "s":
-			return "stop", true
-		}
-	case screenInbox:
-		if len(m.snapshot.Inbox) == 0 {
-			return "", false
-		}
-		focused := m.snapshot.Inbox[m.inbox].ID
-		switch key {
-		case "g":
-			return "apply-proposal:" + focused, true
-		case "b":
-			return "remain-blocked:" + focused, true
-		case "x":
-			return "exact-resume:" + focused, true
-		case "f":
-			return "fresh-context:" + focused, true
-		case "v":
-			return "request-proposal-revision:" + focused, true
-		case "y":
-			return "allow:" + focused, true
-		case "n":
-			return m.denyAction(), true
-		case "i":
-			return m.beginInput()
-		}
-	case screenTasks, screenDetail:
-		if len(m.snapshot.Tasks) == 0 {
-			return "", false
-		}
-		switch key {
-		case "h", "m", "t":
-			return m.taskAction(key), true
-		}
-	}
-	return "", false
-}
-
-// denyAction resolves n against the focused request kind, exactly as before:
-// native clarification cancels, plain input dismisses, proposal approvals
-// reject, everything else denies.
-func (m *model) denyAction() string {
-	entry := m.snapshot.Inbox[m.inbox]
-	switch {
-	case entry.Kind == "input" && entry.SessionID != "":
-		return "cancel-clarification:" + entry.ID
-	case entry.Kind == "input":
-		return "dismiss-input:" + entry.ID
-	case entry.Kind == "approval" && proposalRequest(entry):
-		return "reject-proposal:" + entry.ID
-	default:
-		return "deny:" + entry.ID
-	}
-}
-
-// beginInput enters bounded text mode for the focused input request. It
-// returns ("", false) when the focused row is not an input, so i is a
-// no-op there rather than a mutation.
-func (m *model) beginInput() (string, bool) {
-	entry := m.snapshot.Inbox[m.inbox]
-	if entry.Kind != "input" {
-		return "", false
-	}
-	m.inputRequest = entry.ID
-	m.inputAction = "answer-input"
-	if entry.SessionID != "" && entry.NativeRequestKey != "" {
-		m.inputAction = "answer-clarification"
-	}
-	m.inputText = ""
-	m.feedback = "enter input answer; Enter submits, Esc cancels locally"
-	return "", false
-}
-
-// taskAction binds h, m and t to the focused task at its displayed revision.
-func (m *model) taskAction(key string) string {
-	prefix := map[string]string{"h": "human-accept", "m": "manual-pass", "t": "accept-task"}[key]
-	task := m.snapshot.Tasks[m.task]
-	if key == "m" && len(task.ManualCriteria) > 0 {
-		criterion := min(m.criterion, len(task.ManualCriteria)-1)
-		return fmt.Sprintf("%s:%s:%d:%s", prefix, task.ID, task.Revision, task.ManualCriteria[criterion])
-	}
-	return fmt.Sprintf("%s:%s:%d", prefix, task.ID, task.Revision)
-}
-
-func (m *model) moveCursor(delta int) {
-	switch {
-	case m.focused() == screenInbox && m.snapshot != nil && len(m.snapshot.Inbox) > 0:
-		m.inbox = min(len(m.snapshot.Inbox)-1, max(0, m.inbox+delta))
-	case (m.tab == 1 || m.tab == 4) && m.snapshot != nil && len(m.snapshot.Tasks) > 0:
-		m.task = min(len(m.snapshot.Tasks)-1, max(0, m.task+delta))
-		m.criterion = 0
-	case m.focused() == screenHistory && m.snapshot != nil && len(m.snapshot.Events) > 0:
-		m.historyCursor = min(len(m.snapshot.Events)-1, max(0, m.historyCursor+delta))
-	default:
-		m.offset = max(0, m.offset+delta)
-	}
-}
-
-func (m *model) stepCriterion(delta int) {
-	if (m.tab == 1 || m.tab == 4) && m.snapshot != nil && len(m.snapshot.Tasks) > 0 && len(m.snapshot.Tasks[m.task].ManualCriteria) > 0 {
-		count := len(m.snapshot.Tasks[m.task].ManualCriteria)
-		m.criterion = (m.criterion + delta + count) % count
-	}
 }

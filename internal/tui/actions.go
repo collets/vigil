@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -17,11 +18,14 @@ import (
 	"vigil/internal/supervisor"
 )
 
-// ActionStrings is the exact set of mutation action strings the interface
+// ActionStrings is the exact set of mutation action families the interface
 // drives, from 6.1 §1.2. The 6.2 refactor moves where keys are bound but must
 // not change what can be done: TestActionStringsUnchanged pins this set, so a
 // refactor cannot quietly drop an action. Refresh ("r") is navigation, not a
-// mutation, and is not listed here.
+// mutation, and is not listed here. Parameterized actions carry their
+// displayed binding after a colon (allow:ID, queue:ID:rank); the family name
+// below is what is pinned, and the mutator validates the suffix against the
+// visible snapshot.
 var ActionStrings = []string{
 	"pause",
 	"continue",
@@ -94,14 +98,6 @@ func projectMutator(engine *core.Engine, coordination *coordinator.Coordinator, 
 		case "advance":
 			_, err := engine.Advance(ctx, store.ID(), revision)
 			return err
-		case "queue":
-			for _, p := range s.Queue {
-				if p.State == "draft" || p.State == "ready" {
-					_, err := engine.QueuePlan(ctx, store.ID(), revision, p.ID, p.Rank)
-					return err
-				}
-			}
-			return fmt.Errorf("no queueable plan")
 		case "stop":
 			if s.ActiveRun == "" {
 				return fmt.Errorf("no active persisted run")
@@ -109,6 +105,31 @@ func projectMutator(engine *core.Engine, coordination *coordinator.Coordinator, 
 			_, err := (&supervisor.Runner{Engine: engine}).RequestStop(ctx, supervisor.StopRequest{CommandID: store.ID(), ExpectedRevision: revision, RunID: s.ActiveRun, InterruptGrace: 2 * time.Second, TerminateGrace: 5 * time.Second})
 			return err
 		default:
+			// Explicit queue selection from the Overview queue cursor:
+			// queue:PLAN_ID:RANK binds the visibly displayed plan at
+			// its displayed rank. The rank must still match the
+			// snapshot, so a stale cursor cannot queue a moved plan.
+			// There is no implicit-first fallback: the 6.1-F2 defect
+			// was exactly such a fallback, so a bare "queue" is
+			// rejected as unknown below.
+			if rest, ok := strings.CutPrefix(action, "queue:"); ok {
+				planID, rankText, found := strings.Cut(rest, ":")
+				rank, atoiErr := strconv.Atoi(rankText)
+				if !found || !store.SafeID(planID) || atoiErr != nil || rank < 0 {
+					return fmt.Errorf("invalid displayed queue selection")
+				}
+				displayed := false
+				for _, p := range s.Queue {
+					if p.ID == planID && p.Rank == rank {
+						displayed = true
+					}
+				}
+				if !displayed {
+					return fmt.Errorf("displayed queue selection is stale")
+				}
+				_, err := engine.QueuePlan(ctx, store.ID(), revision, planID, rank)
+				return err
+			}
 			decision, requestID, found := strings.Cut(action, ":")
 			if decision == "human-accept" || decision == "manual-pass" || decision == "accept-task" {
 				taskID, revisionText, ok := strings.Cut(requestID, ":")
