@@ -33,12 +33,13 @@ The [Stage 5.1–5.7 plan index](../plans/stage-5/README.md#user-input-and-auton
   Stage 5.7's Linux-only evidence missed a `realpath -m` portability defect that
   made the scenario runner unusable on the only platform where native
   validation is required, and the interface is Stage 6's actual deliverable.
-  Re-attempted for 6.2 on 2026-10-02, but against the wrong host:
-  `192.168.0.155` is the user's NAS, not the Mac, so the refusal says
-  nothing about Mac access. The documented Mac route is
-  `simonecoletta@192.168.0.108`, which currently returns `No route to host`
-  (ARP FAILED), so the Mac is down or off-network. All 6.2 measurements
-  stay Linux-only.
+  Re-attempted for 6.2 on 2026-10-02, at first against the wrong host
+  (`192.168.0.155` is the user's NAS, so that refusal says nothing about
+  Mac access). Once the user reported the Mac up, the documented route
+  `simonecoletta@192.168.0.108` connected and 6.2 produced full native
+  evidence (build, suite, captures, probes) recorded in the results
+  document. The gate is closed for 6.2's capture; later sub-stages
+  re-validate natively as they land.
 - **Two "product gaps" Stage 6.1 reported were wrong, and the item is withdrawn
   (2026-09-30):** 6.1 initially recorded that the application observes **no
   cost or usage** and persists **no implementation summary**, filed both as

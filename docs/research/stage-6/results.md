@@ -968,7 +968,7 @@ Run at the 6.2 candidate SHA on Linux x86-64 with pinned Go 1.27.1.
 | Parity check | `go test ./internal/parity/` | 85 rows, 67 E / 12 C / 6 X; tree and kind walk green |
 | Deliberate unregistration | `go test ./internal/parity/ -run TestDeliberateUnregistrationFails` | fails as required when an entry is removed or duplicated, and when a 6.2 row is left planned; recorded by the test itself |
 | Key-effect re-measurement | §2.8 PTY probes | `4`+`p` persists nothing; `s` confirms; `c` advances 6 → 7 |
-| Native macOS | capture at the candidate SHA | **blocked, same authentication gate**: `ping -c1 -W2 192.168.0.155` answers (0% loss); `ssh -o BatchMode=yes -o ConnectTimeout=8` as the local user and as `admin` both return `Permission denied (publickey,password,keyboard-interactive)`. Recorded as an open user gate, not as coverage |
+| Native macOS | capture at the candidate SHA | **pass on macOS 26.6.2 arm64** (see subsection below): native build, full suite, 110/60/40 captures, key-effect probes |
 | Independent adversarial review | checkpoints A–C, then D–E | recorded in the 6.2 handoff below |
 
 6.1-F14, F16, F17, F18 and F21 are closed with permanent tests
@@ -1015,11 +1015,35 @@ Linux-only. The user gate in pending decisions is unchanged.
 blockers and the Stage 5 index). Every 6.1 and 6.2 SSH attempt on record
 went to the NAS — ping answering and key refusal there say nothing about
 the Mac, so "authentication refused" was never actually tested against the
-Mac and the tables above mislabel their target. `192.168.0.108` currently
-returns `No route to host` (ping 100% loss, ARP FAILED, mDNS unresolvable),
-so the Mac is down or off-network and native validation stays blocked on
-reachability, not just authentication. No macOS evidence is claimed
-anywhere; the pending-decisions gate now names the correct host.
+Mac and the tables above mislabel their target. `192.168.0.108` first
+returned `No route to host` (ping 100% loss, ARP FAILED, mDNS
+unresolvable); once the user reported the Mac up, the documented route
+connected.
+
+### Native macOS at 6.2: obtained 2026-10-02
+
+Host macOS 26.6.2 arm64, Homebrew Go 1.27.1 (`go version go1.27.1
+darwin/arm64`), matching the pinned toolchain. The Mac has no GitHub key,
+so the candidate travelled as a SHA-verified bundle (`git rev-parse`
+`582e2d1` exact on arrival) into an agent-owned detached clone at
+`/tmp/vigil-62-native`; the normal checkout
+(`/Users/simonecoletta/development/vigil`) was never touched and verified
+unchanged afterwards. Only agent-owned temporary paths were removed on
+exit. One `~/.ssh/known_hosts` line (GitHub's public ed25519 host key via
+`ssh-keyscan`) was appended to unblock host verification; no credential,
+config or checkout changed.
+
+| Native check | Result |
+| --- | --- |
+| Native build at `582e2d1` | pass; binary runs (`vigil --help` lists all commands) |
+| Full suite `go test -count=1 ./...` | pass, no failures (`tui`, `parity`, `doccheck`, `core` individually confirmed) |
+| PTY capture, fresh disposable fixture, production-path seeding | 110×40 overview footer byte-identical to Linux (`p pause · c continue · a advance · u queue · s stop (confirm) · ? help · q quit  (1–9/9)`); 60×20 and 40×12 degrade to `N bindings · ? for all keys`; every rendered line within width; no binding cut at any width |
+| Key-effect probes, persisted state re-read | `4` then `p`: no change (6.1-F17 closed natively); `c`: revision 5 → 6, `paused` → `ready`; `q`/`qy` exits cleanly |
+| Fixture hygiene | disposable fixture outside every checkout; agent paths removed |
+
+Linux-only scope statements elsewhere in this document now end at this
+subsection: from here on, interface measurements are Linux **and** native
+macOS unless a later sub-stage says otherwise.
 
 ## 7. Handoff
 
