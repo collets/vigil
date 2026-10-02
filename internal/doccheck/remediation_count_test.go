@@ -77,21 +77,30 @@ func TestStage63ReviewRecordCountsMatchHistory(t *testing.T) {
 	// substring test passes on a number that appears in a historical finding
 	// — which is how the count stayed wrong for four rounds.
 	doc := string(raw)
-	claims := map[string]*regexp.Regexp{
-		"applied count in the status line":           regexp.MustCompile(`(?i)\b([a-z]+) remediations applied`),
-		"outstanding ordinal in the status line":     regexp.MustCompile(`(?i)follow-up review of the \*\*([a-z]+)\*\* remediation`),
-		"outstanding ordinal in the closing section": regexp.MustCompile(`(?i)the \*\*([a-z]+)\*\* remediation has not`),
+	// Each claim names its own required spelling: the applied count is a
+	// cardinal ("ten remediations applied") and the outstanding ordinal is an
+	// ordinal ("the tenth remediation"). Comparing either against the other's
+	// spelling is itself the near-miss this gate exists to catch, so the two are
+	// checked separately and each against its own word.
+	claims := []struct {
+		what  string
+		form  *regexp.Regexp
+		spell string
+	}{
+		{"applied count in the status line", regexp.MustCompile(`(?i)\b([a-z]+) remediations applied`), stage63Spell(applied)},
+		{"outstanding ordinal in the status line", regexp.MustCompile(`(?i)follow-up review of the \*\*([a-z]+)\*\* remediation`), stage63Ordinal(applied)},
+		{"outstanding ordinal in the closing section", regexp.MustCompile(`(?i)the \*\*([a-z]+)\*\* remediation has not`), stage63Ordinal(applied)},
 	}
-	for name, pattern := range claims {
-		found := pattern.FindStringSubmatch(doc)
+	for _, claim := range claims {
+		found := claim.form.FindStringSubmatch(doc)
 		if found == nil {
 			t.Errorf("review record states no %s; %d remediation commits exist: %s",
-				name, applied, strings.Join(shas, " "))
+				claim.what, applied, strings.Join(shas, " "))
 			continue
 		}
-		if stage63Ordinal(applied) != found[1] {
+		if claim.spell != found[1] {
 			t.Errorf("review record's %s says %q but %d remediation commits exist, so it must say %q",
-				name, found[1], applied, stage63Ordinal(applied))
+				claim.what, found[1], applied, claim.spell)
 		}
 	}
 	// The rounds table must carry exactly one row per review plus the pending
