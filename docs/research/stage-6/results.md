@@ -2,10 +2,11 @@
 
 <!-- vigil-tier: evidence -->
 
-**Linux-side capture qualification.** §2.9's History block mixes measurement
-and current code — its rows are the `f4196fb` capture, its header and footer are
-the code after the window-state relocation. The native capture's narrower
-limitation is recorded under §6.
+**Linux-side capture qualification.** §2.9's History block is not one consistent
+capture: its rows are the `f4196fb` measurement, its header and footer are the
+code after the window-state relocation, and the blank line it shows between them
+is stale. The full statement is under §6; the native capture's separate and
+narrower limitation is recorded there too.
 
 Status: **6.3 measured; feature list accumulates.** Stage 6.1 produced the
 measured evidence in §§1–4 and the skeleton feature list in §5. Stage 6.2
@@ -14,10 +15,10 @@ help, palette, project switcher), re-ran the interface capture against the
 new shell (§2.8), closed 6.1-F14/F16/F17/F18/F21, marked §5.1 rows 1.1–1.12
 done, and installed the mechanical parity check. Stage 6.3 built the main
 dashboard, the run-detail screen and the navigable history (§2.9), closed
-6.1-F1/F2/F20, marked fourteen §5 rows done, left two §5 rows
-honestly partial (3.2, 3.4 — named below), and flipped the four 6.3 register
-rows to done. No product surface changed, so the §4 classes are re-verified
-unchanged and only the four 6.3 rows' `Today` entries move to full.
+6.1-F1/F2/F20, marked **thirteen** §5 rows done, left **three** §5 rows
+honestly partial (2.12, 3.2, 3.4 — named below), and flipped the four 6.3
+register rows to done. No product surface changed, so the §4 classes are
+re-verified unchanged and only the four 6.3 rows' `Today` entries move to full.
 Sections 6.4–6.9 own every remaining `planned` row, and §5 fills as each
 lands.
 
@@ -1309,13 +1310,16 @@ macOS behaviour is claimed for them. They are Linux-verified by the unit tests
 named in §6 and by the round-10 review; a later native capture at the accepted
 SHA would close this, and 6.9 should take it.
 
-**The same qualification applies on the Linux side, and it is stated here rather
-than left for a reader to infer.** The §2.9 History block shows the *current*
-header layout, but its seven event rows and timestamps are the ones captured at
-`f4196fb`; the header line was edited, not re-captured, and the blank line that
-separated the rows from the footer was removed, because both changes landed
-after that measurement. Its rows are real measurements; its header and footer
-are the code as it now stands.
+**The same qualification applies on the Linux side, and it is stated precisely
+here rather than left for a reader to infer.** The §2.9 History block is not one
+consistent capture. Its seven event rows and timestamps are the ones captured at
+`f4196fb`; its header line was **edited to match the current renderer** rather
+than re-captured; its footer text is likewise current; and the **blank line
+between the last row and the footer is stale** — the renderer no longer emits a
+separator there, but the block still shows one. Three parts, one of them wrong,
+and it is the wrong one that a reader diffing this block against a live screen
+would trip over. The rows are measurements; the header and footer are the code as
+it now stands; the separator is neither.
 
 **One macOS-specific measurement note, recorded because it changed the method
 rather than the result.** The Linux capture harness reads the master end only

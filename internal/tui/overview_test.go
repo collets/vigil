@@ -335,8 +335,9 @@ func TestQueueCursorBoundedOnLoad(t *testing.T) {
 		t.Fatalf("queue cursor %d past window %d after load", m.queueCursor, maxRenderedQueue)
 	}
 	// The same for the request cursor: it had its own load clamp with a
-	// different shape, one past the rendered window, reachable the moment a
-	// third writer appeared.
+	// different shape, one past the rendered window. It was unreachable
+	// while moveCursor also bounded it, and this pins it for any other
+	// writer that sets the cursor without doing so.
 	inbox := make([]core.InboxEntry, 0, 25)
 	for i := 1; i <= 25; i++ {
 		inbox = append(inbox, core.InboxEntry{ID: fmt.Sprintf("req-%02d", i), Kind: "approval"})
@@ -400,7 +401,7 @@ func TestUnobservedBudgetRendersUnavailable(t *testing.T) {
 	// overviewLines directly, on the premise that the budget block sat
 	// below the fold — it does not, at 120x40 it renders at rows 18-20 —
 	// so that draft stopped exercising View() for the very P16 property
-	// this test exists to pin. Both renderers are checked.
+	// this test exists to pin. View() covers overviewLines transitively.
 	view := m.View().Content
 	if !strings.Contains(view, "Budgets: unavailable (no recorded segment)") {
 		t.Fatalf("unobserved budget not marked unavailable:\n%s", view)
