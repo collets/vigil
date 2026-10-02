@@ -99,6 +99,7 @@ internal/boundary/    runtime doctor and experimental container guardian/probes
 internal/workspace/   physical directory, discovery and common Git identities
 internal/artifacts/   bounded content-addressed evidence
 internal/doccheck/    documentation consistency gate
+internal/parity/      mechanical Stage 6 parity register and its check
 docs/                 architecture, plans, specifications, evidence and reviews
 ```
 
