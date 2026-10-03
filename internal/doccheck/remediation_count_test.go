@@ -61,7 +61,7 @@ var stage63InFlightSuffix = ""
 // stage63Expected is the count the record must state, and why.
 func stage63Expected(root, review string, applied int) int {
 	if stage63RecordUncommitted(root, review) {
-		stage63InFlightSuffix = fmt.Sprintf(", and a %s remediation is uncommitted, so %d are in total", stage63UnspellRequired(applied+1), applied+1)
+		stage63InFlightSuffix = fmt.Sprintf(", and a %s remediation is uncommitted, so %d are in total", stage63OrdinalWord(applied+1), applied+1)
 		return applied + 1
 	}
 	return applied
@@ -115,34 +115,40 @@ func TestStage63ReviewRecordCountsMatchHistory(t *testing.T) {
 		t.Errorf("%d remediation reviews have run over %d remediation commits; at least one must be unreviewed",
 			remediationReviews, expected)
 	}
-	// The three claims the rounds keep getting wrong. Each is asserted against
-	// its own sentence rather than the whole document, because a bare
-	// substring test passes on a number that appears in a historical finding
-	// — which is how the count stayed wrong for four rounds.
+	// The three claims the rounds keep getting wrong. Each is read from the
+	// SECTION that states it, not from the whole document: a bare
+	// first-match-in-the-file search passes on a number quoted inside a
+	// historical finding, and reads a quote as if it were the live claim. The
+	// record quotes "ten remediations applied" while explaining this gate, and
+	// that quote is not the applied count.
+	//
+	// Each claim is then compared as a NUMBER. stage63ParseNumber reads ordinary
+	// and compound English numerals — "eighteen", "twenty-one", "one hundred and
+	// four", and their ordinal forms — so the comparison has no ceiling. An
+	// earlier version compared words from a table covering 0..20, which moved the
+	// ceiling rather than removing it: the twenty-first commit after the candidate
+	// failed with a message reporting that the document "says 1".
 	doc := string(raw)
-	// Each claim is compared as a NUMBER, not as a string. An earlier version
-	// compared words, which meant the gate could only reach twenty before
-	// stage63Spell returned "" — so the twenty-first commit after the candidate
-	// would break it permanently, with unreadable messages. Parsing the
-	// document's word back to an integer removes the ceiling entirely; the word
-	// is only ever produced for a human reading a failure.
+	header := stage63Section(doc, "", "## Identifier note")
+	closing := stage63Section(doc, "## What these rounds establish", "")
 	claims := []struct {
-		what string
-		form *regexp.Regexp
-		want int
+		what  string
+		form  *regexp.Regexp
+		scope string
+		want  int
 	}{
-		{"applied count in the status line", regexp.MustCompile(`(?i)\b([a-z]+) remediations applied`), expected},
-		{"outstanding ordinal in the status line", regexp.MustCompile(`(?i)follow-up review of the \*\*([a-z]+)\*\* remediation`), expected},
-		{"outstanding ordinal in the closing section", regexp.MustCompile(`(?i)the \*\*([a-z]+)\*\* remediation has not`), expected},
+		{"applied count in the status line", regexp.MustCompile(`(?i)\b([a-z]+(?:[- ][a-z]+)*) remediations applied`), header, expected},
+		{"outstanding ordinal in the status line", regexp.MustCompile(`(?i)follow-up review of the \*\*([a-z]+(?:[- ][a-z]+)*)\*\* remediation`), header, expected},
+		{"outstanding ordinal in the closing section", regexp.MustCompile(`(?i)the \*\*([a-z]+(?:[- ][a-z]+)*)\*\* remediation has not`), closing, expected},
 	}
 	for _, claim := range claims {
-		found := claim.form.FindStringSubmatch(doc)
+		found := claim.form.FindStringSubmatch(claim.scope)
 		if found == nil {
 			t.Errorf("review record states no %s; %d remediation commits exist%s: %s",
 				claim.what, applied, stage63InFlightSuffix, strings.Join(shas, " "))
 			continue
 		}
-		got, ok := stage63Unspell(found[1])
+		got, ok := stage63ParseNumber(found[1])
 		if !ok {
 			t.Errorf("review record's %s says %q, which is not a number this gate can read; %d remediation commits exist%s",
 				claim.what, found[1], applied, stage63InFlightSuffix)
@@ -153,20 +159,37 @@ func TestStage63ReviewRecordCountsMatchHistory(t *testing.T) {
 				claim.what, got, applied, stage63InFlightSuffix, claim.want)
 		}
 	}
-	// The rounds table must carry one row per review plus the pending one, and
-	// the pending row must name the outstanding remediation.
+	// The rounds table must carry one row per review plus the pending one.
 	//
-	// The pending row must NOT name a commit. It reviews the commit being
-	// written, which does not exist while it is being written, so a row
-	// carrying an older SHA points the next reviewer at a range that omits the
-	// fix entirely — which is what round 19 found in row 19.
-	if !regexp.MustCompile(`(?m)^\|\s*\d+\s*\|.*` + `pending`).MatchString(table) {
+	// The pending row must NOT name a commit: it reviews the commit being
+	// written, which does not exist while it is being written, so a row carrying
+	// an older SHA points the next reviewer at a range that omits the fix.
+	//
+	// It MUST name the outstanding ordinal, and that is a separate assertion from
+	// the one above. Round 20 weakened this commit by replacing it, so it is
+	// asserted separately and explicitly rather than as a side effect.
+	if !regexp.MustCompile(`(?m)^\|\s*\d+\s*\|[^\n]*pending`).MatchString(table) {
 		t.Errorf("no pending row in the rounds table; one is required for the %d remediation", expected)
 	}
-	pendingRow := regexp.MustCompile(`(?m)^\|\s*\d+\s*\|\s*([^|]*?)\s*\|[^\n]*pending`).FindStringSubmatch(table)
-	if pendingRow != nil {
+	pendingRow := regexp.MustCompile(`(?m)^\|\s*\d+\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|[^\n]*pending`).FindStringSubmatch(table)
+	if pendingRow == nil {
+		t.Errorf("cannot read the pending row's candidate and scope cells")
+	} else {
 		if candidate := strings.TrimSpace(pendingRow[1]); candidate != "\u2014" && candidate != "-" {
 			t.Errorf("pending row names commit %s, but a pending review cannot name the commit it reviews: it does not exist yet", candidate)
+		}
+		// Compared as a number, word or digits. A word-only comparison cannot
+		// survive past ninety-nine, where this helper stops producing prose —
+		// which would re-introduce the ceiling round 20 found, in the very
+		// assertion added to remove it.
+		scope := strings.TrimSpace(pendingRow[2])
+		scopeNumber, ok := stage63ReadNumber(scope)
+		if !ok {
+			t.Errorf("pending row's scope %q carries no readable number; it must name the outstanding remediation, the %s",
+				scope, stage63OrdinalWord(expected))
+		} else if scopeNumber != expected {
+			t.Errorf("pending row's scope names remediation %d; the outstanding one is the %s",
+				scopeNumber, stage63OrdinalWord(expected))
 		}
 	}
 }
@@ -258,21 +281,212 @@ var stage63OrdinalWords = map[string]int{
 	"nineteenth": 19, "twentieth": 20,
 }
 
-// stage63UnspellRequired renders a number as its ordinal word, for messages.
-func stage63UnspellRequired(n int) string {
-	for word, value := range stage63OrdinalWords {
-		if value == n {
+// stage63Section returns the text of one section of the record: from the heading
+// matching `from` up to the first heading matching `to`. An empty bound means the
+// start or the end of the document.
+func stage63Section(doc, from, to string) string {
+	start := 0
+	if from != "" {
+		idx := strings.Index(doc, from)
+		if idx < 0 {
+			return ""
+		}
+		start = idx
+	}
+	rest := doc[start:]
+	if to == "" {
+		return rest
+	}
+	if end := strings.Index(rest, to); end > 0 {
+		return rest[:end]
+	}
+	return rest
+}
+
+// English numerals, in both cardinal and ordinal form. The record spells its
+// counts in words, so the gate must be able to read words — but a fixed table
+// puts a ceiling on the count, which is exactly the defect round 20 found: the
+// comparison had moved to integers while the *reading* was still a 0..20 table,
+// so the twenty-first commit failed with a message claiming the document said
+// "1". A compositional parser has no ceiling.
+var stage63Cardinals = map[string]int{
+	"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+	"seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+	"thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
+	"seventeen": 17, "eighteen": 18, "nineteen": 19,
+	"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60,
+	"seventy": 70, "eighty": 80, "ninety": 90,
+}
+
+var stage63Ordinals = map[string]int{
+	"zeroth": 0, "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
+	"sixth": 6, "seventh": 7, "eighth": 8, "ninth": 9, "tenth": 10,
+	"eleventh": 11, "twelfth": 12, "thirteenth": 13, "fourteenth": 14,
+	"fifteenth": 15, "sixteenth": 16, "seventeenth": 17, "eighteenth": 18,
+	"nineteenth": 19, "twentieth": 20, "thirtieth": 30, "fortieth": 40,
+	"fiftieth": 50, "sixtieth": 60, "seventieth": 70, "eightieth": 80,
+	"ninetieth": 90,
+}
+
+// stage63ParseNumber reads an English numeral, cardinal or ordinal, compound or
+// simple: "eighteen", "twentieth", "twenty-one", "twenty-first",
+// "one hundred and four". ok is false for anything it cannot read, which fails
+// closed with a message naming the offending text.
+func stage63ParseNumber(text string) (int, bool) {
+	lowered := strings.ToLower(text)
+	fields := strings.FieldsFunc(lowered, func(r rune) bool {
+		return r == '-' || r == ' ' || r == '\u2011'
+	})
+	if len(fields) == 0 {
+		return 0, false
+	}
+	// "twenty-first" is a number; "twenty first" is a typo, and reading it as
+	// twenty-one would make a misspelt ordinal indistinguishable from a correct
+	// one. The single exception is the "one hundred and fourth" shape, where the
+	// ordinal follows "hundred and" and spaces are correct.
+	if len(fields) > 1 && !strings.ContainsAny(lowered, "-\u2011") && !stage63HasWord(fields, "hundred") {
+		for _, field := range fields {
+			if _, isOrdinal := stage63Ordinals[field]; isOrdinal {
+				return 0, false
+			}
+		}
+	}
+	// "and" joins two words; it cannot open or close the numeral.
+	for i, field := range fields {
+		if field == "and" && (i == 0 || i == len(fields)-1) {
+			return 0, false
+		}
+	}
+	// A leading or trailing separator means the numeral was not written cleanly
+	// ("twenty-first-"), which would otherwise read as a correct number.
+	if trimmed := strings.Trim(lowered, "-\u2011"); trimmed != lowered {
+		return 0, false
+	}
+	total, current := 0, 0
+	seen := false
+	for _, field := range fields {
+		switch field {
+		case "hundred":
+			if !seen || current == 0 {
+				return 0, false
+			}
+			current *= 100
+		case "and":
+			if !seen {
+				return 0, false
+			}
+			// "and" is additive and changes nothing.
+		default:
+			value, ok := stage63Cardinals[field]
+			if !ok {
+				// An ordinal is accepted as the final word only; the caller
+				// anchors on it, so "twenty first" cannot be misread.
+				value, ok = stage63Ordinals[field]
+				if !ok {
+					return 0, false
+				}
+			}
+			current += value
+			seen = true
+		}
+	}
+	total += current
+	if !seen {
+		return 0, false
+	}
+	return total, true
+}
+
+// stage63OrdinalWord renders n as an ordinal. Tens are regular ("twenty" + unit),
+// so a compound is the cardinal tens word, a hyphen, and the unit's ordinal form;
+// the unit's own irregulars — first, second, third, fifth, eighth, ninth, twelfth —
+// are the only words that are not the cardinal with "th" appended.
+func stage63OrdinalWord(n int) string {
+	if n < 0 || n > 99 {
+		return strconv.Itoa(n)
+	}
+	// Below twenty every number is a single word, so it is looked up directly
+	// rather than split into a tens part and a unit part — which is what made
+	// nineteen render as "ten-ninth".
+	if word, ok := stage63OrdinalSingle(n); ok {
+		return word
+	}
+	unit := n % 10
+	tens := n - unit
+	// A round ten has no unit part: twentieth, not twenty-zeroth.
+	if unit == 0 {
+		if word, ok := stage63OrdinalSingle(n); ok {
 			return word
 		}
+		return strconv.Itoa(n)
+	}
+	if tens == 0 {
+		return stage63CardinalUnit(unit) + "th"
+	}
+	unitWord := stage63IrregularOrdinals[unit]
+	if unitWord == "" {
+		unitWord = stage63CardinalUnit(unit) + "th"
+	}
+	return stage63CardinalUnit(tens) + "-" + unitWord
+}
+
+// stage63ReadNumber finds the first number in a fragment, spelled or in digits.
+// The record spells its counts in words, but past ninety-nine a human would write
+// digits, and both must be readable for the gate to keep working.
+func stage63ReadNumber(text string) (int, bool) {
+	if value, err := strconv.Atoi(strings.TrimSpace(text)); err == nil {
+		return value, true
+	}
+	for _, field := range strings.Fields(text) {
+		trimmed := strings.Trim(field, "*`,.;:()")
+		if trimmed == "" {
+			continue
+		}
+		if value, err := strconv.Atoi(trimmed); err == nil {
+			return value, true
+		}
+	}
+	for _, field := range strings.Fields(text) {
+		if value, ok := stage63ParseNumber(strings.Trim(field, "*`,.;:()")); ok {
+			return value, true
+		}
+	}
+	return 0, false
+}
+
+// stage63HasWord reports whether any token is the given word.
+func stage63HasWord(fields []string, word string) bool {
+	for _, field := range fields {
+		if field == word {
+			return true
+		}
+	}
+	return false
+}
+
+var stage63IrregularOrdinals = map[int]string{
+	1: "first", 2: "second", 3: "third", 5: "fifth", 8: "eighth", 9: "ninth", 12: "twelfth",
+}
+
+var stage63UnitCardinals = map[int]string{
+	1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven",
+	8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve",
+	20: "twenty", 30: "thirty", 40: "forty", 50: "fifty", 60: "sixty",
+	70: "seventy", 80: "eighty", 90: "ninety",
+}
+
+func stage63CardinalUnit(n int) string {
+	if word, ok := stage63UnitCardinals[n]; ok {
+		return word
 	}
 	return strconv.Itoa(n)
 }
 
-// stage63Unspell resolves a cardinal or ordinal word to its number.
-func stage63Unspell(word string) (int, bool) {
-	if n, ok := stage63NumberWords[strings.ToLower(word)]; ok {
-		return n, true
+func stage63OrdinalSingle(n int) (string, bool) {
+	for word, value := range stage63Ordinals {
+		if value == n {
+			return word, true
+		}
 	}
-	n, ok := stage63OrdinalWords[strings.ToLower(word)]
-	return n, ok
+	return "", false
 }
