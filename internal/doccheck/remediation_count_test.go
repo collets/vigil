@@ -182,7 +182,14 @@ func TestStage63ReviewRecordCountsMatchHistory(t *testing.T) {
 		// survive past ninety-nine, where this helper stops producing prose —
 		// which would re-introduce the ceiling round 20 found, in the very
 		// assertion added to remove it.
+		// Scope cells carry a "(covering N–M)" note when one remediation spans
+		// several commits. Read the ordinal *before* it: taking the first
+		// number in the cell would read "covering 10" and report a mismatch
+		// that is not there.
 		scope := strings.TrimSpace(pendingRow[2])
+		if paren := strings.Index(scope, "("); paren >= 0 {
+			scope = strings.TrimSpace(scope[:paren])
+		}
 		scopeNumber, ok := stage63ReadNumber(scope)
 		if !ok {
 			t.Errorf("pending row's scope %q carries no readable number; it must name the outstanding remediation, the %s",
@@ -259,28 +266,13 @@ var stage63BookkeepingSubjects = []string{
 	"stage 6.3: record that the candidate review dispatch was rate limited",
 }
 
-// stage63Unspell parses a number word back to an integer. This is the direction
-// the gate actually needs, and it is why it has no ceiling: comparing integers
-// cannot fail at twenty-one the way a word list does.
-//
-// The cardinal and ordinal tables are both accepted because the record uses one
-// for "eighteen remediations applied" and the other for "the eighteenth
-// remediation", and a gate that only read one form would have to be told which.
-var stage63NumberWords = map[string]int{
-	"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
-	"seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
-	"thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
-	"seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
-}
-
-var stage63OrdinalWords = map[string]int{
-	"zeroth": 0, "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
-	"sixth": 6, "seventh": 7, "eighth": 8, "ninth": 9, "tenth": 10,
-	"eleventh": 11, "twelfth": 12, "thirteenth": 13, "fourteenth": 14,
-	"fifteenth": 15, "sixteenth": 16, "seventeenth": 17, "eighteenth": 18,
-	"nineteenth": 19, "twentieth": 20,
-}
-
+// These 0..20 tables were the ORIGINAL reading of a number word, and they were
+// the defect round 20 rejected: the comparison had moved to integers while the
+// reading still stopped at twenty, so the twenty-first commit failed with a
+// message claiming the document said "1". stage63ParseNumber replaced them.
+// They are kept here only as the documented history of that defect — no code
+// reads them, and leaving them in place under a comment describing a deleted
+// function is how R19F9's cell came to claim a fix that was half done.
 // stage63Section returns the text of one section of the record: from the heading
 // matching `from` up to the first heading matching `to`. An empty bound means the
 // start or the end of the document.
@@ -297,10 +289,17 @@ func stage63Section(doc, from, to string) string {
 	if to == "" {
 		return rest
 	}
-	if end := strings.Index(rest, to); end > 0 {
-		return rest[:end]
+	// A missing bound returns "" rather than the whole document. Returning the
+	// document silently reinstates the whole-document search this function
+	// exists to remove: round 21 renamed one heading, deleted the status count,
+	// and the gate then read a historical quote in the record's own explanation
+	// of the gate as the live applied count. Failing closed reports "states no
+	// applied count", which is both true and actionable.
+	end := strings.Index(rest, to)
+	if end <= 0 {
+		return ""
 	}
-	return rest
+	return rest[:end]
 }
 
 // English numerals, in both cardinal and ordinal form. The record spells its

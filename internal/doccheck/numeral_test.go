@@ -19,7 +19,7 @@ func TestNumeralParsingHasNoCeiling(t *testing.T) {
 		want int
 	}{
 		{"eighteen", 18}, {"nineteen", 19}, {"twenty", 20}, {"twenty-one", 21},
-		{"twenty-one", 21}, {"thirty-five", 35}, {"ninety-nine", 99},
+		{"thirty-five", 35}, {"ninety-nine", 99},
 		{"one hundred", 100}, {"one hundred and four", 104},
 		{"two hundred and fifty-six", 256},
 		{"eighteenth", 18}, {"nineteenth", 19}, {"twentieth", 20},

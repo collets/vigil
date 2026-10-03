@@ -155,13 +155,13 @@ Acceptance: run the [agreed milestone](../core/mvp-acceptance.md), including act
 - Record the next concrete action and any input needed from the user.
 - Preserve unfinished work and running-session identities; stop experimental processes before ending the session.
 
-Next concrete action: **obtain the narrow follow-up review of Stage 6.3's nineteenth remediation** on `task/stage-6.3-main-dashboard`, then close it. The candidate-wide review of `f4196fb` rejected the candidate with one P0 and three
+Next concrete action: **obtain the narrow follow-up review of Stage 6.3's twentieth remediation** on `task/stage-6.3-main-dashboard`, then close it. The candidate-wide review of `f4196fb` rejected the candidate with one P0 and three
 P1s — wall consumption read from a table with no production writer, a cursor that
 could act past the rendered window, an attempt limit paired with a task-cumulative
 charge, and a P15 test that certified the negation of a clause of P15. All four are
 fixed and each was verified as genuinely fixed.
 
-Twenty review rounds have followed. Rounds 10–17 each returned conditional, and
+Twenty-one review rounds have followed. Rounds 10–17 each returned conditional, and
 their findings were overwhelmingly of one class — a count or ordinal in the prose
 disagreeing with the commit history — of which three were caught in the very
 remediation written to fix their predecessor. Round 12's headline finding was
@@ -180,7 +180,7 @@ Those still need a reviewer. Round 13's mutation finding stands: the test round 
 found weakened now fails in both directions, so that coverage is real rather than
 relabelled.
 
-Acceptance rests on the twenty-first review, not on a clean first pass, and 6.3 is not
+Acceptance rests on the twenty-second review, not on a clean first pass, and 6.3 is not
 accepted until it returns. Only then may [6.4](../plans/stage-6/6.4-actionable-inbox.md)
 start, and only with an explicit instruction naming it. Stage 6.2 remains complete
 and accepted at `582e2d1`; its task branch awaits integration, which needs a named

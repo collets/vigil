@@ -1350,9 +1350,9 @@ plan for the sub-stage it is running:
 
 State as written: 6.1 complete, 6.2 complete and accepted at `582e2d1`, and
 6.3 implemented on its task branch through checkpoints A–D with its candidate
-**rejected** at `f4196fb` and **nineteen** remediations applied; rounds 10–20
-reviewed remediations 1–17 — rounds 10–17 returned conditional, and rounds
-**18, 19 and 20 returned rejected**. The **nineteenth** awaits its narrow
+**rejected** at `f4196fb` and **twenty** remediations applied; rounds 10–21
+reviewed remediations 1–18 — rounds 10–17 returned conditional, and rounds
+**18, 19, 20 and 21 returned rejected**. The **nineteenth** awaits its narrow
 follow-up review. For this review record alone the applied count is gated by
 `TestStage63ReviewRecordCountsMatchHistory`, which derives it from the git history
 rather than from prose; the other four documents carrying the same count are not
