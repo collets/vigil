@@ -198,6 +198,102 @@ integration record must retain the source SHA/range, accepted destination SHA an
 content-equivalence evidence before the ref is removed. If mapping, completeness or
 ownership is unclear, retain the branch and ask.
 
+## Agent scratch space and disk discipline
+
+Agents need somewhere to work: a tree to test in, a build cache, a fixture. This is
+normal and not restricted — the rule is only **where** that space lives, and that you
+**give it back**. An unbounded scratch habit is the one way a careful agent can still
+fill a maintainer's disk.
+
+**Put every byte you create under one scratch root you can delete in a single
+command.** For example:
+
+```text
+/tmp/vigil-scratch/<task-id>/          # your own scratch
+/tmp/vigil-scratch/shared-go-cache/     # optionally shared build/module cache
+```
+
+Never scatter scratch across `/tmp`, your home directory or the repository tree.
+If everything you made is under one root, cleanup is `rm -rf` on that root, and you
+never have to decide file by file.
+
+### Prefer a worktree over a clone
+
+`git worktree add` shares the repository's object store; `git clone` does not. The
+measured difference on this repository is roughly **20×**: the review clones left in
+`/tmp` by Stage 6.3 were ~7.6 GB each, and the review worktrees were ~370 MB. A
+dozen clones filled a maintainer's disk. Reach for a clone only when a genuinely
+independent object store is required, and then reuse it by resetting rather than
+recreating.
+
+When a reviewer must mutate code to prove a test bites, give it a detached worktree
+created once and reused across findings — not a fresh clone per round. Say so
+explicitly when dispatching a reviewer; a reviewer left to improvise will clone.
+
+**A fresh worktree has no `.tools/`.** That directory is gitignored, so it exists
+only in the checkout that installed it, and `make` then falls back to whatever `go`
+is on `PATH`. That may be far too old to parse `go.mod` at all, which looks like a
+broken change rather than a missing toolchain. In a worktree, invoke the pinned
+toolchain by absolute path:
+
+```sh
+env -u GOROOT /path/to/vigil/.tools/go/bin/go test ./... -count=1
+```
+
+Or symlink the primary checkout's `.tools` into the worktree if you want `make` to
+work unchanged.
+
+### Keep build caches inside the scratch root
+
+Go writes to `GOCACHE` and `GOMODCACHE`. Point both into your scratch root rather
+than letting them land in a shared default that no single `rm -rf` will reclaim:
+
+```sh
+GOCACHE=/tmp/vigil-scratch/<task-id>/gocache \
+GOMODCACHE=/tmp/vigil-scratch/<task-id>/gomodcache \
+  make check
+```
+
+A module cache may be shared read-only between tasks that need identical versions;
+a build cache may not be shared writable. When in doubt, give each task its own and
+delete them together.
+
+### Two deletion traps
+
+- **Go module cache files are mode `0444`.** A plain `rm -rf` fails on them and
+  leaves the directory silently in place, which reads as success. This was observed,
+  not anticipated: the first deletion attempt on the 6.3 scratch reported success and
+  removed nothing. `chmod -R u+w` the scratch root first.
+- **A registered worktree is not an ordinary directory.** `git worktree list` shows
+  them. Remove one with `git worktree remove <path>` followed by `git worktree
+  prune`; never `rm -rf` it, which leaves stale metadata in `.git/worktrees`.
+
+### Clear your scratch when you no longer need it
+
+Do this as soon as the work is done — before handoff, and before starting unrelated
+work. Do not wait for a clean session to tidy up, and do not assume a later session
+will.
+
+```sh
+git worktree remove --force /tmp/vigil-scratch/<task-id>/wt   # if you made one
+git worktree prune
+chmod -R u+w /tmp/vigil-scratch/<task-id> && rm -rf /tmp/vigil-scratch/<task-id>
+```
+
+Check before you finish, and say what you removed:
+
+```sh
+du -sh /tmp/vigil-scratch 2>/dev/null
+```
+
+### What not to delete
+
+Delete only what you created and can positively identify. Leave user files, other
+agents' worktrees, and anything you did not create — a reviewer is not permitted to
+clean up another agent's scratch, and this repository's rule against disturbing work
+it did not create applies to `/tmp` as much as to a checkout. If cleanup requires
+removing something of ambiguous ownership, leave it and say so.
+
 ## Integration to `main`
 
 The **designated integrator** is the single agent/session assigned to construct,

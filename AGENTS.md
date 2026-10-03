@@ -115,6 +115,18 @@ placed directly in `docs/` needs an entry in `tierByRootDocument`, both in
   are never real user acceptance.
 - **Preserve user work.** Never reset the checkout, delete uncommitted changes, or
   run destructive recovery outside agent-owned disposable fixtures.
+- **Keep every byte of scratch under one deletable root, and clear it when done.**
+  Work normally — tests, builds, fixtures and mutation-testing copies are all fine —
+  but put them under something like `/tmp/vigil-scratch/<task-id>/` so that one
+  `rm -rf` reclaims them. Prefer `git worktree add` over `git clone`: a clone
+  duplicates the object store and costs gigabytes, and a dozen fills a disk. Point
+  `GOCACHE` and `GOMODCACHE` inside that root. Run `chmod -R u+w` before deleting Go
+  module caches, which are mode `0444` and survive a plain `rm -rf`. Remove worktrees
+  with `git worktree remove` plus `git worktree prune`, never `rm -rf`. Clear your
+  scratch as soon as you no longer need it — before handoff, not at the end of the
+  session — and delete only what you created and can positively identify. The full
+  rules, including shared-cache and shared-worktree patterns, are in
+  [`docs/process/development-workflow.md`](docs/process/development-workflow.md).
 - **Historical migrations are immutable.** `internal/store/migrations/project-001..009`
   and their recorded digests must never change. Schema changes are forward-only.
 - **Follow [`docs/development-workflow.md`](docs/process/development-workflow.md).** Develop
