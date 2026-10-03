@@ -1348,13 +1348,13 @@ plan for the sub-stage it is running:
 | 6.8 Setup, definitions and resources | [`6.8-setup-definitions-and-resources.md`](../../plans/stage-6/6.8-setup-definitions-and-resources.md) |
 | 6.9 Parity closure and feature list | [`6.9-parity-closure-and-feature-list.md`](../../plans/stage-6/6.9-parity-closure-and-feature-list.md) |
 
-Stage 6.3 review state: twenty-two remediations applied; twenty-three reviews run; the twenty-second remediation is outstanding.
+Stage 6.3 review state: twenty-three remediations applied; twenty-four reviews run; the twenty-third remediation is outstanding.
 
 State as written: 6.1 complete, 6.2 complete and accepted at `582e2d1`, and
 6.3 implemented on its task branch through checkpoints A–D with its candidate
-**rejected** at `f4196fb` and **twenty-two** remediations applied; rounds 10–23
-reviewed remediations 1–21 — rounds 10–17 returned conditional, and rounds
-**18 through 23 returned rejected**. The **twenty-second** awaits its narrow
+**rejected** at `f4196fb` and **twenty-three** remediations applied; rounds 10–24
+reviewed remediations 1–22 — rounds 10–17 returned conditional, and rounds
+**18 through 24 returned rejected**. The **twenty-third** awaits its narrow
 follow-up review. The applied count, the reviews run and the outstanding ordinal
 are gated in **all five** documents that state them, each of which must carry a
 `Stage 6.3 review state:` line — `TestStage63ReviewRecordCountsMatchHistory`

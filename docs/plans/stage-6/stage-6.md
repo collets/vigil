@@ -3,13 +3,13 @@
 <!-- vigil-tier: plan -->
 
 Status: **6.1 and 6.2 complete, 6.2 accepted; 6.3 implemented on its task
-branch, its candidate review rejected, and twenty-two remediations applied with only
-the twenty-second awaiting its follow-up review; 6.4–6.9 planned, not started.**
+branch, its candidate review rejected, and twenty-three remediations applied with only
+the twenty-third awaiting its follow-up review; 6.4–6.9 planned, not started.**
 Established 2026-09-29
 by explicit user scope revision. Stage 6 does not exist in the original roadmap
 (which defines Stages 1–5 only); the user directed that it follow Stage 5.7.
 
-Stage 6.3 review state: twenty-two remediations applied; twenty-three reviews run; the twenty-second remediation is outstanding.
+Stage 6.3 review state: twenty-three remediations applied; twenty-four reviews run; the twenty-third remediation is outstanding.
 
 This document is a **scope** description. It states the outcome, the boundaries
 and the deliverable. It deliberately contains **no work checkpoints** — those are
