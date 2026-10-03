@@ -115,49 +115,60 @@ func TestStage63ReviewRecordCountsMatchHistory(t *testing.T) {
 		t.Errorf("%d remediation reviews have run over %d remediation commits; at least one must be unreviewed",
 			remediationReviews, expected)
 	}
-	// The three claims the rounds keep getting wrong. Each is read from the
-	// SECTION that states it, not from the whole document: a bare
-	// first-match-in-the-file search passes on a number quoted inside a
-	// historical finding, and reads a quote as if it were the live claim. The
-	// record quotes "ten remediations applied" while explaining this gate, and
-	// that quote is not the applied count.
+	// The claims the rounds keep getting wrong, checked in EVERY document that
+	// carries the count — not only the review record.
 	//
-	// Each claim is then compared as a NUMBER. stage63ParseNumber reads ordinary
-	// and compound English numerals — "eighteen", "twenty-one", "one hundred and
-	// four", and their ordinal forms — so the comparison has no ceiling. An
-	// earlier version compared words from a table covering 0..20, which moved the
-	// ceiling rather than removing it: the twenty-first commit after the candidate
-	// failed with a message reporting that the document "says 1".
+	// Scope matters: each claim is read from the SECTION that states it, because a
+	// first-match-in-the-file search reads a historical quote as a live claim.
+	//
+	// Coverage matters more. Four consecutive rounds returned a P1 that was a
+	// figure in one of the *other* four documents, invisible to a gate that read
+	// only the review record. A mechanism that covers one of five documents lets
+	// the class live in the other four, so it is checked in all five.
 	doc := string(raw)
-	header := stage63Section(doc, "", "## Identifier note")
+	header := stage63Section(doc, "", stage63HeaderBound)
 	closing := stage63Section(doc, "## What these rounds establish", "")
-	claims := []struct {
+	// Both wordings occur in these documents — "twenty remediations applied" and
+	// "twenty remediations have been applied" — and a pattern matching only one
+	// of them leaves a stale count ungated, which is exactly what round 22 found
+	// in next-steps.md.
+	// Markdown emphasis may sit between the number and the word — these documents
+	// write "**twenty** remediations applied" — so the pattern spans it. Round 22
+	// found the count ungated in results.md for exactly this reason: the first
+	// pattern did not match the bold form, so a stale figure there passed.
+	appliedForm := regexp.MustCompile(`(?i)\b([a-z]+(?:[- ][a-z]+)*)[*_` + "`" + `]* remediations (?:have been |were )?applied`)
+
+	// 1. The review record: applied count in the header, outstanding ordinal in
+	// the header and in the closing section.
+	for _, claim := range []struct {
 		what  string
 		form  *regexp.Regexp
 		scope string
-		want  int
 	}{
-		{"applied count in the status line", regexp.MustCompile(`(?i)\b([a-z]+(?:[- ][a-z]+)*) remediations applied`), header, expected},
-		{"outstanding ordinal in the status line", regexp.MustCompile(`(?i)follow-up review of the \*\*([a-z]+(?:[- ][a-z]+)*)\*\* remediation`), header, expected},
-		{"outstanding ordinal in the closing section", regexp.MustCompile(`(?i)the \*\*([a-z]+(?:[- ][a-z]+)*)\*\* remediation has not`), closing, expected},
+		{"applied count in the review record's header", appliedForm, header},
+		{"outstanding ordinal in the review record's header", regexp.MustCompile(`(?i)follow-up review of the \*\*([a-z]+(?:[- ][a-z]+)*)\*\* remediation`), header},
+		{"outstanding ordinal in the review record's closing section", regexp.MustCompile(`(?i)the \*\*([a-z]+(?:[- ][a-z]+)*)\*\* remediation has not`), closing},
+	} {
+		stage63CheckNumber(t, claim.what, claim.form, claim.scope, expected, applied)
 	}
-	for _, claim := range claims {
-		found := claim.form.FindStringSubmatch(claim.scope)
-		if found == nil {
-			t.Errorf("review record states no %s; %d remediation commits exist%s: %s",
-				claim.what, applied, stage63InFlightSuffix, strings.Join(shas, " "))
+
+	// 2. Every other document that states an applied count. Each must state the
+	//    same one; a document that omits the count is not an error, and a
+	//    document that states a different one is.
+	for _, other := range stage63CountCarryingDocuments {
+		body, err := os.ReadFile(filepath.Join(root, other))
+		if err != nil {
+			t.Errorf("cannot read %s, which the count gate must cover: %v", other, err)
 			continue
 		}
-		got, ok := stage63ParseNumber(found[1])
-		if !ok {
-			t.Errorf("review record's %s says %q, which is not a number this gate can read; %d remediation commits exist%s",
-				claim.what, found[1], applied, stage63InFlightSuffix)
+		found := appliedForm.FindAllStringSubmatch(string(body), -1)
+		if len(found) == 0 {
 			continue
 		}
-		if got != claim.want {
-			t.Errorf("review record's %s says %d; %d remediation commits exist%s, so it must say %d",
-				claim.what, got, applied, stage63InFlightSuffix, claim.want)
-		}
+		// A document may quote a figure while explaining this gate; only the
+		// FIRST occurrence is the live claim, which is the convention every one
+		// of these documents follows.
+		stage63CheckNumber(t, "applied count in "+other, appliedForm, string(body), expected, applied)
 	}
 	// The rounds table must carry one row per review plus the pending one.
 	//
@@ -266,13 +277,51 @@ var stage63BookkeepingSubjects = []string{
 	"stage 6.3: record that the candidate review dispatch was rate limited",
 }
 
-// These 0..20 tables were the ORIGINAL reading of a number word, and they were
-// the defect round 20 rejected: the comparison had moved to integers while the
-// reading still stopped at twenty, so the twenty-first commit failed with a
-// message claiming the document said "1". stage63ParseNumber replaced them.
-// They are kept here only as the documented history of that defect — no code
-// reads them, and leaving them in place under a comment describing a deleted
-// function is how R19F9's cell came to claim a fix that was half done.
+// The 0..20 tables that once stood here were the defect round 20 rejected: the
+// comparison had moved to integers while the *reading* still stopped at twenty, so
+// the twenty-first commit failed with a message claiming the document said "1".
+// stage63ParseNumber replaced them and they are gone. The comment that announced
+// their deletion then claimed they were "kept as the documented history of that
+// defect", which was false of the same commit — round 22 — so the record of the
+// defect lives here and nowhere else, as this sentence.
+// stage63CountCarryingDocuments are the documents that state the applied
+// remediation count. Every one of them is checked: rounds 19 to 22 each returned
+// a P1 that was a stale figure in one of these files while the gate read only the
+// review record, which is the same failure four times with a mechanism in place.
+var stage63CountCarryingDocuments = []string{
+	filepath.Join("docs", "research", "stage-6", "results.md"),
+	filepath.Join("docs", "process", "next-steps.md"),
+	filepath.Join("docs", "plans", "stage-6", "6.3-main-dashboard.md"),
+	filepath.Join("docs", "plans", "stage-6", "stage-6.md"),
+}
+
+// stage63HeaderBound is the heading that ends the review record's header block.
+// It is referenced by name in the record's own findings, which is deliberate: a
+// quoted heading inside the body must not be able to satisfy the bound, so the
+// bound is the FIRST such heading and the record keeps its quotes elsewhere. If
+// this heading is renamed, the header scope fails closed and the gate says so.
+const stage63HeaderBound = "## Identifier note"
+
+// stage63CheckNumber asserts that a scoped claim states the expected number.
+func stage63CheckNumber(t *testing.T, what string, form *regexp.Regexp, scope string, want, applied int) {
+	t.Helper()
+	found := form.FindStringSubmatch(scope)
+	if found == nil {
+		t.Errorf("%s states no such claim; %d remediation commits exist%s", what, applied, stage63InFlightSuffix)
+		return
+	}
+	got, ok := stage63ParseNumber(strings.TrimPrefix(strings.TrimSpace(found[1]), "and "))
+	if !ok {
+		t.Errorf("%s says %q, which is not a number this gate can read; %d remediation commits exist%s",
+			what, found[1], applied, stage63InFlightSuffix)
+		return
+	}
+	if got != want {
+		t.Errorf("%s says %d; %d remediation commits exist%s, so it must say %d",
+			what, got, applied, stage63InFlightSuffix, want)
+	}
+}
+
 // stage63Section returns the text of one section of the record: from the heading
 // matching `from` up to the first heading matching `to`. An empty bound means the
 // start or the end of the document.
@@ -289,12 +338,15 @@ func stage63Section(doc, from, to string) string {
 	if to == "" {
 		return rest
 	}
-	// A missing bound returns "" rather than the whole document. Returning the
-	// document silently reinstates the whole-document search this function
-	// exists to remove: round 21 renamed one heading, deleted the status count,
-	// and the gate then read a historical quote in the record's own explanation
-	// of the gate as the live applied count. Failing closed reports "states no
-	// applied count", which is both true and actionable.
+	// A missing bound returns "" rather than the whole document, which fails closed
+	// and reports "states no applied count" — true and actionable.
+	//
+	// This holds only while the bound string occurs ONCE. Round 22 found the limit:
+	// a resolution cell that quoted the bound heading verbatim put a second
+	// occurrence in the document, so renaming the real heading no longer made the
+	// bound missing and the scope widened to the whole file again, reading a
+	// historical quote as the live count. The quotes that caused it are reworded;
+	// a future session adding a verbatim quote of the heading reintroduces it.
 	end := strings.Index(rest, to)
 	if end <= 0 {
 		return ""
