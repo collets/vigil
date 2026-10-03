@@ -89,7 +89,7 @@ func TestNoDocumentUnderstatesTheGateCoverage(t *testing.T) {
 // stage63FirstFullyEnumeratedRound is the first round whose section enumerates
 // every finding as its own row. Rounds before it record only the P0 and P1 rows
 // and state their P2/P3 counts in prose.
-const stage63FirstFullyEnumeratedRound = 17
+const stage63FirstFullyEnumeratedRound = 16
 
 func TestRoundTalliesMatchTheirSections(t *testing.T) {
 	root := repoRoot
@@ -143,10 +143,10 @@ func TestRoundTalliesMatchTheirSections(t *testing.T) {
 		if got == nil {
 			continue // an early round whose tally is prose ("5 P2 nits", "none")
 		}
-		for _, severity := range []string{"P1", "P2", "P3"} {
+		for _, severity := range []string{"P0", "P1", "P2", "P3"} {
 			if got[severity] != want[severity] {
-				t.Errorf("rounds table row %d states %d %s, but its section holds %d (tally %q)",
-					number, got[severity], severity, want[severity], row["tally"])
+				t.Errorf("rounds table row %d states %d %s in %q, but its section holds %d",
+					number, got[severity], severity, row["Findings"], want[severity])
 			}
 		}
 	}
@@ -223,7 +223,7 @@ func stage63RoundSections(doc string) map[string][]string {
 		}
 		body := doc[start:end]
 		var severities []string
-		for _, row := range regexp.MustCompile(`(?m)^\| 6\.3-R\d+F\d+ \| (P\d) \|`).FindAllStringSubmatch(body, -1) {
+		for _, row := range regexp.MustCompile(`(?m)^\| 6\.3-R\d+F\d+ \| \**(P\d)\** \|`).FindAllStringSubmatch(body, -1) {
 			severities = append(severities, row[1])
 		}
 		out[number] = severities

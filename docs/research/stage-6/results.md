@@ -1348,7 +1348,7 @@ plan for the sub-stage it is running:
 | 6.8 Setup, definitions and resources | [`6.8-setup-definitions-and-resources.md`](../../plans/stage-6/6.8-setup-definitions-and-resources.md) |
 | 6.9 Parity closure and feature list | [`6.9-parity-closure-and-feature-list.md`](../../plans/stage-6/6.9-parity-closure-and-feature-list.md) |
 
-Stage 6.3 review state: twenty-three remediations applied; twenty-four reviews run; the twenty-third remediation is outstanding.
+Stage 6.3 review state: twenty-four remediations applied; twenty-five reviews run; the twenty-fourth remediation is outstanding.
 
 State as written: 6.1 complete, 6.2 complete and accepted at `582e2d1`, and
 6.3 implemented on its task branch through checkpoints A–D with its candidate

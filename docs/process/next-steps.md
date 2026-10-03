@@ -155,7 +155,7 @@ Acceptance: run the [agreed milestone](../core/mvp-acceptance.md), including act
 - Record the next concrete action and any input needed from the user.
 - Preserve unfinished work and running-session identities; stop experimental processes before ending the session.
 
-Stage 6.3 review state: twenty-three remediations applied; twenty-four reviews run; the twenty-third remediation is outstanding.
+Stage 6.3 review state: twenty-four remediations applied; twenty-five reviews run; the twenty-fourth remediation is outstanding.
 
 Next concrete action: **obtain the narrow follow-up review of Stage 6.3's twenty-third remediation** on `task/stage-6.3-main-dashboard`, then close it. The candidate-wide review of `f4196fb` rejected the candidate with one P0 and three
 P1s — wall consumption read from a table with no production writer, a cursor that

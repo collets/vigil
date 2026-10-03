@@ -126,19 +126,18 @@ func TestStage63ReviewRecordCountsMatchHistory(t *testing.T) {
 	// only the review record. A mechanism that covers one of five documents lets
 	// the class live in the other four, so it is checked in all five.
 	doc := string(raw)
-	header := stage63Section(doc, "", stage63HeaderBound)
+	_ = stage63Section(doc, "", stage63HeaderBound)
 
-	// The review record's header ALSO carries the applied count in prose, and that
-	// one is asserted separately: it is a single unwrapped line, so unlike the two
-	// ordinal checks it replaces, it does not depend on where the prose wraps.
+	// The header no longer restates any figure. It used to carry the applied count
+	// and the outstanding ordinal, and those two restatements were the whole of
+	// round 25's first P1: a commit advanced the state line and left the header
+	// behind, so the record's own first paragraph contradicted its own fourth.
 	//
-	// The ordinal-in-prose checks are deliberately GONE. They searched the header
-	// and the closing section for "the Nth remediation", and broke the moment a
-	// sentence rewrapped across a line — a gate that fails on rewrapping is a gate
-	// whose failures get silenced. The outstanding ordinal is checked on the state
-	// line below, in all five documents, where the format is fixed.
-	stage63CheckNumber(t, "applied count in the review record's header",
-		regexp.MustCompile(`(?i)\b([a-z]+(?:[- ][a-z]+)*) remediations applied`), header, expected, applied)
+	// Deleting the restatements is the fix round 25 prescribed over extending a
+	// check to police them. `TestOutstandingOrdinalClaimsAreConsistent` now reads
+	// every ordinal the record presents as outstanding wherever it appears, so a
+	// future reintroduction would be caught — but the reason to delete rather than
+	// police is that a number stated once cannot go stale.
 
 	// 2. EVERY count-carrying document must carry exactly one state line, and
 	//    that line must state the three figures correctly.

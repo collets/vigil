@@ -9,7 +9,7 @@ Established 2026-09-29
 by explicit user scope revision. Stage 6 does not exist in the original roadmap
 (which defines Stages 1–5 only); the user directed that it follow Stage 5.7.
 
-Stage 6.3 review state: twenty-three remediations applied; twenty-four reviews run; the twenty-third remediation is outstanding.
+Stage 6.3 review state: twenty-four remediations applied; twenty-five reviews run; the twenty-fourth remediation is outstanding.
 
 This document is a **scope** description. It states the outcome, the boundaries
 and the deliverable. It deliberately contains **no work checkpoints** — those are
