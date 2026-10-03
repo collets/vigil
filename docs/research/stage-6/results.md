@@ -1348,15 +1348,19 @@ plan for the sub-stage it is running:
 | 6.8 Setup, definitions and resources | [`6.8-setup-definitions-and-resources.md`](../../plans/stage-6/6.8-setup-definitions-and-resources.md) |
 | 6.9 Parity closure and feature list | [`6.9-parity-closure-and-feature-list.md`](../../plans/stage-6/6.9-parity-closure-and-feature-list.md) |
 
+Stage 6.3 review state: twenty-two remediations applied; twenty-three reviews run; the twenty-second remediation is outstanding.
+
 State as written: 6.1 complete, 6.2 complete and accepted at `582e2d1`, and
 6.3 implemented on its task branch through checkpoints A–D with its candidate
-**rejected** at `f4196fb` and **twenty-one** remediations applied; rounds 10–22
-reviewed remediations 1–19 — rounds 10–17 returned conditional, and rounds
-**18 through 22 returned rejected**. The **twenty-first** awaits its narrow
-follow-up review. For this review record alone the applied count is gated by
-`TestStage63ReviewRecordCountsMatchHistory`, which derives it from the git history
-rather than from prose; the other four documents carrying the same count are not
-gated, which round 19 verified by mutation. The full record is
+**rejected** at `f4196fb` and **twenty-two** remediations applied; rounds 10–23
+reviewed remediations 1–21 — rounds 10–17 returned conditional, and rounds
+**18 through 23 returned rejected**. The **twenty-second** awaits its narrow
+follow-up review. The applied count, the reviews run and the outstanding ordinal
+are gated in **all five** documents that state them, each of which must carry a
+`Stage 6.3 review state:` line — `TestStage63ReviewRecordCountsMatchHistory`
+derives the figures from the git history rather than from prose, and a document
+without the line fails rather than being skipped, which is the gap round 23 found in
+an earlier version that claimed the same coverage. The full record is
 [`6.3-review.md`](6.3-review.md). **6.3 is not accepted**, and no document
 records it as accepted. Native macOS evidence was obtained at `f4196fb`;
 re-capturing it at the accepted SHA is still open, and §6 says which four

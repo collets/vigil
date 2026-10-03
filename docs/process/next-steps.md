@@ -155,19 +155,24 @@ Acceptance: run the [agreed milestone](../core/mvp-acceptance.md), including act
 - Record the next concrete action and any input needed from the user.
 - Preserve unfinished work and running-session identities; stop experimental processes before ending the session.
 
-Next concrete action: **obtain the narrow follow-up review of Stage 6.3's twenty-first remediation** on `task/stage-6.3-main-dashboard`, then close it. The candidate-wide review of `f4196fb` rejected the candidate with one P0 and three
+Stage 6.3 review state: twenty-two remediations applied; twenty-three reviews run; the twenty-second remediation is outstanding.
+
+Next concrete action: **obtain the narrow follow-up review of Stage 6.3's twenty-second remediation** on `task/stage-6.3-main-dashboard`, then close it. The candidate-wide review of `f4196fb` rejected the candidate with one P0 and three
 P1s — wall consumption read from a table with no production writer, a cursor that
 could act past the rendered window, an attempt limit paired with a task-cumulative
 charge, and a P15 test that certified the negation of a clause of P15. All four are
 fixed and each was verified as genuinely fixed.
 
-Twenty-two review rounds have followed. Rounds 10–17 each returned conditional, and
+Twenty-three review rounds have followed. Rounds 10–17 each returned conditional, and
 their findings were overwhelmingly of one class — a count or ordinal in the prose
 disagreeing with the commit history — of which three were caught in the very
 remediation written to fix their predecessor. Round 12's headline finding was
-different: a test weakened on a false premise. Round 21 returned **rejected** with
-four P1s, every one a figure disagreeing with the source it cited, three of them in
-sentences a resolution cell had already claimed was corrected against those sources.
+different: a test weakened on a false premise. Round 20 returned **rejected** with two
+P1s, both established by mutation: the ceiling claim was false because only the
+comparison and not the reading had moved, and an assertion had been deleted while a
+cell claimed it existed. Round 21 returned **rejected** with four P1s, every one a
+figure disagreeing with the source it cited, three of them in sentences a resolution
+cell had already claimed was corrected against those sources.
 Round 22 returned **rejected** with five P1s and found the reason the class kept
 surviving: **all five were in documents the count gate did not read.** A gate
 covering one file of five makes that file trustworthy and leaves the defect live
@@ -175,7 +180,7 @@ where the number is actually restated. The gate now checks all five. Round 18 es
 after finding that the review record's own history had been edited to make a number
 agree. Round 19 returned **rejected** with three P1s: the second of those edits was
 never fixed, a status header claimed it was, and the new gate would have gone
-permanently fatal four commits later. Twenty-one remediations have been applied; no
+permanently fatal four commits later. Twenty-two remediations have been applied; no
 review has found a product-code defect in any of the last seven.
 
 The count class is **reduced, not closed**. `TestStage63ReviewRecordCountsMatchHistory`
@@ -188,7 +193,7 @@ reviewer. Round 13's mutation finding stands: the test round 12
 found weakened now fails in both directions, so that coverage is real rather than
 relabelled.
 
-Acceptance rests on the twenty-third review, not on a clean first pass, and 6.3 is not
+Acceptance rests on the twenty-fourth review, not on a clean first pass, and 6.3 is not
 accepted until it returns. Only then may [6.4](../plans/stage-6/6.4-actionable-inbox.md)
 start, and only with an explicit instruction naming it. Stage 6.2 remains complete
 and accepted at `582e2d1`; its task branch awaits integration, which needs a named

@@ -127,48 +127,68 @@ func TestStage63ReviewRecordCountsMatchHistory(t *testing.T) {
 	// the class live in the other four, so it is checked in all five.
 	doc := string(raw)
 	header := stage63Section(doc, "", stage63HeaderBound)
-	closing := stage63Section(doc, "## What these rounds establish", "")
-	// Both wordings occur in these documents — "twenty remediations applied" and
-	// "twenty remediations have been applied" — and a pattern matching only one
-	// of them leaves a stale count ungated, which is exactly what round 22 found
-	// in next-steps.md.
-	// Markdown emphasis may sit between the number and the word — these documents
-	// write "**twenty** remediations applied" — so the pattern spans it. Round 22
-	// found the count ungated in results.md for exactly this reason: the first
-	// pattern did not match the bold form, so a stale figure there passed.
-	appliedForm := regexp.MustCompile(`(?i)\b([a-z]+(?:[- ][a-z]+)*)[*_` + "`" + `]* remediations (?:have been |were )?applied`)
 
-	// 1. The review record: applied count in the header, outstanding ordinal in
-	// the header and in the closing section.
-	for _, claim := range []struct {
-		what  string
-		form  *regexp.Regexp
-		scope string
-	}{
-		{"applied count in the review record's header", appliedForm, header},
-		{"outstanding ordinal in the review record's header", regexp.MustCompile(`(?i)follow-up review of the \*\*([a-z]+(?:[- ][a-z]+)*)\*\* remediation`), header},
-		{"outstanding ordinal in the review record's closing section", regexp.MustCompile(`(?i)the \*\*([a-z]+(?:[- ][a-z]+)*)\*\* remediation has not`), closing},
-	} {
-		stage63CheckNumber(t, claim.what, claim.form, claim.scope, expected, applied)
+	// The review record's header ALSO carries the applied count in prose, and that
+	// one is asserted separately: it is a single unwrapped line, so unlike the two
+	// ordinal checks it replaces, it does not depend on where the prose wraps.
+	//
+	// The ordinal-in-prose checks are deliberately GONE. They searched the header
+	// and the closing section for "the Nth remediation", and broke the moment a
+	// sentence rewrapped across a line — a gate that fails on rewrapping is a gate
+	// whose failures get silenced. The outstanding ordinal is checked on the state
+	// line below, in all five documents, where the format is fixed.
+	stage63CheckNumber(t, "applied count in the review record's header",
+		regexp.MustCompile(`(?i)\b([a-z]+(?:[- ][a-z]+)*) remediations applied`), header, expected, applied)
+
+	// 2. EVERY count-carrying document must carry exactly one state line, and
+	//    that line must state the three figures correctly.
+	//
+	//    Round 23 rejected this gate because the previous version listed the plan
+	//    among the documents to check, but the plan never matched the number
+	//    pattern, so the loop skipped it and the plan contributed no assertion at
+	//    all — while the resolution cell claimed all five documents were verified
+	//    by corrupting each in turn. Only three had ever been corrupted.
+	//
+	//    Requiring the line closes that: a document without one fails, so coverage
+	//    cannot silently drop to four. Reading only the marked line also closes
+	//    round 23's other finding, that a table row placed above the live claim
+	//    satisfied a whole-file first-match scan.
+	want := stage63State{
+		applied:     expected,
+		reviews:     len(reviewed),
+		outstanding: expected,
 	}
-
-	// 2. Every other document that states an applied count. Each must state the
-	//    same one; a document that omits the count is not an error, and a
-	//    document that states a different one is.
 	for _, other := range stage63CountCarryingDocuments {
 		body, err := os.ReadFile(filepath.Join(root, other))
 		if err != nil {
 			t.Errorf("cannot read %s, which the count gate must cover: %v", other, err)
 			continue
 		}
-		found := appliedForm.FindAllStringSubmatch(string(body), -1)
-		if len(found) == 0 {
+		lines := stage63StateLines(string(body))
+		if len(lines) != 1 {
+			t.Errorf("%s carries %d %q lines; exactly one is required, so this document's state is machine-checkable",
+				other, len(lines), stage63StateLinePrefix)
 			continue
 		}
-		// A document may quote a figure while explaining this gate; only the
-		// FIRST occurrence is the live claim, which is the convention every one
-		// of these documents follows.
-		stage63CheckNumber(t, "applied count in "+other, appliedForm, string(body), expected, applied)
+		state, ok := stage63ParseStateLine(lines[0])
+		if !ok {
+			t.Errorf("%s's state line does not state all three figures (applied, reviews run, outstanding): %q",
+				other, lines[0])
+			continue
+		}
+		for _, figure := range []struct {
+			name     string
+			got, exp int
+		}{
+			{"applied remediations", state.applied, want.applied},
+			{"reviews run", state.reviews, want.reviews},
+			{"outstanding remediation", state.outstanding, want.outstanding},
+		} {
+			if figure.got != figure.exp {
+				t.Errorf("%s states %d %s; %d remediation commits exist%s, so it must state %d",
+					other, figure.got, figure.name, applied, stage63InFlightSuffix, figure.exp)
+			}
+		}
 	}
 	// The rounds table must carry one row per review plus the pending one.
 	//
@@ -288,11 +308,92 @@ var stage63BookkeepingSubjects = []string{
 // remediation count. Every one of them is checked: rounds 19 to 22 each returned
 // a P1 that was a stale figure in one of these files while the gate read only the
 // review record, which is the same failure four times with a mechanism in place.
+//
+// Round 23 then found the mechanism's own gap: the previous version listed the
+// plan in this slice, but the plan never matched the "N remediations applied"
+// pattern, so the loop skipped it and the plan contributed ZERO assertions while
+// the resolution cell claimed all five were verified. Coverage must therefore be
+// *derived and required*, not declared and skipped — hence the state line below,
+// which each document must carry, and a failure when one does not.
 var stage63CountCarryingDocuments = []string{
+	filepath.Join("docs", "research", "stage-6", "6.3-review.md"),
 	filepath.Join("docs", "research", "stage-6", "results.md"),
 	filepath.Join("docs", "process", "next-steps.md"),
 	filepath.Join("docs", "plans", "stage-6", "6.3-main-dashboard.md"),
 	filepath.Join("docs", "plans", "stage-6", "stage-6.md"),
+}
+
+// stage63StateLinePrefix marks the single line in each of the above documents
+// that carries the machine-checkable current state.
+//
+// Rounds 20 and 23 both rejected this gate for reading a document's first match
+// for a number pattern, which a historical quote or a table row defeats: round 20
+// in the review record, round 23 in results.md, where a table cell placed above
+// the live claim satisfied the check while the real figure was wrong. A line with
+// an explicit marker cannot be confused with prose — a quote of a count elsewhere
+// in the document is simply not a state line, and a document missing its state
+// line fails rather than being silently skipped.
+const stage63StateLinePrefix = "Stage 6.3 review state:"
+
+// stage63State is the set of figures every count-carrying document states.
+type stage63State struct {
+	applied     int
+	reviews     int
+	outstanding int
+}
+
+var stage63AppliedPattern = regexp.MustCompile(`([a-z]+(?:[- ][a-z]+)*)[*_` + "`" + `]*\s+remediations applied`)
+var stage63ReviewsPattern = regexp.MustCompile(`([a-z]+(?:[- ][a-z]+)*)[*_` + "`" + `]*\s+reviews run`)
+var stage63OutstandingPattern = regexp.MustCompile(`[Tt]he\s+[*_` + "`" + `]*([a-z]+(?:[- ][a-z]+)*)[*_` + "`" + `]*\s+remediation is outstanding`)
+
+// stage63ParseStateLine reads the figures from one state line.
+//
+// It fails closed: all three must be present and readable, so a document that
+// states only some of them is reported rather than partially accepted. Markdown
+// emphasis is tolerated because these documents bold their counts.
+func stage63ParseStateLine(line string) (stage63State, bool) {
+	var state stage63State
+	ok := true
+	read := func(pattern *regexp.Regexp) int {
+		match := pattern.FindStringSubmatch(line)
+		if match == nil {
+			ok = false
+			return 0
+		}
+		value, parsed := stage63ParseNumber(strings.Trim(match[1], "*_` "))
+		if !parsed {
+			ok = false
+			return 0
+		}
+		return value
+	}
+	state.applied = read(stage63AppliedPattern)
+	state.reviews = read(stage63ReviewsPattern)
+	state.outstanding = read(stage63OutstandingPattern)
+	return state, ok
+}
+
+// stage63StateLines returns every state line in a document.
+//
+// A state line must BEGIN with the marker, optionally after a list bullet. The
+// first version matched the marker anywhere on the line, and immediately counted
+// two state lines in the review record — because a resolution cell *mentions* the
+// marker while explaining that documents must carry one. A mention of the marker
+// is prose; only a line that opens with it is a claim. Requiring the position
+// rather than the presence is what makes the check usable inside a document that
+// explains itself.
+func stage63StateLines(doc string) []string {
+	var found []string
+	for _, line := range strings.Split(doc, "\n") {
+		trimmed := strings.TrimSpace(line)
+		trimmed = strings.TrimPrefix(trimmed, "- ")
+		trimmed = strings.TrimPrefix(trimmed, "* ")
+		trimmed = strings.TrimSpace(trimmed)
+		if strings.HasPrefix(trimmed, stage63StateLinePrefix) {
+			found = append(found, line)
+		}
+	}
+	return found
 }
 
 // stage63HeaderBound is the heading that ends the review record's header block.
