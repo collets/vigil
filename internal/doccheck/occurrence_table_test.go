@@ -53,6 +53,39 @@ func stage63OccurrenceRows(doc string) []string {
 	return rows
 }
 
+// stage63LastVerdictRound is the highest round whose row carries a verdict, or 0.
+func stage63LastVerdictRound(doc string) int {
+	highest := 0
+	for _, line := range strings.Split(stage63RoundsTable(doc), "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "| ") {
+			continue
+		}
+		cells := strings.Split(strings.Trim(strings.TrimSpace(line), "|"), "|")
+		if len(cells) < 4 {
+			continue
+		}
+		// The verdict is found BY VALUE, not by column index: the Scope column
+		// holds either a remediation or the words "narrow follow-up", so the
+		// verdict sits at index 3 in some rows and 4 in others.
+		verdict := ""
+		for _, cell := range cells {
+			trimmed := strings.ToLower(strings.Trim(strings.TrimSpace(cell), "*_` "))
+			if trimmed == "accepted" || trimmed == "conditional" || trimmed == "rejected" {
+				verdict = trimmed
+				break
+			}
+		}
+		if verdict == "" {
+			continue // the pending row
+		}
+		number, err := strconv.Atoi(strings.TrimSpace(cells[0]))
+		if err == nil && number > highest {
+			highest = number
+		}
+	}
+	return highest
+}
+
 func TestOccurrenceTableFiguresMatchTheirSource(t *testing.T) {
 	root := repoRoot
 	path := filepath.Join("docs", "research", "stage-6", "6.3-review.md")
@@ -100,6 +133,15 @@ func TestOccurrenceTableFiguresMatchTheirSource(t *testing.T) {
 	tableLastRound, err := strconv.Atoi(strings.TrimSpace(strings.Split(rows[len(rows)-1], "|")[1]))
 	if err != nil {
 		t.Fatalf("cannot read the last row's round: %v", err)
+	}
+	// The enumeration must reach the most recent review round. R21F1, R22F11 and
+	// R23F7 each raised this table being short of the rounds that motivated the
+	// commit, and nothing caught it because the checker compared the prose with the
+	// table and never the table with the rounds table. This does.
+	lastVerdict := stage63LastVerdictRound(doc)
+	if lastVerdict != 0 && tableLastRound != lastVerdict {
+		t.Errorf("the occurrence table's last row is round %d, but round %d has returned a verdict. The enumeration claims to cover every occurrence of this fault in this stage, and the two most recent rounds both found one",
+			tableLastRound, lastVerdict)
 	}
 	tableFirstRound, err := strconv.Atoi(strings.TrimSpace(strings.Split(rows[0], "|")[1]))
 	if err != nil {

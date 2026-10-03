@@ -4,12 +4,12 @@
 
 Status: **6.1 and 6.2 complete, 6.2 accepted; 6.3 implemented on its task
 branch and its candidate review rejected — the counts are the state line's, stated
-above — ; 6.4–6.9 planned, not started.**
+below — and 6.4–6.9 are planned, not started.**
 Established 2026-09-29
 by explicit user scope revision. Stage 6 does not exist in the original roadmap
 (which defines Stages 1–5 only); the user directed that it follow Stage 5.7.
 
-Stage 6.3 review state: twenty-five remediations applied; twenty-six reviews run; the twenty-fifth remediation is outstanding.
+Stage 6.3 review state: twenty-six remediations applied; twenty-seven reviews run; the twenty-sixth remediation is outstanding.
 
 This document is a **scope** description. It states the outcome, the boundaries
 and the deliverable. It deliberately contains **no work checkpoints** — those are

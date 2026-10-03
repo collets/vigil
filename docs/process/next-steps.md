@@ -155,7 +155,7 @@ Acceptance: run the [agreed milestone](../core/mvp-acceptance.md), including act
 - Record the next concrete action and any input needed from the user.
 - Preserve unfinished work and running-session identities; stop experimental processes before ending the session.
 
-Stage 6.3 review state: twenty-five remediations applied; twenty-six reviews run; the twenty-fifth remediation is outstanding.
+Stage 6.3 review state: twenty-six remediations applied; twenty-seven reviews run; the twenty-sixth remediation is outstanding.
 
 Next concrete action: **obtain the narrow follow-up review of the remediation named in the state line above** (the applied count and the outstanding ordinal are stated there, and nowhere else, so that this line cannot name a superseded one), on `task/stage-6.3-main-dashboard`, then close it. The candidate-wide review of `f4196fb` rejected the candidate with one P0 and three
 P1s — wall consumption read from a table with no production writer, a cursor that
@@ -194,8 +194,8 @@ Round 13's mutation finding stands: the test round 12
 found weakened now fails in both directions, so that coverage is real rather than
 relabelled.
 
-Acceptance rests on the twenty-fifth review, not on a clean first pass, and 6.3 is not
-accepted until it returns. Only then may [6.4](../plans/stage-6/6.4-actionable-inbox.md)
+Acceptance rests on the review named in the state line, not on a clean first pass, and
+6.3 is not accepted until it returns. Only then may [6.4](../plans/stage-6/6.4-actionable-inbox.md)
 start, and only with an explicit instruction naming it. Stage 6.2 remains complete
 and accepted at `582e2d1`; its task branch awaits integration, which needs a named
 user authorization and is not granted by acceptance. Do not flip `docs/STATUS` for a
