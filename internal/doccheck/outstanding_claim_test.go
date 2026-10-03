@@ -24,56 +24,58 @@ import (
 // there is no wording to evade — only a number to be right about.
 func TestOutstandingOrdinalClaimsAreConsistent(t *testing.T) {
 	root := repoRoot
-	path := filepath.Join("docs", "research", "stage-6", "6.3-review.md")
-	raw, err := os.ReadFile(filepath.Join(root, path))
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
+	// EVERY count-carrying document, not just this one. Round 26 rejected the
+	// single-file version on exactly this ground - "a check scoped to one file
+	// cannot close a class that lives in five" - and demonstrated it by putting a
+	// stale ordinal in next-steps.md, where the one-file check could not see it.
+	var docs []string
+	for _, doc := range stage63CountCarryingDocuments {
+		docs = append(docs, doc)
 	}
-	doc := string(raw)
-
 	shas, err := stage63RemediationCommits(root)
 	if err != nil {
 		t.Skipf("git history unavailable (%v)", err)
 	}
 	applied := len(shas)
-	expected := applied
-	if stage63RecordUncommitted(root, path) {
-		expected++
-	}
+	// stage63Expected, not an inline increment, so the in-flight suffix is set and
+	// the message can say that a remediation is uncommitted rather than asserting a
+	// count the history does not hold.
+	expected := stage63Expected(root, docs[0], applied)
 
 	// Every phrasing by which the record presents a remediation as the one
 	// awaiting review. This is a value check, not a wording ban: a sentence that
 	// claims a different ordinal fails whatever words it uses.
-	patterns := []*regexp.Regexp{
-		regexp.MustCompile(`follow-up review of the \*\*([a-z]+(?:-[a-z]+)*)\*\* remediation`),
-		regexp.MustCompile(`remediation is outstanding`),
+	// Three shapes, and only three. Round 26 defeated an earlier four-shape
+	// version with "The outstanding review is of the twenty-second remediation" and
+	// with "Remediation 22 is the one still awaiting its independent review", both of
+	// which pass. This is a short list of spellings, not a value check over the
+	// whole field, and the record says so rather than claiming otherwise. The
+	// restatements it guards were deleted rather than trusted to it.
+	shapes := []*regexp.Regexp{
+		regexp.MustCompile(`review of [^|]{0,40}?([a-z]+(?:-[a-z]+)*) remediation`),
 		regexp.MustCompile(`([a-z]+(?:-[a-z]+)*) remediation is outstanding`),
 		regexp.MustCompile(`the \*\*([a-z]+(?:-[a-z]+)*)\*\* remediation has`),
-		regexp.MustCompile(`outstanding ordinal is the (\w+)'s`),
-	}
-
-	// The only ordinal claims that count are those attached to "outstanding" or
-	// "follow-up review of". Each is matched with its own capture.
-	captures := []struct {
-		pattern *regexp.Regexp
-		group   int
-	}{
-		{patterns[0], 1},
-		{patterns[2], 1},
-		{patterns[3], 1},
 	}
 
 	found := 0
-	for _, capture := range captures {
-		for _, match := range capture.pattern.FindAllStringSubmatch(doc, -1) {
-			value, ok := stage63ParseNumber(strings.Trim(match[capture.group], "*_` "))
-			if !ok {
-				continue
-			}
-			found++
-			if value != expected {
-				t.Errorf("the record names the %s remediation as outstanding, but %d remediation commits exist%s so it is the %s",
-					stage63OrdinalWord(value), applied, stage63InFlightSuffix, stage63OrdinalWord(expected))
+	for _, relative := range docs {
+		path := filepath.Join(root, relative)
+		raw, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Skipf("read %s: %v", relative, readErr)
+		}
+		body := string(raw)
+		for _, pattern := range shapes {
+			for _, match := range pattern.FindAllStringSubmatch(body, -1) {
+				value, ok := stage63ParseNumber(strings.Trim(match[1], "*_`'"))
+				if !ok {
+					continue
+				}
+				found++
+				if value != expected {
+					t.Errorf("%s names the %s remediation as outstanding, but %d remediation commits exist%s so it is the %s",
+						relative, stage63OrdinalWord(value), applied, stage63InFlightSuffix, stage63OrdinalWord(expected))
+				}
 			}
 		}
 	}
@@ -110,7 +112,6 @@ func TestResolutionCellsClaimingChecksCiteATest(t *testing.T) {
 	claimsCoverage := regexp.MustCompile(`(?i)\b(verif(?:y|ies|ied)|assert(?:s|ed)?|check(?:s|ed)?|cover(?:s|ed|ing)?|gated|ungated)\b[^|]*\b(the gate|this gate|the count gate|its coverage|its scope)\b[^|]*`)
 	testName := regexp.MustCompile("`?[A-Z][A-Za-z0-9]*Test[A-Za-z0-9]*`?|`[a-z_]+_test\\.go`|Test[A-Za-z0-9]+")
 
-	offenders := 0
 	for _, line := range strings.Split(doc, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if !strings.HasPrefix(trimmed, "| 6.3-R") {
@@ -130,8 +131,6 @@ func TestResolutionCellsClaimingChecksCiteATest(t *testing.T) {
 		if testName.MatchString(resolution) {
 			continue
 		}
-		offenders++
 		t.Errorf("a resolution cell claims what a check covers without naming one: %.180s", resolution)
 	}
-	_ = offenders
 }

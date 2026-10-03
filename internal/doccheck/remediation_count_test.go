@@ -125,8 +125,7 @@ func TestStage63ReviewRecordCountsMatchHistory(t *testing.T) {
 	// figure in one of the *other* four documents, invisible to a gate that read
 	// only the review record. A mechanism that covers one of five documents lets
 	// the class live in the other four, so it is checked in all five.
-	doc := string(raw)
-	_ = stage63Section(doc, "", stage63HeaderBound)
+	_ = raw
 
 	// The header no longer restates any figure. It used to carry the applied count
 	// and the outstanding ordinal, and those two restatements were the whole of
@@ -401,26 +400,6 @@ func stage63StateLines(doc string) []string {
 // bound is the FIRST such heading and the record keeps its quotes elsewhere. If
 // this heading is renamed, the header scope fails closed and the gate says so.
 const stage63HeaderBound = "## Identifier note"
-
-// stage63CheckNumber asserts that a scoped claim states the expected number.
-func stage63CheckNumber(t *testing.T, what string, form *regexp.Regexp, scope string, want, applied int) {
-	t.Helper()
-	found := form.FindStringSubmatch(scope)
-	if found == nil {
-		t.Errorf("%s states no such claim; %d remediation commits exist%s", what, applied, stage63InFlightSuffix)
-		return
-	}
-	got, ok := stage63ParseNumber(strings.TrimPrefix(strings.TrimSpace(found[1]), "and "))
-	if !ok {
-		t.Errorf("%s says %q, which is not a number this gate can read; %d remediation commits exist%s",
-			what, found[1], applied, stage63InFlightSuffix)
-		return
-	}
-	if got != want {
-		t.Errorf("%s says %d; %d remediation commits exist%s, so it must say %d",
-			what, got, applied, stage63InFlightSuffix, want)
-	}
-}
 
 // stage63Section returns the text of one section of the record: from the heading
 // matching `from` up to the first heading matching `to`. An empty bound means the

@@ -1348,14 +1348,15 @@ plan for the sub-stage it is running:
 | 6.8 Setup, definitions and resources | [`6.8-setup-definitions-and-resources.md`](../../plans/stage-6/6.8-setup-definitions-and-resources.md) |
 | 6.9 Parity closure and feature list | [`6.9-parity-closure-and-feature-list.md`](../../plans/stage-6/6.9-parity-closure-and-feature-list.md) |
 
-Stage 6.3 review state: twenty-four remediations applied; twenty-five reviews run; the twenty-fourth remediation is outstanding.
+Stage 6.3 review state: twenty-five remediations applied; twenty-six reviews run; the twenty-fifth remediation is outstanding.
 
 State as written: 6.1 complete, 6.2 complete and accepted at `582e2d1`, and
 6.3 implemented on its task branch through checkpoints A–D with its candidate
-**rejected** at `f4196fb` and **twenty-three** remediations applied; rounds 10–24
-reviewed remediations 1–22 — rounds 10–17 returned conditional, and rounds
-**18 through 24 returned rejected**. The **twenty-third** awaits its narrow
-follow-up review. The applied count, the reviews run and the outstanding ordinal
+**rejected** at `f4196fb`, and it is still not accepted. The applied count, the
+reviewed-remediation range and the outstanding ordinal are the state line's, stated
+above and nowhere else — every figure in this paragraph used to be restated here,
+and each one went stale in the commit that changed the state line without changing
+it. The applied count, the reviews run and the outstanding ordinal
 are gated in **all five** documents that state them, each of which must carry a
 `Stage 6.3 review state:` line — `TestStage63ReviewRecordCountsMatchHistory`
 derives the figures from the git history rather than from prose, and a document

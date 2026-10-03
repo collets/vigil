@@ -114,7 +114,7 @@ func TestRoundTalliesMatchTheirSections(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		// Only from round 17 onward is the tally mechanically derivable. Earlier
+		// Only from the boundary round onward is the tally mechanically derivable. Earlier
 		// rounds recorded their P2 and P3 counts in prose ("5 P2 nits", "1 P0,
 		// 5 P1, 12 P2") and kept only the P0/P1 as finding rows, so their tallies
 		// are not countable from the record and checking them would report the
@@ -156,7 +156,9 @@ func TestRoundTalliesMatchTheirSections(t *testing.T) {
 // nil for a cell that is prose rather than a tally ("5 P2 nits", "none", "—"),
 // which is how the early rounds record their findings.
 func stage63ParseTally(cell string) map[string]int {
-	matches := regexp.MustCompile(`(\d+)\s+(P[123])`).FindAllStringSubmatch(cell, -1)
+	// P0 is included: round 26 was rejected on one, and a pattern that
+	// could not read it made the P0 comparison dead code.
+	matches := regexp.MustCompile(`(\d+)\s+(P[0-3])`).FindAllStringSubmatch(cell, -1)
 	if len(matches) == 0 {
 		return nil
 	}
