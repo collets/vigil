@@ -6,7 +6,7 @@ export GOSUMDB := sum.golang.org
 export GOPATH := $(CURDIR)/.cache/gopath
 export GOCACHE := $(CURDIR)/.cache/go-build
 
-.PHONY: build build-boundary hello dashboard fmt check check-race docs-check tidy cross-build build-scenario scenario scenario-live scenario-clean scenario-guard-check
+.PHONY: build build-boundary hello dashboard fmt check check-race docs-check manifest tidy cross-build build-scenario scenario scenario-live scenario-clean scenario-guard-check
 tidy:
 	$(GO) mod tidy
 build:
@@ -26,8 +26,16 @@ check:
 	$(GO) test ./...
 check-race:
 	$(GO) test -race ./internal/harness ./internal/spike ./internal/store ./internal/artifacts ./internal/core ./internal/coordinator ./internal/boundary ./internal/checkpoint ./internal/supervisor ./internal/checks ./internal/review ./internal/quality ./internal/tui ./internal/cli ./internal/tools ./internal/mcp ./internal/workspace ./internal/scenario ./cmd/vigil-scenario
+# `docs-check` runs the whole documentation gate, which includes
+# TestGeneratedManifestsAreCurrent: it fails when a committed generated manifest
+# (docs/research/stage-6/6.3-manifest.md) differs from what the generator
+# produces, so a stale description of the checker cannot be committed. Run
+# `make manifest` and commit the result whenever you change the checker, its
+# configuration row, or the manifest template.
 docs-check:
 	$(GO) test ./internal/doccheck -count=1 -v
+manifest:
+	$(GO) test ./internal/doccheck -count=1 -run TestGeneratedManifestsAreCurrent -update
 cross-build:
 	@set -e; for os in linux darwin; do for arch in amd64 arm64; do \
 		echo "Building $$os/$$arch"; \

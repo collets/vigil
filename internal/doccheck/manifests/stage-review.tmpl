@@ -1,18 +1,18 @@
-# Stage 6.3 review manifest
+# Stage {{.Stage}} review manifest
 
 <!-- vigil-tier: evidence -->
 
 <!-- GENERATED FILE. Regenerate with `make manifest` and commit the result.
      `make docs-check` fails when it is stale. Do not hand-edit: every current
-     fact about Stage 6.3's review machinery belongs here, so that adding,
+     fact about Stage {{.Stage}}'s review machinery belongs here, so that adding,
      renaming or removing a check cannot invalidate prose elsewhere. The
-     narration below lives in `internal/doccheck/manifests/stage-review.tmpl`; everything derived from
+     narration below lives in `{{.ManifestTemplate}}`; everything derived from
      the code and from the configuration table comes from that table and from
-     `internal/doccheck/stage_review_state_test.go` itself. -->
+     `{{.CheckerFile}}` itself. -->
 
-Status: **generated.** The authoritative current state of Stage 6.3's
+Status: **generated.** The authoritative current state of Stage {{.Stage}}'s
 review machinery. What each round *found* is in
-[`6.3-review.md`](6.3-review.md), which is an append-only log and states
+[`{{.RecordBase}}`]({{.RecordBase}}), which is an append-only log and states
 nothing about the present.
 
 Scope: this file answers "what does the checker do, and what does it not". The
@@ -30,33 +30,31 @@ second stage is a second row rather than a second copy of the checker.
 
 | Setting | Value |
 | --- | --- |
-| Stage | 6.3 |
-| Review record (deleted with the stage) | `docs/research/stage-6/6.3-review.md` |
-| This manifest | `docs/research/stage-6/6.3-manifest.md` |
-| State-line marker | `Stage 6.3 review state:` |
-| Remediation subject prefix | `stage 6.3: ` |
-| Rejected candidate | `f4196fb` |
-| Early rounds that reviewed no remediation | 9 |
-| First round whose section is fully enumerated | 16 |
-| Rounds table heading | `## Rounds` |
-| Occurrence-table anchor | `**Every occurrence of this fault in this stage` |
-| Documents carrying the figures | 5 |
+| Stage | {{.Stage}} |
+| Review record (deleted with the stage) | `{{.Record}}` |
+| This manifest | `{{.Manifest}}` |
+| State-line marker | `{{.StateLine}}` |
+| Remediation subject prefix | `{{.SubjectPrefix}}` |
+| Rejected candidate | `{{.Candidate}}` |
+| Early rounds that reviewed no remediation | {{.EarlyRounds}} |
+| First round whose section is fully enumerated | {{.FirstRound}} |
+| Rounds table heading | `{{.RoundsHeading}}` |
+| Occurrence-table anchor | `{{.OccurrenceHead}}` |
+| Documents carrying the figures | {{len .Documents}} |
 
 The bookkeeping commits that declare themselves this stage's work but answer no
 review round, and so are not remediations:
 
-- `stage 6.3: record native macOS evidence and the checkpoint review record`
-- `stage 6.3: point the next action at the candidate review`
-- `stage 6.3: record that the candidate review dispatch was rate limited`
-
+{{range .Bookkeeping}}- `{{.}}`
+{{end}}
 
 The checker reads its state line's three figures against these phrasings, so a
 change to the wording convention is a configuration change rather than an edit
 to a pattern buried in a test:
 
-- applied: `remediations applied`
-- reviews: `reviews run`
-- outstanding: `remediation is outstanding`
+- applied: `{{.AppliedPhrase}}`
+- reviews: `{{.ReviewsPhrase}}`
+- outstanding: `{{.OutstandingPhrase}}`
 
 ## The documents it reads
 
@@ -65,37 +63,25 @@ rather than attempted: a document that stops carrying the line fails instead of
 being silently skipped. That requirement is the fix for a gate that listed five
 documents and checked three, and then four.
 
-- `docs/research/stage-6/6.3-review.md`
-- `docs/research/stage-6/results.md`
-- `docs/process/next-steps.md`
-- `docs/plans/stage-6/6.3-main-dashboard.md`
-- `docs/plans/stage-6/stage-6.md`
-
+{{range .Documents}}- `{{.}}`
+{{end}}
 
 ## The checkers
 
-9 check functions, all in `internal/doccheck/stage_review_state_test.go` (1589
+{{len .Checks}} check functions, all in `{{.CheckerFile}}` ({{.CheckerLines}}
 lines). The coverage column is the first paragraph of each function's own doc
 comment, read from the source — so it cannot disagree with the function it
 describes.
 
 | Check | Covers |
 | --- | --- |
-| `TestNumeralParsingHasNoCeiling` | proves the round-20 regression cannot return. A gate whose comparison moved to integers while its *reading* stayed a fixed table failed on the twenty-first commit with a message reporting that the document "says 1" — and no spelling could satisfy it. Comparing integers while still READING a fixed table moves the ceiling rather than removing it, which is what that round found by mutation |
-| `TestStageReviewStateCountsMatchHistory` | is the count gate: the applied count includes the commit being written, so it equals the number of remediation commits after the rejected candidate; the reviews figure is the rounds table's reviewed rows; the outstanding ordinal is the applied ordinal, because the outstanding review reviews the newest commit. Each count-carrying document must carry exactly one state line stating all three, so coverage is required rather than attempted, and the rounds table must carry one row per review plus one whose pending row names no commit and does name the outstanding ordinal |
-| `TestStateLineParsingRejectsEveryMutation` | is the battery: it covers the mutations a reviewer would actually apply. A wrong value must still PARSE, because that is what lets the gate compare it against the git history and report a mismatch; what must fail closed is a structurally broken line, since then there is nothing to compare. One round of one stage rejected this gate because a resolution cell claimed "verified by corrupting each in turn: every one fails" when only three of five documents had ever been corrupted, and the next found the fifth contributed no assertion at all because it never matched the pattern — so the battery is a test here rather than a claim in prose |
-| `TestOccurrenceTableFiguresMatchTheirSource` | compares the occurrence table's prose against the table it sits beside, and the table's last row against the rounds table's most recent verdict. Both halves are derived: two rounds of one stage found the prose figures typed rather than derived, and three more found the enumeration short of the very rounds that motivated the commit — the last of them a P0 — because the checker compared the prose with the table and never the table with the rounds table |
-| `TestNoDocumentUnderstatesTheGateCoverage` | reads every Markdown file under docs/ and fails on a live line claiming the checker covers less than it does, so the next coverage change cannot leave a stale claim standing |
-| `TestRoundTalliesMatchTheirSections` | derives every rounds-table Findings tally from its own section, so a tally cannot be typed wrongly. Two bugs in this check were found by running it: it first read a column named "tally" while the table's column is "Findings", so the lookup was always empty and the check passed without ever running — a silent no-op — and it then compared the expected number by substring, which "4 P1, 6 P2, 1 P3" satisfies for an expected 4 P2 because the "4" of "4 P1" is present. Rounds before the configured boundary record only their P0 and P1 as rows and state their P2/P3 counts in prose, so their tallies are not derivable and are skipped |
-| `TestNoLiveRestatementOfTheStageFigures` | reads every count-carrying document for the live-claim shapes that actually caused a blocking finding, excluding the pointers and quoted examples that are the required replacement. This is deliberately NOT a general rule about locations: a location rule was written and deleted because it fired on eleven sentences of correct explanatory prose. What closes the class is the deletion of the restatements, done in the same change; this check catches the next author reintroducing one, and it is honest that a sufficiently different phrasing would evade it |
-| `TestGeneratedManifestsAreCurrent` | regenerates each configured stage's manifest and fails if the committed one differs. The manifest is the single place a reader is told what the checker does; it used to be five documents' prose, and nineteen rounds of one stage each found a place a hand-edit was missed |
-| `TestResolutionCellsClaimingChecksCiteATest` | requires a resolution cell that claims what a check covers to name a test |
-
+{{range .Checks}}| `{{.Name}}` | {{.Covers}} |
+{{end}}
 
 ## What it does not check, stated so it is not over-trusted
 
 The checker verifies countable claims against the commit history, in all
-5 documents that carry a state line. It does **not**:
+{{len .Documents}} documents that carry a state line. It does **not**:
 
 - **See prose it cannot derive a number from.** Two rounds of this stage were
   earlier remediations editing the record's past finding and section text so the
@@ -131,8 +117,8 @@ The checker verifies countable claims against the commit history, in all
   and stated here because a round raised its absence and the next found it
   still absent.
 - **Hold a hand-maintained classification of what a remediation is.** A commit
-  is a remediation when its subject carries `stage 6.3: ` and is not one
-  of the 3 bookkeeping subjects listed above. Both halves
+  is a remediation when its subject carries `{{.SubjectPrefix}}` and is not one
+  of the {{len .Bookkeeping}} bookkeeping subjects listed above. Both halves
   were wrong in opposite directions once: a whitelist of remediation prefixes
   under-counted the commit that introduced the checker, and counting everything
   except named subjects over-counted an unrelated workflow commit and
@@ -159,14 +145,10 @@ that understates the coverage:
   `are ungated`, `is not gated`, `only thing read`
 
 The other catches a live restatement of a figure that belongs on the state line,
-5 shapes in total:
+{{len .LiveShapes}} shapes in total:
 
-- `(?i)\b[a-z]+(?:-[a-z]+)* remediations (?:have been |were )?applied`
-- `(?i)review of [^|]{0,40}?[a-z]+(?:-[a-z]+)* remediation`
-- `(?i)\b[a-z]+(?:-[a-z]+)* remediation (?:is|remains) outstanding`
-- `(?i)acceptance rests on the [a-z]+(?:-[a-z]+)* review`
-- `(?i)follow-up review of [^|]{0,40}?[a-z]+(?:-[a-z]+)* remediation`
-
+{{range .LiveShapes}}- `{{.}}`
+{{end}}
 
 A blacklist loses to paraphrase: one round defeated the first list's six
 phrasings with a sentence matching none of them, which is a reason to distrust

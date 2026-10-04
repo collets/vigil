@@ -155,7 +155,7 @@ Acceptance: run the [agreed milestone](../core/mvp-acceptance.md), including act
 - Record the next concrete action and any input needed from the user.
 - Preserve unfinished work and running-session identities; stop experimental processes before ending the session.
 
-Stage 6.3 review state: twenty-seven remediations applied; twenty-eight reviews run; the twenty-seventh remediation is outstanding.
+Stage 6.3 review state: twenty-eight remediations applied; twenty-eight reviews run; the twenty-eighth remediation is outstanding.
 
 Next concrete action: **obtain the narrow follow-up review of the remediation named in the state line above** (the applied count and the outstanding ordinal are stated there, and nowhere else, so that this line cannot name a superseded one), on `task/stage-6.3-main-dashboard`, then close it. The candidate-wide review of `f4196fb` rejected the candidate with one P0 and three
 P1s — wall consumption read from a table with no production writer, a cursor that
@@ -185,10 +185,14 @@ because the fifth document never matched the pattern and so was skipped; round 2
 rejected it again, because four documents still *described* the old coverage while
 the mechanism had already changed.
 
-Coverage is now required rather than attempted: each document must carry one
-`Stage 6.3 review state:` line, a missing line fails, and no document may state
-that the gate covers less than it does. What remains ungated is the count restated
-in *prose* around those lines, which still needs a reviewer.
+Coverage is now required rather than attempted, and the figures are gated against
+the git history rather than trusted from prose. **What the gate covers, what it
+does not, and which check implements each part are stated in the generated
+[`6.3-manifest.md`](../research/stage-6/6.3-manifest.md)**, which `make manifest`
+writes from the checker itself and `make docs-check` fails on when it is stale —
+so this document does not repeat a description of it. The limits there still need
+a reviewer; in particular the count restated in *prose* around a state line is not
+what the gate reads.
 
 Round 13's mutation finding stands: the test round 12
 found weakened now fails in both directions, so that coverage is real rather than

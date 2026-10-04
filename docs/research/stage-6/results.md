@@ -1348,19 +1348,18 @@ plan for the sub-stage it is running:
 | 6.8 Setup, definitions and resources | [`6.8-setup-definitions-and-resources.md`](../../plans/stage-6/6.8-setup-definitions-and-resources.md) |
 | 6.9 Parity closure and feature list | [`6.9-parity-closure-and-feature-list.md`](../../plans/stage-6/6.9-parity-closure-and-feature-list.md) |
 
-Stage 6.3 review state: twenty-seven remediations applied; twenty-eight reviews run; the twenty-seventh remediation is outstanding.
+Stage 6.3 review state: twenty-eight remediations applied; twenty-eight reviews run; the twenty-eighth remediation is outstanding.
 
 State as written: 6.1 complete, 6.2 complete and accepted at `582e2d1`, and
 6.3 implemented on its task branch through checkpoints A–D with its candidate
 **rejected** at `f4196fb`, and it is still not accepted. The three figures above are
 stated in all five documents' state lines and nowhere else; every figure in this
 paragraph used to be restated here, and each one went stale in the commit that
-changed the state line without changing it. The state line is gated in **all five**
-documents, each of which must carry a
-`Stage 6.3 review state:` line — `TestStage63ReviewRecordCountsMatchHistory`
-derives the figures from the git history rather than from prose, and a document
-without the line fails rather than being skipped, which is the gap round 23 found in
-an earlier version that claimed the same coverage. The full record is
+changed the state line without changing it. Those figures are gated against the
+git history, and **what that gate covers and what it does not is stated in the
+generated [`6.3-manifest.md`](6.3-manifest.md)**, which `make manifest` writes from
+the checker itself so that a change to the checker cannot leave a description of
+it standing here. The full record of what each round found is
 [`6.3-review.md`](6.3-review.md). **6.3 is not accepted**, and no document
 records it as accepted. Native macOS evidence was obtained at `f4196fb`;
 re-capturing it at the accepted SHA is still open, and §6 says which four
