@@ -21,7 +21,7 @@ import (
 // Go's regexp finds the leftmost match, which starts one character late and reads
 // "Twenty-six" as "wenty-six" — a silent figure error in the checker itself, found
 // by running it rather than by reading it.
-const stage63OccurrenceProsePattern = `([A-Za-z]+(?:-[a-z]+)*) occurrences in rounds (\d+) to (\d+), ([a-z]+(?:-[a-z]+)*) of them self-inflicted,\s*\n\s*and the ([a-z]+(?:-[a-z]+)*) consecutive self-inflicted ones are the last ([a-z]+(?:-[a-z]+)*) rows\.`
+const stage63OccurrenceProsePattern = `([A-Za-z]+(?:-[a-z]+)*) occurrences in remediations (\d+) to (\d+), ([a-z]+(?:-[a-z]+)*) of them self-inflicted,\s*\n\s*and the ([a-z]+(?:-[a-z]+)*) consecutive self-inflicted ones are the last ([a-z]+(?:-[a-z]+)*) rows\.`
 
 // stage63OccurrenceRows returns the occurrence table's data rows.
 func stage63OccurrenceRows(doc string) []string {
@@ -138,11 +138,28 @@ func TestOccurrenceTableFiguresMatchTheirSource(t *testing.T) {
 	// R23F7 each raised this table being short of the rounds that motivated the
 	// commit, and nothing caught it because the checker compared the prose with the
 	// table and never the table with the rounds table. This does.
+	//
+	// It reads column TWO, not column one. Column one is the ordinal of the
+	// remediation that introduced the row; column two is the review round that
+	// found it. Comparing column one against a review round was this check's own
+	// first version, and it failed immediately on a correct table.
 	lastVerdict := stage63LastVerdictRound(doc)
-	if lastVerdict != 0 && tableLastRound != lastVerdict {
-		t.Errorf("the occurrence table's last row is round %d, but round %d has returned a verdict. The enumeration claims to cover every occurrence of this fault in this stage, and the two most recent rounds both found one",
-			tableLastRound, lastVerdict)
+	// Column two reads "28 (R28F1)" — the review round that found it, plus the
+	// finding identifier. The leading integer is the round.
+	reviewRoundCell := strings.TrimSpace(strings.Split(rows[len(rows)-1], "|")[2])
+	reviewRoundField := strings.Fields(reviewRoundCell)
+	if len(reviewRoundField) == 0 {
+		t.Fatalf("the last occurrence row carries no review round: %q", rows[len(rows)-1])
 	}
+	tableLastReviewRound, err := strconv.Atoi(reviewRoundField[0])
+	if err != nil {
+		t.Fatalf("cannot read the last row's review round from %q: %v", reviewRoundCell, err)
+	}
+	if lastVerdict != 0 && tableLastReviewRound != lastVerdict {
+		t.Errorf("the occurrence table's last row records review round %d, but round %d has returned a verdict. The enumeration claims to cover every occurrence of this fault in this stage, and the most recent rounds each found one",
+			tableLastReviewRound, lastVerdict)
+	}
+	_ = tableLastRound
 	tableFirstRound, err := strconv.Atoi(strings.TrimSpace(strings.Split(rows[0], "|")[1]))
 	if err != nil {
 		t.Fatalf("cannot read the first row's round: %v", err)
@@ -156,8 +173,8 @@ func TestOccurrenceTableFiguresMatchTheirSource(t *testing.T) {
 		{"self-inflicted occurrences", statedSelfInflicted, yes},
 		{"consecutive self-inflicted count", statedTailLength, yes},
 		{"rows claimed in the tail", statedTailRows, yes},
-		{"first round in the span", spanFirst, tableFirstRound},
-		{"last round in the span", spanLast, tableLastRound},
+		{"first remediation in the span", spanFirst, tableFirstRound},
+		{"last remediation in the span", spanLast, tableLastRound},
 	} {
 		if check.got != check.want {
 			t.Errorf("the occurrence prose states %d %s; the table has %d. This is the round 21 and round 22 finding: the figures beside the table were typed rather than derived",

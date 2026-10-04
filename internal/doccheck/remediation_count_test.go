@@ -268,16 +268,29 @@ func stage63RemediationCommits(root string) ([]string, error) {
 }
 
 // stage63IsRemediation decides whether a commit after the rejected candidate is a
-// remediation. The rule is inverted deliberately: everything counts as a
-// remediation EXCEPT three named bookkeeping commits.
+// Stage 6.3 remediation.
 //
-// An earlier draft enumerated the *remediation* subject prefixes instead. That
-// under-counted the moment a remediation was committed with a subject the list
-// had not seen — which happened at once, on the commit that introduced this file.
-// A whitelist of exclusions fails closed toward under-counting the thing being
-// measured; a whitelist of inclusions fails toward the same place. The exclusions
-// are a closed, checkable set, so the inversion is the safer shape.
+// Two earlier shapes failed, in opposite directions:
+//
+//   - Enumerating the *remediation* prefixes under-counted the moment a remediation
+//     used an unseen subject — which happened at once, on the commit that
+//     introduced this file.
+//   - Excluding three named subjects and counting everything else counted every
+//     commit that merely touched the branch. When the workflow change landed
+//     ("workflow: scope reviews to code…") — a commit that changes no stage code
+//     and no stage state — it was tallied as a twenty-seventh remediation and
+//     invalidated the count in five documents.
+//
+// The rule is therefore INCLUSIVE on the stage prefix and EXCLUSIVE only on the
+// three named bookkeeping commits: a commit that does not declare itself Stage 6.3
+// work is never counted, and the one documented class of Stage 6.3 work that is not
+// a remediation is subtracted. The residual weakness — that a new bookkeeping
+// commit must be added here by hand — is exactly what the generated manifest in
+// `docs/research/stage-6/6.3-manifest.md` is meant to remove.
 func stage63IsRemediation(subject string) bool {
+	if !strings.HasPrefix(subject, stage63RemediationSubjectPrefix) {
+		return false
+	}
 	for _, excluded := range stage63BookkeepingSubjects {
 		if subject == excluded {
 			return false
@@ -285,6 +298,10 @@ func stage63IsRemediation(subject string) bool {
 	}
 	return true
 }
+
+// stage63RemediationSubjectPrefix is the subject prefix a commit must carry to be
+// counted as a Stage 6.3 remediation.
+const stage63RemediationSubjectPrefix = "stage 6.3: "
 
 // stage63BookkeepingSubjects are the three commits between the rejected
 // candidate and the first review round. They record evidence and next actions
