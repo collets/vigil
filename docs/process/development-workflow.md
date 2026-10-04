@@ -115,6 +115,68 @@ not independent acceptance. Blocking findings are remediated on the same task br
 then revalidated and submitted for a narrow independent follow-up. A changed candidate
 must never inherit an earlier verdict silently.
 
+### Review scope: reviews are on code
+
+**A review round's default subject is the product code, not the documentation.**
+This rule exists because Stage 6.3 spent nineteen consecutive review rounds
+remediating prose that disagreed with other prose, and produced zero product defects
+across them: its candidate review found one P0 and three P1s, all real, all fixed in
+a single round. Every round after that opened for a figure in one document
+disagreeing with a figure in another.
+
+A finding is **blocking (P0/P1)** when it is one of:
+
+1. a product defect — wrong behaviour, a crash, a lost or wrong state transition;
+2. a security, authority or data-integrity issue — including anything that grants,
+   widens or appears to grant delivery, spending or publication authority;
+3. **a gate that silently passes** — a check that claims to catch something and does
+   not, or whose coverage is narrower than its own description. This class stays
+   blocking because it is a claim about code, and an ungated claim about code is the
+   failure mode this repository is most exposed to.
+
+Everything else is **non-blocking (P2/P3)**, recorded and batched. In particular a
+figure, count, ordinal or wording in prose that disagrees with another figure in
+prose is a P3: it is real, it is recorded, and it does not by itself open a review
+round or invalidate a verdict.
+
+Documentation is still reviewed — but as part of the code review's correctness, in the
+place where it can mislead: a documented claim that the code does not honour is a
+finding of class 3, not of class "prose".
+
+### Review-round cap and escalation
+
+At most **three** review rounds per task may be opened by non-blocking documentation
+findings. A fourth round must either find a blocking finding under the classes above,
+or the review stops and the residual is recorded once as stage-level debt.
+
+Reviewers are instructed to stop at the cap and say so, rather than to continue
+remediating bookkeeping indefinitely. A slice that reaches the cap is not a failure of
+the slice; a slice that passes the cap without a blocking finding is recorded as
+accepted with its documentation debt named.
+
+### Ownership of the classification
+
+The reviewer proposes the class; the **implementing agent owns the final
+classification** and is accountable for it. When an agent demotes a finding the user
+might have wanted blocking, it reports that demotion in its summary rather than
+resolving it silently. This is the one place where an agent's judgement substitutes
+for a user's, so it is also the place where the substitution is made visible.
+
+### Generated state, not described state
+
+A document must not state, in prose, a current fact that a command can derive — the
+list of gate files, what a check covers, how many of something exist. Those belong in
+a **generated manifest**: produced by a command, committed, and verified by
+`make docs-check`, which fails when the manifest is stale.
+
+Hand-editing a current fact into prose cannot converge: each edit changes the thing
+the next edit is checking, which is the fixed point that consumed Stage 6.3's review
+rounds. Generating it removes the failure instead of documenting it.
+
+A review record is an **append-only log**: round, SHA, verdict, finding identifiers
+and one-line summaries. It does not restate the present, and a past round's recorded
+finding is never edited — a correction is appended as a new entry.
+
 ### Review-evidence tail
 
 The independent verdict normally arrives after the reviewed implementation commit.

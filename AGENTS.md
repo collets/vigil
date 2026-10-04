@@ -117,7 +117,17 @@ placed directly in `docs/` needs an entry in `tierByRootDocument`, both in
   run destructive recovery outside agent-owned disposable fixtures.
 - **Historical migrations are immutable.** `internal/store/migrations/project-001..009`
   and their recorded digests must never change. Schema changes are forward-only.
-- **Follow [`docs/development-workflow.md`](docs/process/development-workflow.md).** Develop
+- **Reviews are on code.** A finding blocks (P0/P1) only if it is a product defect, a
+  security/authority/data-integrity issue, or **a gate that silently passes**. Prose
+  disagreeing with prose is a non-blocking P3, batched and recorded — it never opens a
+  review round by itself. At most **three** rounds per task may be opened by
+  documentation findings; a fourth must find a blocking finding or the review stops and
+  the residual is recorded once as stage debt. You own the final classification, and any
+  finding you demote must be reported as demoted rather than resolved silently. A review
+  record is an **append-only log** that never restates the present, and a **generated
+  manifest** — not prose — holds any current fact a command can derive. Full rules in
+  [`docs/process/development-workflow.md`](docs/process/development-workflow.md).
+- **Follow [`docs/process/development-workflow.md`](docs/process/development-workflow.md).** Develop
   on task branches, push checkpoints only to their matching branches, use separate
   worktrees for parallel agents, and propose `main` only after exact-candidate
   validation and independent acceptance. Never force-push. There is no standing
